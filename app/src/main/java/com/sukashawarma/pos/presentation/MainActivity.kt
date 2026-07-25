@@ -1,6 +1,7 @@
 package com.sukashawarma.pos.presentation
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -35,6 +36,10 @@ import com.sukashawarma.pos.presentation.theme.CreamBackground
 import com.sukashawarma.pos.presentation.theme.SukaShawarmaPOSTheme
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        const val EXTRA_ORDER_ID = "order_id"
+    }
+
     private val loginViewModel: LoginViewModel by viewModels()
     private val dashboardViewModel: DashboardViewModel by viewModels()
     private val posManualOrderViewModel: POSManualOrderViewModel by viewModels()
@@ -43,6 +48,11 @@ class MainActivity : ComponentActivity() {
     private val reportsViewModel: ReportsViewModel by viewModels()
     private val shiftViewModel: ShiftViewModel by viewModels()
     private val settingsViewModel: SettingsViewModel by viewModels()
+
+    // Bumped every time a notification tap should force the UI back to
+    // Dashboard — a plain nullable order id wouldn't retrigger the
+    // LaunchedEffect below if the same order is tapped twice in a row.
+    private val pendingNotificationOrderId = mutableStateOf<String?>(null)
 
     private val requestNotificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -55,6 +65,7 @@ class MainActivity : ComponentActivity() {
         ) {
             requestNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
+        handleNotificationIntent(intent)
         setContent {
             SukaShawarmaPOSTheme {
                 val activeSession by loginViewModel.activeSession.collectAsState()
@@ -75,6 +86,14 @@ class MainActivity : ComponentActivity() {
                     // Active Session -> Show Main POS Tablet Layout
                     val session = activeSession!!
                     var currentTab by remember { mutableStateOf(POSTab.DASHBOARD) }
+                    val notifiedOrderId by pendingNotificationOrderId
+
+                    LaunchedEffect(notifiedOrderId) {
+                        val orderId = notifiedOrderId ?: return@LaunchedEffect
+                        currentTab = POSTab.DASHBOARD
+                        dashboardViewModel.highlightOrder(orderId)
+                        pendingNotificationOrderId.value = null
+                    }
 
                     Row(
                         modifier = Modifier
@@ -120,5 +139,16 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleNotificationIntent(intent)
+    }
+
+    private fun handleNotificationIntent(intent: Intent?) {
+        val orderId = intent?.getStringExtra(EXTRA_ORDER_ID) ?: return
+        pendingNotificationOrderId.value = orderId
     }
 }
