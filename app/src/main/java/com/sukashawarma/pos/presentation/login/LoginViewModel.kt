@@ -105,9 +105,13 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun logout() {
-        activeSession.value = null
-        SessionTokenHolder.clear()
-        AuthPrefs.clear()
-        SessionPrefs.clear()
+        viewModelScope.launch {
+            // Must run before clearing the token — the RLS delete policy checks auth.uid().
+            com.sukashawarma.pos.data.notification.FcmTokenRegistrar.unregisterCurrentToken()
+            activeSession.value = null
+            SessionTokenHolder.clear()
+            AuthPrefs.clear()
+            SessionPrefs.clear()
+        }
     }
 }

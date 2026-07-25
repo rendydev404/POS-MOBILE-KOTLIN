@@ -128,4 +128,9 @@ interface SupabaseApi {
         @Query("on_conflict") onConflict: String = "staff_id,token",
         @Body payload: UpsertFcmTokenPayload
     ): Response<Void>
+
+    // Deregisters this device's FCM token (called on logout so the outlet
+    // doesn't keep receiving pushes for a device no longer staffed there).
+    @DELETE("rest/v1/fcm_tokens")
+    suspend fun deleteFcmToken(@Query("token") tokenFilter: String): Response<Void>
 }
