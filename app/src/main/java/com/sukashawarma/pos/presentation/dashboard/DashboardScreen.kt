@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -41,6 +42,23 @@ fun DashboardScreen(
     var activeSourceFilter by remember { mutableStateOf("Semua") }
     var preparingSubTab by remember { mutableStateOf("Antrean") }
     var completedSearchQuery by remember { mutableStateOf("") }
+
+    val highlightedOrderId by viewModel.highlightedOrderId.collectAsState()
+    val pendingListState = rememberLazyListState()
+    val preparingListState = rememberLazyListState()
+    val completedListState = rememberLazyListState()
+
+    LaunchedEffect(highlightedOrderId, pendingOrders, preparingOrders, completedOrders) {
+        val id = highlightedOrderId ?: return@LaunchedEffect
+        val pendingIndex = pendingOrders.indexOfFirst { it.id == id }
+        val preparingIndex = preparingOrders.indexOfFirst { it.id == id }
+        val completedIndex = completedOrders.indexOfFirst { it.id == id }
+        when {
+            pendingIndex >= 0 -> pendingListState.animateScrollToItem(pendingIndex)
+            preparingIndex >= 0 -> preparingListState.animateScrollToItem(preparingIndex)
+            completedIndex >= 0 -> completedListState.animateScrollToItem(completedIndex)
+        }
+    }
 
     Column(
         modifier = modifier
@@ -251,12 +269,13 @@ fun DashboardScreen(
                     badgeCount = pendingOrders.size,
                     emptyMessage = "Tidak ada pesanan tertunda\nPesanan baru akan muncul otomatis di sini."
                 ) {
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    LazyColumn(state = pendingListState, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         items(pendingOrders, key = { it.id }) { order ->
                             OrderCard(
                                 order = order,
                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
-                                onPrintReceipt = { o -> viewModel.printReceipt(o, isKitchen = false) }
+                                onPrintReceipt = { o -> viewModel.printReceipt(o, isKitchen = false) },
+                                isHighlighted = order.id == highlightedOrderId
                             )
                         }
                     }
@@ -273,12 +292,13 @@ fun DashboardScreen(
                     onSubTabChange = { preparingSubTab = it },
                     emptyMessage = "Tidak ada antrean masak\nDapur sedang santai, pesanan aktif akan muncul di sini."
                 ) {
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    LazyColumn(state = preparingListState, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         items(preparingOrders, key = { it.id }) { order ->
                             OrderCard(
                                 order = order,
                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
-                                onPrintReceipt = { o -> viewModel.printReceipt(o, isKitchen = true) }
+                                onPrintReceipt = { o -> viewModel.printReceipt(o, isKitchen = true) },
+                                isHighlighted = order.id == highlightedOrderId
                             )
                         }
                     }
@@ -295,12 +315,13 @@ fun DashboardScreen(
                     onSearchQueryChange = { completedSearchQuery = it },
                     emptyMessage = "Belum ada pesanan selesai hari ini"
                 ) {
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    LazyColumn(state = completedListState, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         items(completedOrders.filter { completedSearchQuery.isEmpty() || it.orderNumber.toString().contains(completedSearchQuery) }, key = { it.id }) { order ->
                             OrderCard(
                                 order = order,
                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
-                                onPrintReceipt = { o -> viewModel.printReceipt(o, isKitchen = false) }
+                                onPrintReceipt = { o -> viewModel.printReceipt(o, isKitchen = false) },
+                                isHighlighted = order.id == highlightedOrderId
                             )
                         }
                     }

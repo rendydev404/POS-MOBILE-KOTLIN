@@ -1,6 +1,7 @@
 package com.sukashawarma.pos.presentation.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -27,6 +28,7 @@ fun OrderCard(
     order: Order,
     onStatusChange: (Order, OrderStatus) -> Unit,
     onPrintReceipt: (Order) -> Unit,
+    isHighlighted: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
@@ -40,8 +42,14 @@ fun OrderCard(
         OrderStatus.CANCELLED -> Color.Gray
     }
 
+    val highlightModifier = if (isHighlighted) {
+        Modifier.border(3.dp, ShawarmaOrange, RoundedCornerShape(12.dp))
+    } else {
+        Modifier
+    }
+
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().then(highlightModifier),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = SlateCard),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
