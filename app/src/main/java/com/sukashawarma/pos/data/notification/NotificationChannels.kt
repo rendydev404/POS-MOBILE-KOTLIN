@@ -4,6 +4,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
+import androidx.core.app.NotificationCompat
 
 object NotificationChannels {
     const val NEW_ORDER_CHANNEL_ID = "new_order_alerts"
@@ -18,6 +19,7 @@ object NotificationChannels {
         ).apply {
             description = "Notifikasi pesanan baru dari Kiosk/Online saat aplikasi di-background"
             enableVibration(true)
+            lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
         }
         manager.createNotificationChannel(channel)
     }
