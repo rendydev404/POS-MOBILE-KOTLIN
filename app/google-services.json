@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "847082871361",
+    "project_id": "pos-native-de856",
+    "storage_bucket": "pos-native-de856.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:847082871361:android:9e20faac3c45e7035cc4c0",
+        "android_client_info": {
+          "package_name": "com.sukashawarma.pos"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAbpsJtN5iYXeJ2WoAsD0stpYaKEu0Ib3k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

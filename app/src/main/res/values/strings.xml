@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Suka Shawarma POS</string>
+    <string name="default_notification_channel_id">new_order_alerts</string>
+</resources>
