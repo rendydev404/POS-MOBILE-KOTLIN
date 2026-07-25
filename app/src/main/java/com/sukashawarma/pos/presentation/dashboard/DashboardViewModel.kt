@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.Job
 
 class DashboardViewModel(application: Application) : AndroidViewModel(application) {
     private val database = (application as POSApplication).database
@@ -41,6 +42,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     val lowStockCount = MutableStateFlow(0)
 
     val isRealtimeConnected = MutableStateFlow(false)
+    val highlightedOrderId = MutableStateFlow<String?>(null)
+    private var highlightClearJob: Job? = null
     val pendingSyncCount: StateFlow<Int> = currentOutletId
         .flatMapLatest { outletId -> orderDao.getPendingSyncCountFlow(outletId) }
         .stateIn(viewModelScope, SharingStarted.Lazily, 0)
@@ -91,6 +94,16 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             syncOrdersFromServer(outletId)
         }
         realtimeManager.connect(outletId)
+    }
+
+    /** Called when a push notification is tapped — briefly highlights the order card. */
+    fun highlightOrder(orderId: String) {
+        highlightedOrderId.value = orderId
+        highlightClearJob?.cancel()
+        highlightClearJob = viewModelScope.launch {
+            delay(5_000)
+            highlightedOrderId.value = null
+        }
     }
 
     /** Fase 3: drains any orders saved locally while offline, then refreshes from the server. */
