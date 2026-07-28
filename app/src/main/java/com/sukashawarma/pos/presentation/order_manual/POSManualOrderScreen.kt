@@ -1,5 +1,9 @@
 package com.sukashawarma.pos.presentation.order_manual
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,7 +28,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -186,7 +192,9 @@ fun POSManualOrderScreen(
 
     if (isQrisModalOpen) {
         QrisModal(
+            viewModel = viewModel,
             totalAmount = totals.total,
+            canMarkPaidWithoutProof = viewModel.canMarkPaidWithoutProof(),
             onDismiss = { viewModel.isQrisModalOpen.value = false },
             onConfirmPaid = {
                 viewModel.isQrisModalOpen.value = false
@@ -815,28 +823,107 @@ private fun ItemDetailModal(viewModel: POSManualOrderViewModel, menu: MenuItem) 
     }
 }
 
+/**
+ * Port of QrisPaymentModal.tsx — shows a live QR (qrserver.com, same source the web uses
+ * when online) and lets the cashier attach a transfer-proof photo (camera or gallery),
+ * uploaded to Supabase Storage only after the order is created (see
+ * POSManualOrderViewModel.uploadPaymentProof). Food Apps channels can skip the proof
+ * entirely via "Tandai Sudah Bayar" (port of QrisPaymentModal.tsx's isFoodApp shortcut).
+ */
 @Composable
-private fun QrisModal(totalAmount: Double, onDismiss: () -> Unit, onConfirmPaid: () -> Unit) {
+private fun QrisModal(
+    viewModel: POSManualOrderViewModel,
+    totalAmount: Double,
+    canMarkPaidWithoutProof: Boolean,
+    onDismiss: () -> Unit,
+    onConfirmPaid: () -> Unit
+) {
+    val proofBitmap by viewModel.qrisProofBitmap.collectAsState()
+    val context = LocalContext.current
+
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
+        if (bitmap != null) viewModel.setQrisProofBitmap(bitmap)
+    }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) cameraLauncher.launch(null)
+    }
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            val bitmap = try {
+                context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) }
+            } catch (e: Exception) {
+                null
+            }
+            if (bitmap != null) viewModel.setQrisProofBitmap(bitmap)
+        }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = SlateSurface,
         title = { Text("Pembayaran QRIS", color = TextPrimary, fontWeight = FontWeight.Bold) },
         text = {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.verticalScroll(rememberScrollState())
+            ) {
                 Text("Rp ${String.format("%,.0f", totalAmount)}", style = MaterialTheme.typography.headlineMedium, color = AmberPrimary, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(12.dp))
                 AsyncImage(
-                    model = "https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=shawarma-kasir://pay?amount=${totalAmount.toLong()}",
+                    model = "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=shawarma-kasir://pay?amount=${totalAmount.toLong()}",
                     contentDescription = "QRIS",
-                    modifier = Modifier.size(220.dp)
+                    modifier = Modifier.size(200.dp)
                 )
-                Spacer(modifier = Modifier.height(12.dp))
-                Text("Minta pelanggan scan QR di atas, lalu tekan tombol di bawah setelah pembayaran diterima.", color = TextSecondary, textAlign = TextAlign.Center)
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Bukti Transfer", style = MaterialTheme.typography.titleSmall, color = TextSecondary)
+                Spacer(modifier = Modifier.height(6.dp))
+
+                if (proofBitmap != null) {
+                    Image(
+                        bitmap = proofBitmap!!.asImageBitmap(),
+                        contentDescription = "Bukti transfer",
+                        modifier = Modifier
+                            .size(160.dp)
+                            .clip(RoundedCornerShape(8.dp)),
+                        contentScale = ContentScale.Crop
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TextButton(onClick = { viewModel.setQrisProofBitmap(null) }) {
+                        Text("Hapus foto", color = StatusPending)
+                    }
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) }) {
+                        Text("Ambil Foto")
+                    }
+                    OutlinedButton(onClick = { galleryLauncher.launch("image/*") }) {
+                        Text("Pilih dari Galeri")
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "Minta pelanggan scan QR di atas, lalu unggah bukti transfer sebelum memproses pembayaran.",
+                    color = TextSecondary,
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
         },
         confirmButton = {
-            Button(onClick = onConfirmPaid, colors = ButtonDefaults.buttonColors(containerColor = AmberPrimary)) {
-                Text("Tandai Sudah Bayar", color = SlateBackground, fontWeight = FontWeight.Bold)
+            Column(horizontalAlignment = Alignment.End) {
+                Button(
+                    onClick = onConfirmPaid,
+                    enabled = proofBitmap != null,
+                    colors = ButtonDefaults.buttonColors(containerColor = AmberPrimary)
+                ) {
+                    Text("Proses Pembayaran", color = SlateBackground, fontWeight = FontWeight.Bold)
+                }
+                if (canMarkPaidWithoutProof) {
+                    TextButton(onClick = onConfirmPaid) {
+                        Text("Tandai Sudah Bayar (tanpa bukti)", color = TextSecondary)
+                    }
+                }
             }
         },
         dismissButton = {

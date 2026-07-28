@@ -18,8 +18,12 @@
     <!-- Push Notifications (FCM) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- QRIS payment-proof capture (order-manual "Tambah Bukti Transfer") -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
     <!-- Hardware Feature Declarations -->
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.screen.landscape" android:required="true" />
 
     <application

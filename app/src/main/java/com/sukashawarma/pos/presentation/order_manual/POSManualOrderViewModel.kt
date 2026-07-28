@@ -1,6 +1,7 @@
 package com.sukashawarma.pos.presentation.order_manual
 
 import android.app.Application
+import android.graphics.Bitmap
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import androidx.lifecycle.AndroidViewModel
@@ -21,7 +22,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.ByteArrayOutputStream
 import java.time.Instant
+import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.UUID
 
@@ -42,11 +47,13 @@ data class CartTotals(
 /**
  * Port of apps/pos-kasir/app/kasir/order-manual/page.tsx.
  *
- * Deliberately NOT ported here (see commit message for the domain-foundation change
- * that preceded this one): the AI receipt-scan feature (needs a Next.js API route this
- * app has no auth-compatible way to call) and QRIS payment-proof photo upload (needs
- * camera + Supabase Storage bucket wiring, separate scope from cart/mode logic).
- * The QRIS flow here mirrors the "Tandai Sudah Bayar" (mark-as-paid) path only.
+ * Deliberately NOT ported here (see commit messages): the AI receipt-scan feature —
+ * it needs a Next.js API route (`/api/parse-receipt`) this app has no auth-compatible
+ * way to call (that route likely expects the web's NextAuth session, not the Supabase
+ * JWT this app authenticates with).
+ *
+ * QRIS payment-proof capture *is* ported (camera/gallery -> Supabase Storage bucket
+ * `payment_proofs` -> orders.payment_proof_url), see qrisProofBitmap/uploadPaymentProof.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class POSManualOrderViewModel(application: Application) : AndroidViewModel(application) {
@@ -88,6 +95,11 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
     val selectedPackageChoices = MutableStateFlow<Map<String, String>>(emptyMap())
 
     val isQrisModalOpen = MutableStateFlow(false)
+    /** Captured/picked photo of the transfer receipt — port of the web's QrisPaymentModal
+     *  "Transfer (Bukti)" tab file selection (QrisPaymentModal.tsx). Uploaded to Supabase
+     *  Storage only after the order itself is created (see submitOrder/uploadPaymentProof),
+     *  same order as the web's handleWalkInPay (page.tsx:684-710). */
+    val qrisProofBitmap = MutableStateFlow<Bitmap?>(null)
     val isSubmitting = MutableStateFlow(false)
     val orderErrorMessage = MutableStateFlow<String?>(null)
     val orderSuccessInfo = MutableStateFlow<OrderSuccessInfo?>(null)
@@ -127,6 +139,7 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
         cartLines.value = emptyList()
         searchQuery.value = ""
         orderErrorMessage.value = null
+        qrisProofBitmap.value = null
     }
 
     fun selectChannel(channelId: String) {
@@ -394,6 +407,17 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
         orderSuccessInfo.value = null
     }
 
+    fun setQrisProofBitmap(bitmap: Bitmap?) {
+        qrisProofBitmap.value = bitmap
+    }
+
+    /** Port of the isFoodApp "Tandai Sudah Bayar" shortcut (QrisPaymentModal.tsx:203-266) —
+     *  only Food Apps channels may skip the proof photo and mark-as-paid directly. */
+    fun canMarkPaidWithoutProof(): Boolean {
+        val activeChannel = normalizeChannel(channel.value) ?: return false
+        return mode.value == OrderMode.ONLINE && activeChannel in PROMO_SUBSIDY_CHANNELS
+    }
+
     // ---------------------------------------------------------------------
     // Submit — port of handleSubmit (page.tsx:467-627) / handleWalkInPay (page.tsx:630-810)
     // ---------------------------------------------------------------------
@@ -493,6 +517,10 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                             )
                         }
                         api.createOrderItems(itemPayloads)
+
+                        qrisProofBitmap.value?.let { bitmap ->
+                            uploadPaymentProof(outletId = order.outletId, orderId = order.id, orderNumber = serverOrderNumber, bitmap = bitmap)
+                        }
                     } else {
                         pendingSync = true
                     }
@@ -542,7 +570,33 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
             pickupTime.value = ""
             promoSubsidy.value = ""
             cashInput.value = ""
+            qrisProofBitmap.value = null
             isSubmitting.value = false
+        }
+    }
+
+    /** Port of the web's post-order-creation proof upload (page.tsx:684-710): upload to
+     *  Supabase Storage bucket `payment_proofs`, then PATCH the order's payment_proof_url
+     *  with the resulting public URL. Filename mirrors the web's
+     *  `${OUTLET}_{order_number}_{yyyy-mm-dd}.{ext}` pattern, using outletId in place of
+     *  the web's outlet slug (this app doesn't have the slug on hand here, and either
+     *  string is just a unique storage key). Non-fatal on failure — the order itself is
+     *  already created; only the proof photo attachment is lost. */
+    private suspend fun uploadPaymentProof(outletId: String, orderId: String, orderNumber: Int, bitmap: Bitmap) {
+        try {
+            val stream = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 85, stream)
+            val fileName = "${outletId}_${orderNumber}_${LocalDate.now()}.jpg"
+            val objectPath = "payment_proofs/$fileName"
+            val body = stream.toByteArray().toRequestBody("image/jpeg".toMediaTypeOrNull())
+
+            val uploadRes = api.uploadPaymentProof(objectPath = objectPath, contentType = "image/jpeg", file = body)
+            if (uploadRes.isSuccessful) {
+                val publicUrl = "${SupabaseClient.BASE_URL}storage/v1/object/public/$objectPath"
+                api.updateOrderStatus(orderIdFilter = "eq.$orderId", patch = mapOf("payment_proof_url" to publicUrl))
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 }

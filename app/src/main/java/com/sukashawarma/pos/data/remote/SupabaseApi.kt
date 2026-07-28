@@ -1,6 +1,8 @@
 package com.sukashawarma.pos.data.remote
 
 import com.sukashawarma.pos.data.remote.dto.*
+import okhttp3.RequestBody
+import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.*
 
@@ -99,12 +101,25 @@ interface SupabaseApi {
         @Body payload: List<CreateOrderItemPayload>
     ): Response<List<OrderItemDto>>
 
-    // Update Order Status
+    // Update Order Status (also reused to PATCH payment_proof_url — see
+    // uploadPaymentProof/updateOrderPaymentProof below — both are the same generic
+    // "patch a couple of orders columns by id" shape, so one endpoint covers both).
     @PATCH("rest/v1/orders")
     suspend fun updateOrderStatus(
         @Query("id") orderIdFilter: String,
         @Body patch: Map<String, String>
     ): Response<Void>
+
+    // Upload a QRIS payment-proof photo to Supabase Storage — port of the web's upload
+    // step in handleWalkInPay (order-manual/page.tsx:684-710). `objectPath` is
+    // "<bucket>/<filename>"; @Path(encoded=true) so the "/" between them isn't escaped.
+    @PUT("storage/v1/object/{objectPath}")
+    suspend fun uploadPaymentProof(
+        @Path(value = "objectPath", encoded = true) objectPath: String,
+        @Header("Content-Type") contentType: String,
+        @Header("x-upsert") upsert: String = "true",
+        @Body file: RequestBody
+    ): Response<ResponseBody>
 
     // Fetch Real Shifts from Supabase
     @GET("rest/v1/shifts")
