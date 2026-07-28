@@ -12,6 +12,15 @@ class POSApplication : Application() {
         AppDatabase.getInstance(this)
     }
 
+    val menuRepository: com.sukashawarma.pos.data.repository.MenuRepository by lazy {
+        com.sukashawarma.pos.data.repository.MenuRepository(
+            api = com.sukashawarma.pos.data.remote.SupabaseClient.api,
+            menuItemDao = database.menuItemDao(),
+            kioskSettingDao = database.kioskSettingDao(),
+            okHttpClient = com.sukashawarma.pos.data.remote.SupabaseClient.okHttpClient
+        )
+    }
+
     override fun onCreate() {
         super.onCreate()
         PrinterPrefs.init(this)

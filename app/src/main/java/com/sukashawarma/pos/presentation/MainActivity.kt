@@ -66,6 +66,7 @@ class MainActivity : ComponentActivity() {
                         onLoginSuccess = { session ->
                             dashboardViewModel.setSession(session.outletId, session.outletName, session.username)
                             posManualOrderViewModel.currentOutletId.value = session.outletId
+                            menuManagementViewModel.setOutlet(session.outletId)
                             orderHistoryViewModel.setOutlet(session.outletId)
                             shiftViewModel.setOutlet(session.outletId)
                             reportsViewModel.setOutlet(session.outletId)
@@ -90,6 +91,7 @@ class MainActivity : ComponentActivity() {
                                 loginViewModel.logout()
                                 dashboardViewModel.setSession("", "", "Kasir")
                                 posManualOrderViewModel.currentOutletId.value = ""
+                                menuManagementViewModel.setOutlet("")
                             }
                         )
 

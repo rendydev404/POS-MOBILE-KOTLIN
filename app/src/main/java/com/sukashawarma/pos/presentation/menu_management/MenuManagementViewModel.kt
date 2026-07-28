@@ -3,14 +3,22 @@ package com.sukashawarma.pos.presentation.menu_management
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.sukashawarma.pos.POSApplication
 import com.sukashawarma.pos.data.remote.SupabaseClient
 import com.sukashawarma.pos.domain.model.Category
 import com.sukashawarma.pos.domain.model.MenuItem
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class MenuManagementViewModel(application: Application) : AndroidViewModel(application) {
     private val api = SupabaseClient.api
+    private val repository = (application as POSApplication).menuRepository
+
+    private val currentOutletId = MutableStateFlow("")
 
     val categories = MutableStateFlow<List<Category>>(emptyList())
     val menuItems = MutableStateFlow<List<MenuItem>>(emptyList())
@@ -19,38 +27,20 @@ class MenuManagementViewModel(application: Application) : AndroidViewModel(appli
     val isLoading = MutableStateFlow(false)
 
     init {
-        loadData()
+        viewModelScope.launch {
+            currentOutletId.filter { it.isNotBlank() }
+                .flatMapLatest { outletId -> repository.snapshot(outletId) }
+                .collect { snapshot ->
+                    categories.value = snapshot.categories
+                    menuItems.value = snapshot.items
+                    isLoading.value = false
+                }
+        }
     }
 
-    fun loadData() {
-        viewModelScope.launch {
-            isLoading.value = true
-            try {
-                val catRes = api.getCategories()
-                if (catRes.isSuccessful && catRes.body() != null) {
-                    categories.value = catRes.body()!!.map { Category(it.id, it.name) }
-                }
-
-                val itemRes = api.getMenuItems()
-                if (itemRes.isSuccessful && itemRes.body() != null) {
-                    menuItems.value = itemRes.body()!!.map { dto ->
-                        MenuItem(
-                            id = dto.id,
-                            categoryId = dto.categoryId ?: "",
-                            name = dto.name,
-                            price = dto.price,
-                            isAvailable = dto.isAvailable ?: true,
-                            prepTimeMinutes = 10,
-                            imageUrl = dto.imageUrl
-                        )
-                    }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            } finally {
-                isLoading.value = false
-            }
-        }
+    fun setOutlet(outletId: String) {
+        isLoading.value = outletId.isNotBlank() && categories.value.isEmpty()
+        currentOutletId.value = outletId
     }
 
     fun toggleAvailability(item: MenuItem) {

@@ -14,7 +14,10 @@ import com.sukashawarma.pos.domain.model.*
 import com.sukashawarma.pos.domain.usecase.CalculateCartUseCase
 import com.sukashawarma.pos.domain.usecase.CreateOrderUseCase
 import com.google.gson.Gson
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.format.DateTimeFormatter
@@ -25,6 +28,7 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
     private val calculateCartUseCase = CalculateCartUseCase()
     private val createOrderUseCase = CreateOrderUseCase(calculateCartUseCase)
     private val api = SupabaseClient.api
+    private val repository = (application as POSApplication).menuRepository
     private val gson = Gson()
 
     val currentOutletId = MutableStateFlow("")
@@ -43,44 +47,22 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
     val orderErrorMessage = MutableStateFlow<String?>(null)
 
     init {
-        fetchRealDataFromSupabase()
+        collectMenuSnapshot()
     }
 
-    fun fetchRealDataFromSupabase() {
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun collectMenuSnapshot() {
         viewModelScope.launch {
-            isLoading.value = true
-            try {
-                // Fetch Categories live from Supabase
-                val catRes = api.getCategories()
-                if (catRes.isSuccessful && catRes.body() != null) {
-                    val catList = catRes.body()!!.map { Category(it.id, it.name) }
-                    categories.value = catList
-                    if (catList.isNotEmpty() && selectedCategoryId.value.isEmpty()) {
-                        selectedCategoryId.value = catList.first().id
+            currentOutletId.filter { it.isNotBlank() }
+                .flatMapLatest { outletId -> repository.snapshot(outletId) }
+                .collect { snapshot ->
+                    categories.value = snapshot.categories
+                    if (snapshot.categories.isNotEmpty() && selectedCategoryId.value.isEmpty()) {
+                        selectedCategoryId.value = snapshot.categories.first().id
                     }
+                    menuItems.value = snapshot.items
+                    isLoading.value = false
                 }
-
-                // Fetch Menu Items live from Supabase
-                val itemRes = api.getMenuItems()
-                if (itemRes.isSuccessful && itemRes.body() != null) {
-                    val itemList = itemRes.body()!!.map { dto ->
-                        MenuItem(
-                            id = dto.id,
-                            categoryId = dto.categoryId ?: "",
-                            name = dto.name,
-                            price = dto.price,
-                            isAvailable = dto.isAvailable ?: true,
-                            prepTimeMinutes = 10,
-                            imageUrl = dto.imageUrl
-                        )
-                    }
-                    menuItems.value = itemList
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            } finally {
-                isLoading.value = false
-            }
         }
     }
 
