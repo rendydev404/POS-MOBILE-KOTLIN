@@ -67,7 +67,7 @@ class MenuRepository(
 
     private suspend fun refreshInternal(outletId: String): MenuSnapshot? {
         return try {
-            val orFilter = "outlet_id.is.null,outlet_id.eq.$PUSAT_OUTLET_ID,outlet_id.eq.$outletId"
+            val orFilter = "(outlet_id.is.null,outlet_id.eq.$PUSAT_OUTLET_ID,outlet_id.eq.$outletId)"
             val itemsRes = api.getMenuItems()
             val catRes = api.getCategories()
             if (!itemsRes.isSuccessful || !catRes.isSuccessful) return null

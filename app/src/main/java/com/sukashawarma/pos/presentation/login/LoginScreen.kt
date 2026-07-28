@@ -23,13 +23,23 @@ import com.sukashawarma.pos.presentation.theme.*
 @Composable
 fun LoginScreen(
     viewModel: LoginViewModel,
-    onLoginSuccess: (UserSession) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val username by viewModel.usernameInput.collectAsState()
     val password by viewModel.passwordInput.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val isCheckingSession by viewModel.isCheckingSession.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
+
+    if (isCheckingSession) {
+        Box(
+            modifier = modifier.fillMaxSize().background(SlateBackground),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator(color = ShawarmaOrange)
+        }
+        return
+    }
 
     Box(
         modifier = modifier
@@ -125,7 +135,7 @@ fun LoginScreen(
 
                 // Submit Login Button
                 Button(
-                    onClick = { viewModel.login(onLoginSuccess) },
+                    onClick = { viewModel.login() },
                     enabled = !isLoading,
                     modifier = Modifier
                         .fillMaxWidth()

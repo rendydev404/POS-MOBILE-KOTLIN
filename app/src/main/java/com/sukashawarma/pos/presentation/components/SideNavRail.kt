@@ -24,6 +24,7 @@ import com.sukashawarma.pos.presentation.theme.*
 
 enum class POSTab {
     DASHBOARD,
+    ORDER_MANUAL,
     INFO_PORSI,
     MENU_MANAGEMENT,
     SHIFT_PETTY_CASH,

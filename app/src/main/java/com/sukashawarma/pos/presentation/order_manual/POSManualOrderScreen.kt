@@ -878,7 +878,7 @@ private fun ItemDetailModal(viewModel: POSManualOrderViewModel, menu: MenuItem) 
     val extras by viewModel.selectedExtras.collectAsState()
     val packageChoices by viewModel.selectedPackageChoices.collectAsState()
     val menuItems by viewModel.menuItems.collectAsState()
-    val upsellItems = remember(menuItems) { viewModel.upsellItems() }
+    val upsellItems by viewModel.upsellItems.collectAsState()
 
     Dialog(onDismissRequest = { viewModel.closeItemModal() }) {
         Surface(shape = RoundedCornerShape(20.dp), color = Color.White) {
@@ -949,15 +949,30 @@ private fun ItemDetailModal(viewModel: POSManualOrderViewModel, menu: MenuItem) 
                         Spacer(modifier = Modifier.height(10.dp))
                         // Port of the 2-column extras grid (order-manual/page.tsx:1244-1290) —
                         // thumbnail-left, text-middle, toggle-button-right mini cards.
-                        LazyVerticalGrid(
-                            columns = GridCells.Fixed(2),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        Column(
                             verticalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier.heightIn(max = 240.dp)
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            items(upsellItems, key = { it.id }) { extra ->
-                                val selected = (extras[extra.id] ?: 0) > 0
-                                ExtraItemCard(extra = extra, price = viewModel.priceFor(extra), selected = selected, onClick = { viewModel.toggleExtra(extra.id) })
+                            upsellItems.chunked(2).forEach { rowItems ->
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    rowItems.forEach { extra ->
+                                        val selected = (extras[extra.id] ?: 0) > 0
+                                        Box(modifier = Modifier.weight(1f)) {
+                                            ExtraItemCard(
+                                                extra = extra,
+                                                price = viewModel.priceFor(extra),
+                                                selected = selected,
+                                                onClick = { viewModel.toggleExtra(extra.id) }
+                                            )
+                                        }
+                                    }
+                                    if (rowItems.size == 1) {
+                                        Spacer(modifier = Modifier.weight(1f))
+                                    }
+                                }
                             }
                         }
                     }

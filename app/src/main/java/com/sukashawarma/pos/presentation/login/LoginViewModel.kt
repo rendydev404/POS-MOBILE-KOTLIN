@@ -13,8 +13,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
 
-// Same pseudo-email convention the web portal uses to sign staff into Supabase Auth
-// with a plain username (see packages/auth/src/access.ts: normalizeLoginIdentifier).
 private const val LOGIN_EMAIL_DOMAIN = "@outlet.local"
 
 class LoginViewModel(application: Application) : AndroidViewModel(application) {
@@ -25,54 +23,52 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
     val passwordInput = MutableStateFlow("")
 
     val isLoading = MutableStateFlow(false)
+    val isCheckingSession = MutableStateFlow(true)
     val errorMessage = MutableStateFlow<String?>(null)
     val activeSession = MutableStateFlow<UserSession?>(null)
 
-    fun login(onSuccess: (UserSession) -> Unit) {
-        val username = usernameInput.value.trim()
-        val password = passwordInput.value
+    init {
+        checkSession()
+    }
 
-        if (username.isBlank() || password.isBlank()) {
-            errorMessage.value = "Username dan password wajib diisi."
+    private fun checkSession() {
+        val lastUser = AuthPrefs.getLastUsername()
+        val lastPass = AuthPrefs.getLastPassword()
+        if (lastUser != null) usernameInput.value = lastUser
+        if (lastPass != null) passwordInput.value = lastPass
+
+        val refreshToken = AuthPrefs.getRefreshToken()
+        if (refreshToken == null) {
+            isCheckingSession.value = false
             return
         }
 
-        isLoading.value = true
-        errorMessage.value = null
-
         viewModelScope.launch {
             try {
-                val email = if (username.contains("@")) username else "$username$LOGIN_EMAIL_DOMAIN"
-
-                // Real Supabase Auth sign-in — identical mechanism to the web portal.
-                val authRes = authApi.signInWithPassword(payload = SignInPayload(email, password))
+                val authRes = authApi.refreshSession(payload = com.sukashawarma.pos.data.remote.RefreshTokenPayload(refreshToken))
                 if (!authRes.isSuccessful || authRes.body() == null) {
-                    errorMessage.value = "Login gagal: username atau password salah."
-                    return@launch
+                    if (authRes.code() in 400..499) {
+                        SessionTokenHolder.clear()
+                        AuthPrefs.clear()
+                        isCheckingSession.value = false
+                        return@launch
+                    } else {
+                        restoreOfflineSession()
+                        return@launch
+                    }
                 }
                 val token = authRes.body()!!
 
-                // Carry the user's access token for every request from here on so
-                // RLS (auth.uid()-based policies) scopes data to this staff member.
                 SessionTokenHolder.accessToken = token.access_token
                 SessionTokenHolder.refreshToken = token.refresh_token
                 AuthPrefs.setRefreshToken(token.refresh_token)
 
                 val staffRes = api.getStaffById("eq.${token.user.id}")
                 val staff = staffRes.body()?.firstOrNull()
-                if (!staffRes.isSuccessful || staff == null) {
-                    errorMessage.value = "Login gagal: akun ini tidak terdaftar sebagai staff outlet."
+                
+                if (staff == null || staff.isActive == false || staff.outletId.isNullOrBlank()) {
                     SessionTokenHolder.clear()
-                    return@launch
-                }
-                if (staff.isActive == false) {
-                    errorMessage.value = "Akun '$username' sedang dinonaktifkan. Hubungi admin."
-                    SessionTokenHolder.clear()
-                    return@launch
-                }
-                if (staff.outletId.isNullOrBlank()) {
-                    errorMessage.value = "Akun ini tidak terikat ke outlet manapun."
-                    SessionTokenHolder.clear()
+                    isCheckingSession.value = false
                     return@launch
                 }
 
@@ -81,33 +77,105 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
 
                 val session = UserSession(
                     staffId = staff.id,
-                    username = staff.name ?: staff.username ?: username,
-                    role = staff.role ?: "crew",
+                    username = staff.name ?: staff.username ?: "Staff",
+                    role = staff.role ?: "kasir",
                     outletId = staff.outletId,
-                    outletName = outlet?.name ?: "Outlet"
+                    outletName = outlet?.name ?: "Unknown Outlet"
+                )
+                
+                SessionPrefs.setSession(staff.id, staff.outletId, session.outletName, session.username, session.role)
+                activeSession.value = session
+                isCheckingSession.value = false
+            } catch (e: Exception) {
+                // Network error, restore offline session
+                restoreOfflineSession()
+            }
+        }
+    }
+    
+    private fun restoreOfflineSession() {
+        val staffId = SessionPrefs.getStaffId()
+        val outletId = SessionPrefs.getOutletId()
+        val outletName = SessionPrefs.getOutletName() ?: "Offline Outlet"
+        val username = SessionPrefs.getUsername() ?: "Staff"
+        val role = SessionPrefs.getRole() ?: "kasir"
+        
+        if (staffId != null && outletId != null) {
+            activeSession.value = UserSession(staffId, username, role, outletId, outletName)
+        }
+        isCheckingSession.value = false
+    }
+
+    fun login() {
+        val user = usernameInput.value.trim()
+        val pass = passwordInput.value
+
+        if (user.isBlank() || pass.isBlank()) {
+            errorMessage.value = "Username dan Password harus diisi"
+            return
+        }
+
+        isLoading.value = true
+        errorMessage.value = null
+
+        val email = if (user.contains("@")) user else ""
+
+        viewModelScope.launch {
+            try {
+                val authRes = authApi.signInWithPassword(payload = SignInPayload(email, pass))
+                if (!authRes.isSuccessful || authRes.body() == null) {
+                    errorMessage.value = "Login gagal: Kredensial tidak valid"
+                    return@launch
+                }
+                
+                val token = authRes.body()!!
+                SessionTokenHolder.accessToken = token.access_token
+                SessionTokenHolder.refreshToken = token.refresh_token
+                
+                AuthPrefs.setRefreshToken(token.refresh_token)
+
+                val staffRes = api.getStaffById("eq.${token.user.id}")
+                val staff = staffRes.body()?.firstOrNull()
+                if (staff == null || staff.isActive == false || staff.outletId.isNullOrBlank()) {
+                    errorMessage.value = "Akun staff tidak aktif atau tidak terkait ke outlet manapun"
+                    return@launch
+                }
+
+                val outletRes = api.getOutletById("eq.${staff.outletId}")
+                val outlet = outletRes.body()?.firstOrNull()
+
+                val session = UserSession(
+                    staffId = staff.id,
+                    username = staff.name ?: staff.username ?: "Staff",
+                    role = staff.role ?: "kasir",
+                    outletId = staff.outletId,
+                    outletName = outlet?.name ?: "Unknown Outlet"
                 )
 
-                SessionPrefs.setSession(staffId = staff.id, outletId = staff.outletId)
+                AuthPrefs.setLastCredentials(user, pass)
+                SessionPrefs.setSession(staff.id, staff.outletId, session.outletName, session.username, session.role)
                 activeSession.value = session
-                onSuccess(session)
 
-                com.sukashawarma.pos.data.notification.FcmTokenRegistrar.registerCurrentToken(staff.id, staff.outletId)
             } catch (e: HttpException) {
-                errorMessage.value = "Login gagal: username atau password salah."
-                SessionTokenHolder.clear()
+                errorMessage.value = "Network error: ${e.message()}"
             } catch (e: Exception) {
-                errorMessage.value = "Koneksi ke server gagal: ${e.localizedMessage}"
-                SessionTokenHolder.clear()
+                errorMessage.value = "Terjadi kesalahan: ${e.message}"
             } finally {
                 isLoading.value = false
             }
         }
     }
-
+    
     fun logout() {
         activeSession.value = null
         SessionTokenHolder.clear()
         AuthPrefs.clear()
         SessionPrefs.clear()
+        
+        // After logout, keep the last credentials filled in, but they must manually click login.
+        val lastUser = AuthPrefs.getLastUsername()
+        val lastPass = AuthPrefs.getLastPassword()
+        if (lastUser != null) usernameInput.value = lastUser
+        if (lastPass != null) passwordInput.value = lastPass
     }
 }

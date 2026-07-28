@@ -8,6 +8,12 @@ import retrofit2.http.*
 
 interface SupabaseApi {
 
+    @GET("rest/v1/monitoring_view_crew")
+    suspend fun getMonitoringViewCrew(
+        @Query("outlet_id") outletIdFilter: String,
+        @Query("select") select: String = "item_name,projection_text"
+    ): Response<List<MonitoringViewCrewDto>>
+
     // Fetch the logged-in staff's own row (RLS: outlet_staff_read_self allows id = auth.uid())
     @GET("rest/v1/outlet_staff")
     suspend fun getStaffById(

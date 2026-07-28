@@ -18,6 +18,8 @@ import com.sukashawarma.pos.presentation.components.SideNavRail
 import com.sukashawarma.pos.presentation.dashboard.DashboardScreen
 import com.sukashawarma.pos.presentation.dashboard.DashboardViewModel
 import com.sukashawarma.pos.presentation.history.OrderHistoryScreen
+import com.sukashawarma.pos.presentation.info_porsi.InfoPorsiScreen
+import com.sukashawarma.pos.presentation.info_porsi.InfoPorsiViewModel
 import com.sukashawarma.pos.presentation.history.OrderHistoryViewModel
 import com.sukashawarma.pos.presentation.login.LoginScreen
 import com.sukashawarma.pos.presentation.login.LoginViewModel
@@ -43,6 +45,7 @@ class MainActivity : ComponentActivity() {
     private val reportsViewModel: ReportsViewModel by viewModels()
     private val shiftViewModel: ShiftViewModel by viewModels()
     private val settingsViewModel: SettingsViewModel by viewModels()
+    private val infoPorsiViewModel: InfoPorsiViewModel by viewModels()
 
     private val requestNotificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -59,18 +62,22 @@ class MainActivity : ComponentActivity() {
             SukaShawarmaPOSTheme {
                 val activeSession by loginViewModel.activeSession.collectAsState()
 
+                LaunchedEffect(activeSession) {
+                    activeSession?.let { session ->
+                        dashboardViewModel.setSession(session.outletId, session.outletName, session.username)
+                        posManualOrderViewModel.currentOutletId.value = session.outletId
+                        menuManagementViewModel.setOutlet(session.outletId)
+                        orderHistoryViewModel.setOutlet(session.outletId)
+                        shiftViewModel.setOutlet(session.outletId)
+                        reportsViewModel.setOutlet(session.outletId)
+                        infoPorsiViewModel.currentOutletId.value = session.outletId
+                    }
+                }
+
                 if (activeSession == null) {
                     // Show Cashier Login & Outlet Selection Screen
                     LoginScreen(
-                        viewModel = loginViewModel,
-                        onLoginSuccess = { session ->
-                            dashboardViewModel.setSession(session.outletId, session.outletName, session.username)
-                            posManualOrderViewModel.currentOutletId.value = session.outletId
-                            menuManagementViewModel.setOutlet(session.outletId)
-                            orderHistoryViewModel.setOutlet(session.outletId)
-                            shiftViewModel.setOutlet(session.outletId)
-                            reportsViewModel.setOutlet(session.outletId)
-                        }
+                        viewModel = loginViewModel
                     )
                 } else {
                     // Active Session -> Show Main POS Tablet Layout
@@ -105,9 +112,10 @@ class MainActivity : ComponentActivity() {
                             when (currentTab) {
                                 POSTab.DASHBOARD -> DashboardScreen(
                                     viewModel = dashboardViewModel,
-                                    onNewOrderClick = { currentTab = POSTab.INFO_PORSI }
+                                    onNewOrderClick = { currentTab = POSTab.ORDER_MANUAL }
                                 )
-                                POSTab.INFO_PORSI -> POSManualOrderScreen(viewModel = posManualOrderViewModel)
+                                POSTab.ORDER_MANUAL -> POSManualOrderScreen(viewModel = posManualOrderViewModel)
+                                POSTab.INFO_PORSI -> InfoPorsiScreen(viewModel = infoPorsiViewModel)
                                 POSTab.MENU_MANAGEMENT -> MenuManagementScreen(viewModel = menuManagementViewModel)
                                 POSTab.SHIFT_PETTY_CASH, POSTab.SHIFT_CLOSE -> ShiftScreen(viewModel = shiftViewModel)
                                 POSTab.HISTORI_BONUS -> OrderHistoryScreen(viewModel = orderHistoryViewModel)

@@ -94,6 +94,7 @@ data class OrderDto(
     @SerializedName("change_amount") val changeAmount: Double?,
     @SerializedName("kitchen_receipt_printed") val kitchenReceiptPrinted: Boolean?,
     @SerializedName("created_at") val createdAt: String,
+    val channel: String?,
     @SerializedName("order_items") val orderItems: List<OrderItemDto>?
 )
 

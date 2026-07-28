@@ -19,8 +19,12 @@ import com.sukashawarma.pos.domain.usecase.CreateOrderUseCase
 import com.google.gson.Gson
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -201,8 +205,12 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
         return item.price
     }
 
-    fun upsellItems(): List<MenuItem> =
-        menuItems.value.filter { it.id in kioskSettings.value.upsells && isItemAvailable(it, kioskSettings.value) }
+    val upsellItems: StateFlow<List<MenuItem>> = combine(menuItems, kioskSettings) { items, settings ->
+        android.util.Log.d("UPSELL_TEST", "menuItems count: ${items.size}, upsells count in settings: ${settings.upsells.size}, upsells: ${settings.upsells}")
+        val filtered = items.filter { it.id in settings.upsells && it.isAvailable }
+        android.util.Log.d("UPSELL_TEST", "Filtered upsells count: ${filtered.size}")
+        filtered
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     // ---------------------------------------------------------------------
     // Item detail modal — port of §5 (page.tsx:78-82, 430-443, 1206-1338)

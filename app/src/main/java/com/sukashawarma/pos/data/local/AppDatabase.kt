@@ -65,7 +65,11 @@ abstract class AppDatabase : RoomDatabase() {
         // as MIGRATION_1_2: never drop this table via a destructive migration.
         val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE local_orders ADD COLUMN channel TEXT")
+                try {
+                    db.execSQL("ALTER TABLE local_orders ADD COLUMN channel TEXT")
+                } catch (e: Exception) {
+                    // Ignore if column already exists
+                }
             }
         }
 

@@ -16,7 +16,11 @@ fun parseIdList(raw: String?): List<String> {
     return try {
         gson.fromJson<List<String>>(raw, stringListType) ?: emptyList()
     } catch (e: Exception) {
-        emptyList()
+        if (raw.contains(",")) {
+            raw.split(",").map { it.trim().replace("\"", "").replace("[", "").replace("]", "") }
+        } else {
+            listOf(raw.trim().replace("\"", "").replace("[", "").replace("]", ""))
+        }
     }
 }
 
