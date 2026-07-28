@@ -18,7 +18,8 @@ class CreateOrderUseCase(
         activePromos: List<Promo>,
         isOnline: Boolean,
         lastServerOrderNumber: Int,
-        lastOfflineOrderNumber: Int
+        lastOfflineOrderNumber: Int,
+        channel: String? = null
     ): Order {
         val calc = calculateCartUseCase.execute(items, activePromos)
         val changeAmount = if (paymentMethod == PaymentMethod.CASH) {
@@ -46,7 +47,8 @@ class CreateOrderUseCase(
             totalAmount = calc.finalTotal,
             amountReceived = amountReceived,
             changeAmount = changeAmount,
-            isOffline = !isOnline
+            isOffline = !isOnline,
+            channel = channel
         )
     }
 }

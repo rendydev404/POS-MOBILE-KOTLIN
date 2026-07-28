@@ -35,6 +35,7 @@ class PrintReceiptUseCase {
             PaymentMethod.CASH -> "TUNAI"
             PaymentMethod.QRIS -> "QRIS"
             PaymentMethod.CARD -> "CARD/EDC"
+            PaymentMethod.VA -> "VIRTUAL ACCOUNT"
         }
         encoder.text(encoder.formatTwoColumns(dateStr, paymentStr, 40) + "\n")
         encoder.text("Pelanggan: ${order.customerName}\n")

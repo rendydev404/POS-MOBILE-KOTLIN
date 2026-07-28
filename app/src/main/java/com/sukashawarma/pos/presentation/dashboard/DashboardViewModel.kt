@@ -219,7 +219,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             changeAmount = entity.changeAmount,
             kitchenReceiptPrinted = entity.kitchenReceiptPrinted,
             createdAt = entity.createdAt,
-            isOffline = entity.isPendingSync
+            isOffline = entity.isPendingSync,
+            channel = entity.channel
         )
     }
 
@@ -249,7 +250,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             changeAmount = dto.changeAmount ?: 0.0,
             kitchenReceiptPrinted = dto.kitchenReceiptPrinted ?: false,
             createdAt = parseIsoTimestamp(dto.createdAt),
-            isPendingSync = false
+            isPendingSync = false,
+            channel = dto.channel
         )
     }
 }

@@ -145,7 +145,10 @@ data class CreateOrderPayload(
     @SerializedName("total_amount") val totalAmount: Double,
     @SerializedName("amount_received") val amountReceived: Double,
     @SerializedName("change_amount") val changeAmount: Double,
-    @SerializedName("created_at") val createdAt: String
+    @SerializedName("created_at") val createdAt: String,
+    // Food Apps/Website channel this order came in on (null for walk-in/endorse) —
+    // column already read back via OrderDto.channel, so writing it is safe.
+    val channel: String? = null
 )
 
 // ── RPC request/response payloads (rest/v1/rpc/*) ──────────────────────────

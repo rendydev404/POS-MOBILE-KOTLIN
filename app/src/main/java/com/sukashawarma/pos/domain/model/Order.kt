@@ -17,7 +17,8 @@ enum class OrderSource {
 enum class PaymentMethod {
     CASH,
     QRIS,
-    CARD
+    CARD,
+    VA
 }
 
 data class OrderItem(
@@ -47,5 +48,6 @@ data class Order(
     val changeAmount: Double = 0.0,
     val kitchenReceiptPrinted: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
-    val isOffline: Boolean = false
+    val isOffline: Boolean = false,
+    val channel: String? = null
 )

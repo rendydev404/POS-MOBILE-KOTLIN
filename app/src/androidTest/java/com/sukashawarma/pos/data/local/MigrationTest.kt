@@ -39,4 +39,30 @@ class MigrationTest {
         settingsCursor.close()
         db.close()
     }
+
+    @Test
+    fun migrate2To3_preservesExistingLocalOrders() {
+        var db = helper.createDatabase(dbName, 2)
+        db.execSQL(
+            """
+            INSERT INTO local_orders
+                (id, outletId, orderNumber, customerName, status, source, paymentMethod,
+                 itemsJson, subtotal, discountAmount, totalAmount, amountReceived,
+                 changeAmount, kitchenReceiptPrinted, createdAt, isPendingSync)
+            VALUES
+                ('order-1', 'outlet-a', 9001, 'Budi', 'PENDING', 'POS', 'CASH',
+                 '[]', 10000.0, 0.0, 10000.0, 10000.0, 0.0, 0, 1000, 1)
+            """.trimIndent()
+        )
+        db.close()
+
+        db = helper.runMigrationsAndValidate(dbName, 3, true, AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3)
+
+        val cursor = db.query("SELECT COUNT(*), channel FROM local_orders WHERE id = 'order-1'")
+        cursor.moveToFirst()
+        assert(cursor.getInt(0) == 1) { "local_orders row lost during migration" }
+        assert(cursor.isNull(1)) { "channel should default to null for pre-existing rows" }
+        cursor.close()
+        db.close()
+    }
 }

@@ -20,5 +20,6 @@ data class LocalOrderEntity(
     val changeAmount: Double,
     val kitchenReceiptPrinted: Boolean,
     val createdAt: Long,
-    val isPendingSync: Boolean = false
+    val isPendingSync: Boolean = false,
+    val channel: String? = null
 )

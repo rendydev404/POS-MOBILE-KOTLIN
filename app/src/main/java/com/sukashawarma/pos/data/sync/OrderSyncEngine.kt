@@ -42,7 +42,8 @@ class OrderSyncEngine(
                     totalAmount = entity.totalAmount,
                     amountReceived = entity.amountReceived,
                     changeAmount = entity.changeAmount,
-                    createdAt = createdAtIso
+                    createdAt = createdAtIso,
+                    channel = entity.channel
                 )
 
                 val orderRes = api.createOrder(payload)
