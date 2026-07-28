@@ -13,7 +13,7 @@ import java.time.format.DateTimeFormatter
 /**
  * Fase 3: drains `local_orders` rows saved while offline (isPendingSync = true) to
  * Supabase once connectivity is back — the counterpart to the offline fallback in
- * POSManualOrderViewModel.processOrder(). One device syncing at a time is assumed
+ * POSManualOrderViewModel.submitOrder(). One device syncing at a time is assumed
  * (single-cashier-per-outlet-tablet usage), so no cross-device locking is done.
  */
 class OrderSyncEngine(
