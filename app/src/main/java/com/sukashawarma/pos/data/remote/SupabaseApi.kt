@@ -34,10 +34,12 @@ interface SupabaseApi {
         @Query("order") order: String = "sort_order.asc"
     ): Response<List<CategoryDto>>
 
-    // Fetch Menu Items
+    // Fetch Menu Items — select mirrors the union of what KasirMenuClient.tsx and
+    // order-manual/page.tsx request, so one call serves both Manajemen Menu and Pesanan Baru.
     @GET("rest/v1/menu_items")
     suspend fun getMenuItems(
-        @Query("select") select: String = "*",
+        @Query("select") select: String =
+            "*, categories(id,name,sort_order), package_items:menu_packages!package_id(id, menu_item_id, or_menu_item_id, quantity)",
         @Query("order") order: String = "sort_order.asc"
     ): Response<List<MenuItemDto>>
 
@@ -46,6 +48,25 @@ interface SupabaseApi {
     suspend fun updateMenuItemAvailability(
         @Query("id") itemIdFilter: String,
         @Body patch: Map<String, Boolean>
+    ): Response<Void>
+
+    // kiosk_settings rows relevant to one outlet: its own, PUSAT's, and the global
+    // (outlet_id IS NULL) row — mirrors the `.or(...)` filter both web pages use.
+    @GET("rest/v1/kiosk_settings")
+    suspend fun getKioskSettings(
+        @Query("or") orFilter: String,
+        @Query("key") keyFilter: String =
+            "in.(bestseller_ids,upsell_ids,unavailable_menu_ids,auto_unavailable_menu_ids,force_available_menu_ids,recommendation_ids)",
+        @Query("select") select: String = "key,value,outlet_id"
+    ): Response<List<KioskSettingDto>>
+
+    // Upsert one kiosk_settings row (bestseller/upsell/recommendation/unavailable/etc. list for
+    // one outlet+key). Contract only in sub-project A — B is the first caller.
+    @Headers("Prefer: resolution=merge-duplicates")
+    @POST("rest/v1/kiosk_settings")
+    suspend fun upsertKioskSetting(
+        @Query("on_conflict") onConflict: String = "outlet_id,key",
+        @Body payload: UpsertKioskSettingPayload
     ): Response<Void>
 
     // Fetch Active Promos for Outlet

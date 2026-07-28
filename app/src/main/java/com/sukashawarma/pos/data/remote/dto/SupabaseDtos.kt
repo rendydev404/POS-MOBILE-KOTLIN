@@ -30,12 +30,43 @@ data class CategoryDto(
 data class MenuItemDto(
     val id: String,
     @SerializedName("category_id") val categoryId: String?,
+    @SerializedName("outlet_id") val outletId: String?,
     val name: String,
     val description: String?,
     val price: Double,
+    @SerializedName("strike_price") val strikePrice: Double?,
+    @SerializedName("channel_prices") val channelPrices: Map<String, Double>?,
     @SerializedName("image_url") val imageUrl: String?,
     @SerializedName("is_available") val isAvailable: Boolean?,
-    @SerializedName("sort_order") val sortOrder: Int?
+    @SerializedName("is_available_online") val isAvailableOnline: Boolean?,
+    @SerializedName("available_online_channels") val availableOnlineChannels: List<String>?,
+    @SerializedName("sort_order") val sortOrder: Int?,
+    // Optional in the response — older rows may not have it, so callers fall back to 10.
+    @SerializedName("prep_time") val prepTime: Int?,
+    @SerializedName("is_package") val isPackage: Boolean?,
+    @SerializedName("package_items") val packageItems: List<PackageItemDto>?,
+    val categories: CategoryDto?
+)
+
+data class PackageItemDto(
+    val id: String,
+    @SerializedName("menu_item_id") val menuItemId: String,
+    @SerializedName("or_menu_item_id") val orMenuItemId: String?,
+    val quantity: Int
+)
+
+/** Row of `kiosk_settings` — see MenuRules.resolveSetting() for the precedence this feeds. */
+data class KioskSettingDto(
+    val key: String,
+    val value: String?,
+    @SerializedName("outlet_id") val outletId: String?
+)
+
+/** Body for upserting one `kiosk_settings` row — same shape web sends (KasirMenuClient.tsx:257). */
+data class UpsertKioskSettingPayload(
+    @SerializedName("outlet_id") val outletId: String?,
+    val key: String,
+    val value: String
 )
 
 data class PromoDto(
