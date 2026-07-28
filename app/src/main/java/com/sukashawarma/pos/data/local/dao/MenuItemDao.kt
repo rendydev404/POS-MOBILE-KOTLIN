@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import com.sukashawarma.pos.data.local.entity.LocalKioskSettingEntity
 import com.sukashawarma.pos.data.local.entity.LocalMenuItemEntity
 import com.sukashawarma.pos.data.local.entity.SyncQueueEntity
 import kotlinx.coroutines.flow.Flow
@@ -18,6 +19,15 @@ interface MenuItemDao {
 
     @Query("DELETE FROM local_menu_items")
     suspend fun clearMenuItems()
+}
+
+@Dao
+interface KioskSettingDao {
+    @Query("SELECT * FROM local_kiosk_settings")
+    fun getAllSettings(): Flow<List<LocalKioskSettingEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(settings: List<LocalKioskSettingEntity>)
 }
 
 @Dao
