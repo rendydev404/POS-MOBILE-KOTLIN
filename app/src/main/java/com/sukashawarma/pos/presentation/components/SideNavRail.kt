@@ -70,27 +70,25 @@ fun SideNavRail(
                     .padding(vertical = 12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Surface(
-                    modifier = Modifier.size(52.dp),
-                    shape = CircleShape,
-                    color = ShawarmaOrangeLight,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, ShawarmaOrange)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text("SS", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = ShawarmaOrange)
-                    }
-                }
-                Spacer(modifier = Modifier.height(6.dp))
+                androidx.compose.foundation.Image(
+                    painter = androidx.compose.ui.res.painterResource(id = com.sukashawarma.pos.R.mipmap.ic_launcher),
+                    contentDescription = "Logo",
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(CircleShape)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "SHAWARMA",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = TextDarkPrimary
+                    fontWeight = FontWeight.ExtraBold,
+                    color = TextDarkPrimary,
+                    letterSpacing = 1.sp
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
-                            .size(8.dp)
+                            .size(6.dp)
                             .clip(CircleShape)
                             .background(StatusCompleted)
                     )
@@ -100,9 +98,11 @@ fun SideNavRail(
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Bold,
                         color = StatusCompleted,
-                        fontSize = 10.sp
+                        fontSize = 10.sp,
+                        letterSpacing = 0.5.sp
                     )
                 }
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = "CABANG $outletName",
                     style = MaterialTheme.typography.bodySmall,
@@ -295,17 +295,17 @@ private fun SidebarItem(
         color = bgColor
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(10.dp))
+                Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(12.dp))
                 Text(
                     text = label,
                     style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                     color = contentColor
                 )
             }

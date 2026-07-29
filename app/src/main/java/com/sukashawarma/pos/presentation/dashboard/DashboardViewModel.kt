@@ -28,7 +28,6 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private val printReceiptUseCase = PrintReceiptUseCase()
     val printerManager = BluetoothPrinterManager()
     private val alertPlayer = OrderAlertPlayer(application)
-    private val realtimeManager = OrderRealtimeManager(SupabaseClient.okHttpClient, viewModelScope)
     private val syncEngine = OrderSyncEngine(orderDao, api)
 
     val currentOutletId = MutableStateFlow("")
@@ -66,19 +65,20 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     init {
-        realtimeManager.onConnectionState = { connected -> isRealtimeConnected.value = connected }
-        realtimeManager.onChange = { eventType, record ->
-            val recordOutletId = record.optString("outlet_id")
-            val recordSource = record.optString("source", "pos")
-            if (recordOutletId == currentOutletId.value) {
-                viewModelScope.launch { syncOrdersFromServer(currentOutletId.value) }
-                if (eventType == "INSERT" && recordSource.lowercase() != "pos") {
-                    alertPlayer.playNewOrderAlert()
-                }
+        viewModelScope.launch {
+            com.sukashawarma.pos.data.remote.GlobalEventBus.isRealtimeConnected.collect { connected ->
+                isRealtimeConnected.value = connected
+            }
+        }
+        viewModelScope.launch {
+            com.sukashawarma.pos.data.remote.GlobalEventBus.orderSyncEvent.collect {
+                syncOrdersFromServer(currentOutletId.value)
             }
         }
         startPeriodicSyncLoop()
     }
+
+    // showLocalNotification removed, handled by POSRealtimeService in background
 
     /** Call once right after login (and again on outlet switch) to scope everything to this outlet. */
     fun setSession(outletId: String, outletName: String, cashierName: String) {
@@ -90,7 +90,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             trySyncPendingOrders(outletId)
             syncOrdersFromServer(outletId)
         }
-        realtimeManager.connect(outletId)
+        com.sukashawarma.pos.data.remote.realtime.POSRealtimeService.start(getApplication(), outletId)
     }
 
     /** Fase 3: drains any orders saved locally while offline, then refreshes from the server. */
@@ -117,14 +117,15 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     override fun onCleared() {
         super.onCleared()
-        realtimeManager.disconnect()
+        // Service handles background connection independently now,
+        // no need to disconnect when ViewModel clears.
     }
 
     /** Pulls this outlet's orders (with line items) from Supabase and mirrors them into Room. */
     suspend fun syncOrdersFromServer(outletId: String) {
         if (outletId.isBlank()) return
         try {
-            val res = api.getOrders("eq.$outletId")
+            val res = api.getOrders(mapOf("outlet_id" to "eq.$outletId"))
             if (res.isSuccessful && res.body() != null) {
                 val dtos = res.body()!!
                 dtos.forEach { dto -> orderDao.insertOrder(dtoToEntity(dto)) }

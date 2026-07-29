@@ -66,6 +66,8 @@ class MainActivity : ComponentActivity() {
                     activeSession?.let { session ->
                         dashboardViewModel.setSession(session.outletId, session.outletName, session.username)
                         posManualOrderViewModel.currentOutletId.value = session.outletId
+                        posManualOrderViewModel.currentOutletName.value = session.outletName
+                        posManualOrderViewModel.currentUsername.value = session.username
                         menuManagementViewModel.setOutlet(session.outletId)
                         orderHistoryViewModel.setOutlet(session.outletId)
                         shiftViewModel.setOutlet(session.outletId)
@@ -109,21 +111,28 @@ class MainActivity : ComponentActivity() {
                                 .weight(1f)
                                 .background(CreamBackground)
                         ) {
-                            when (currentTab) {
-                                POSTab.DASHBOARD -> DashboardScreen(
-                                    viewModel = dashboardViewModel,
-                                    onNewOrderClick = { currentTab = POSTab.ORDER_MANUAL }
-                                )
-                                POSTab.ORDER_MANUAL -> POSManualOrderScreen(viewModel = posManualOrderViewModel)
-                                POSTab.INFO_PORSI -> InfoPorsiScreen(viewModel = infoPorsiViewModel)
-                                POSTab.MENU_MANAGEMENT -> MenuManagementScreen(viewModel = menuManagementViewModel)
-                                POSTab.SHIFT_PETTY_CASH, POSTab.SHIFT_CLOSE -> ShiftScreen(viewModel = shiftViewModel)
-                                POSTab.HISTORI_BONUS -> OrderHistoryScreen(viewModel = orderHistoryViewModel)
-                                POSTab.KIOSK_CONTROL -> SettingsScreen(viewModel = settingsViewModel)
-                                POSTab.REPORTS -> ReportsScreen(viewModel = reportsViewModel)
-                                POSTab.SETTINGS -> SettingsScreen(viewModel = settingsViewModel)
-                                POSTab.PANDUAN -> SettingsScreen(viewModel = settingsViewModel)
-                                POSTab.STOK_OUTLET -> MenuManagementScreen(viewModel = menuManagementViewModel)
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                // Admin Rules & Target Banner
+                                com.sukashawarma.pos.presentation.components.BriefingBanner(outletId = session.outletId)
+                                
+                                Box(modifier = Modifier.weight(1f)) {
+                                    when (currentTab) {
+                                        POSTab.DASHBOARD -> DashboardScreen(
+                                            viewModel = dashboardViewModel,
+                                            onNewOrderClick = { currentTab = POSTab.ORDER_MANUAL }
+                                        )
+                                        POSTab.ORDER_MANUAL -> POSManualOrderScreen(viewModel = posManualOrderViewModel)
+                                        POSTab.INFO_PORSI -> InfoPorsiScreen(viewModel = infoPorsiViewModel)
+                                        POSTab.MENU_MANAGEMENT -> MenuManagementScreen(viewModel = menuManagementViewModel)
+                                        POSTab.SHIFT_PETTY_CASH, POSTab.SHIFT_CLOSE -> ShiftScreen(viewModel = shiftViewModel)
+                                        POSTab.HISTORI_BONUS -> OrderHistoryScreen(viewModel = orderHistoryViewModel)
+                                        POSTab.KIOSK_CONTROL -> SettingsScreen(viewModel = settingsViewModel)
+                                        POSTab.REPORTS -> ReportsScreen(viewModel = reportsViewModel)
+                                        POSTab.SETTINGS -> SettingsScreen(viewModel = settingsViewModel)
+                                        POSTab.PANDUAN -> SettingsScreen(viewModel = settingsViewModel)
+                                        POSTab.STOK_OUTLET -> MenuManagementScreen(viewModel = menuManagementViewModel)
+                                    }
+                                }
                             }
                         }
                     }

@@ -32,7 +32,7 @@ class OrderRealtimeManager(
     private val refCounter = AtomicInteger(1)
     private val topic get() = "realtime:public:orders"
 
-    var onChange: ((eventType: String, orderJson: JSONObject) -> Unit)? = null
+    var onChange: ((table: String, eventType: String, record: JSONObject) -> Unit)? = null
     var onConnectionState: ((connected: Boolean) -> Unit)? = null
 
     fun connect(outletId: String) {
@@ -72,14 +72,25 @@ class OrderRealtimeManager(
             put("event", "phx_join")
             put("payload", JSONObject().apply {
                 put("config", JSONObject().apply {
-                    put("postgres_changes", org.json.JSONArray().put(
-                        JSONObject().apply {
+                    put("postgres_changes", org.json.JSONArray().apply {
+                        put(JSONObject().apply {
                             put("event", "*")
                             put("schema", "public")
                             put("table", "orders")
                             put("filter", "outlet_id=eq.$outletId")
-                        }
-                    ))
+                        })
+                        put(JSONObject().apply {
+                            put("event", "*")
+                            put("schema", "public")
+                            put("table", "owner_messages")
+                            // No filter so we can get global messages or outlet specific
+                        })
+                        put(JSONObject().apply {
+                            put("event", "*")
+                            put("schema", "public")
+                            put("table", "daily_sales_targets")
+                        })
+                    })
                 })
                 put("access_token", SessionTokenHolder.accessToken ?: BuildConfig.SUPABASE_ANON_KEY)
             })
@@ -118,8 +129,9 @@ class OrderRealtimeManager(
             val payload = json.optJSONObject("payload") ?: return
             val data = payload.optJSONObject("data") ?: return
             val eventType = data.optString("type") // INSERT | UPDATE | DELETE
-            val record = data.optJSONObject("record") ?: return
-            onChange?.invoke(eventType, record)
+            val record = data.optJSONObject("record") ?: data.optJSONObject("old_record") ?: JSONObject()
+            val table = data.optString("table")
+            onChange?.invoke(table, eventType, record)
         } catch (_: Exception) {
             // Malformed/unrelated frame (e.g. phx_reply) — ignore.
         }

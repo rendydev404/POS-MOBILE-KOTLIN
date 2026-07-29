@@ -94,10 +94,10 @@ interface SupabaseApi {
         @Query("select") select: String = "*"
     ): Response<List<PromoDto>>
 
-    // Fetch Orders with Items for Outlet
+    // Fetch Orders with Items for Outlet (with flexible filters like date ranges)
     @GET("rest/v1/orders")
     suspend fun getOrders(
-        @Query("outlet_id") outletIdFilter: String,
+        @QueryMap filters: Map<String, String>,
         @Query("select") select: String = "*,order_items(*)",
         @Query("order") order: String = "created_at.desc"
     ): Response<List<OrderDto>>
@@ -136,10 +136,10 @@ interface SupabaseApi {
         @Body file: RequestBody
     ): Response<ResponseBody>
 
-    // Fetch Real Shifts from Supabase
+    // Fetch Real Shifts from Supabase (with flexible filters)
     @GET("rest/v1/shifts")
     suspend fun getShifts(
-        @Query("outlet_id") outletIdFilter: String,
+        @QueryMap filters: Map<String, String>,
         @Query("select") select: String = "*",
         @Query("order") order: String = "start_time.desc"
     ): Response<List<ShiftDto>>
@@ -179,4 +179,26 @@ interface SupabaseApi {
         @Query("on_conflict") onConflict: String = "staff_id,token",
         @Body payload: UpsertFcmTokenPayload
     ): Response<Void>
+
+    @GET("rest/v1/petty_cash_topups")
+    suspend fun getPettyCashTopups(
+        @QueryMap filters: Map<String, String>,
+        @Query("select") select: String = "*",
+        @Query("order") order: String = "created_at.desc"
+    ): Response<List<PettyCashTopupDto>>
+
+    @POST("rest/v1/rpc/void_petty_cash_expense")
+    suspend fun voidPettyCashExpense(@Body payload: VoidPettyCashPayload): Response<Void>
+
+    @POST("rest/v1/rpc/crew_receive_funds")
+    suspend fun crewReceiveFunds(@Body payload: ReceiveFundsPayload): Response<Void>
+
+    @POST("rest/v1/rpc/calculate_monthly_crew_bonus")
+    suspend fun calculateMonthlyCrewBonus(@Body payload: MonthlyBonusPayload): Response<List<MonthlyBonusResultDto>>
+
+    @POST("rest/v1/rpc/get_daily_bonus_breakdown")
+    suspend fun getDailyBonusBreakdown(@Body payload: MonthlyBonusPayload): Response<List<DailyBonusBreakdownDto>>
+
+    @POST("rest/v1/rpc/get_my_active_messages")
+    suspend fun getMyActiveMessages(@Body payload: Map<String, String> = emptyMap()): Response<List<OwnerMessageDto>>
 }

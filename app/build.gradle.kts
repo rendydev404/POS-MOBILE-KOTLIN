@@ -92,6 +92,9 @@ dependencies {
     // Firebase Cloud Messaging (push notifications for background/killed-app orders)
     implementation(platform("com.google.firebase:firebase-bom:33.1.2"))
     implementation("com.google.firebase:firebase-messaging-ktx")
+    
+    // Confetti Animation
+    implementation("nl.dionsegijn:konfetti-compose:2.0.4")
 
     // Testing
     testImplementation("junit:junit:4.13.2")

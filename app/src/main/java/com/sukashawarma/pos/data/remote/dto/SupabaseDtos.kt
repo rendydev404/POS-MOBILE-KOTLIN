@@ -128,7 +128,8 @@ data class PettyCashExpenseDto(
     val amount: Double,
     val description: String?,
     @SerializedName("expense_date") val expenseDate: String?,
-    @SerializedName("receipt_url") val receiptUrl: String?
+    @SerializedName("receipt_url") val receiptUrl: String?,
+    val status: String? = null
 )
 
 // Mirrors the real `orders` table columns. order_number is assigned server-side by
@@ -200,4 +201,76 @@ data class CreateOrderItemPayload(
     val quantity: Int,
     @SerializedName("unit_price") val unitPrice: Double,
     val subtotal: Double
+)
+
+data class VoidPettyCashPayload(
+    @SerializedName("p_expense_id") val expenseId: String,
+    @SerializedName("p_reason") val reason: String
+)
+
+data class ReceiveFundsPayload(
+    @SerializedName("p_topup_id") val topupId: String
+)
+
+data class PettyCashTopupDto(
+    val id: String,
+    @SerializedName("outlet_id") val outletId: String,
+    val amount: Double,
+    val status: String,
+    @SerializedName("approval_token") val approvalToken: String?,
+    @SerializedName("created_at") val createdAt: String
+)
+
+data class MonthlyBonusPayload(
+    @SerializedName("p_month") val month: Int,
+    @SerializedName("p_year") val year: Int,
+    @SerializedName("p_outlet_id") val outletId: String
+)
+
+data class MonthlyBonusResultDto(
+    @SerializedName("total_bonus") val totalBonus: Double,
+    @SerializedName("bonus_per_crew") val bonusPerCrew: Double,
+    @SerializedName("crew_count") val crewCount: Int,
+    @SerializedName("days_achieved") val daysAchieved: Int
+)
+
+data class DailyBonusBreakdownDto(
+    @SerializedName("order_date") val date: String? = "",
+    @SerializedName("daily_sales") val dailySales: Double = 0.0,
+    @SerializedName("target_amount") val targetAmount: Double = 0.0,
+    @SerializedName("is_reached") val isReached: Boolean = false,
+    @SerializedName("additional_items") val additionalItems: Int = 0,
+    @SerializedName("per_item_bonus") val perItemBonus: Double = 0.0
+) {
+    val bonusAmount: Double
+        get() = if (isReached) (additionalItems * perItemBonus) else 0.0
+}
+
+data class ReportOrderDto(
+    val id: String,
+    @SerializedName("outlet_id") val outletId: String,
+    @SerializedName("order_number") val orderNumber: Int,
+    @SerializedName("customer_name") val customerName: String?,
+    val status: String,
+    val source: String,
+    @SerializedName("payment_method") val paymentMethod: String?,
+    @SerializedName("discount_amount") val discountAmount: Double?,
+    @SerializedName("promo_subsidy") val promoSubsidy: Double?,
+    @SerializedName("total_amount") val totalAmount: Double,
+    @SerializedName("amount_received") val amountReceived: Double?,
+    @SerializedName("change_amount") val changeAmount: Double?,
+    @SerializedName("kitchen_receipt_printed") val kitchenReceiptPrinted: Boolean?,
+    @SerializedName("created_at") val createdAt: String,
+    val channel: String?,
+    @SerializedName("sales_source") val salesSource: String?,
+    @SerializedName("order_items") val orderItems: List<OrderItemDto>?
+)
+
+data class OwnerMessageDto(
+    val id: String,
+    val kind: String,
+    val title: String?,
+    val body: String,
+    @SerializedName("created_at") val createdAt: String,
+    @SerializedName("expires_at") val expiresAt: String?
 )

@@ -8,7 +8,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.EmojiEvents
-import androidx.compose.material.icons.filled.MonetizationOn
+import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -18,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import com.sukashawarma.pos.presentation.theme.*
 
 @Composable
@@ -32,6 +35,11 @@ fun ReportsScreen(
     val cardSales by viewModel.cardSales.collectAsState()
     val targetAmount by viewModel.dailyTargetAmount.collectAsState()
     val crewBonusList by viewModel.crewBonusList.collectAsState()
+    
+    val bestSellers by viewModel.bestSellers.collectAsState()
+    val hourlySales by viewModel.hourlySales.collectAsState()
+    
+    val context = LocalContext.current
 
     Row(
         modifier = modifier
@@ -39,14 +47,14 @@ fun ReportsScreen(
             .padding(12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // LEFT 50%: Daily Sales Summary Report
+        // LEFT: Daily Sales Summary Report
         Surface(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight(),
             shape = RoundedCornerShape(12.dp),
-            color = SlateSurface,
-            border = androidx.compose.foundation.BorderStroke(1.dp, SlateBorder)
+            color = CreamSurface,
+            border = androidx.compose.foundation.BorderStroke(1.dp, CreamBorder)
         ) {
             Column(
                 modifier = Modifier
@@ -54,40 +62,55 @@ fun ReportsScreen(
                     .padding(16.dp)
             ) {
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Default.Assessment, contentDescription = null, tint = AmberPrimary)
-                    Text(
-                        text = "Laporan Penjualan Hari Ini",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.Assessment, contentDescription = null, tint = ShawarmaOrange)
+                        Text(
+                            text = "Laporan Penjualan Hari Ini",
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = TextDarkPrimary
+                        )
+                    }
+                    
+                    Button(
+                        onClick = { viewModel.exportToPdf(context) },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.8f))
+                    ) {
+                        Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Export PDF")
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
-                Divider(color = SlateBorder)
+                HorizontalDivider(color = CreamBorder)
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // Summary Cards
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),
-                    color = SlateCard
+                    color = CreamBackground
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text("TOTAL OMSET PENJUALAN", style = MaterialTheme.typography.bodyMedium, color = TextMuted)
+                        Text("TOTAL OMSET PENJUALAN", style = MaterialTheme.typography.bodyMedium, color = TextDarkSecondary)
                         Text(
                             text = "Rp ${String.format("%,.0f", totalRevenue)}",
                             style = MaterialTheme.typography.headlineLarge,
-                            color = AmberPrimary,
+                            color = ShawarmaOrange,
                             fontWeight = FontWeight.Bold
                         )
-                        Text("Total Order: $ordersCount Pesanan Lunas", style = MaterialTheme.typography.bodyLarge, color = TextSecondary)
+                        Text("Total Order: $ordersCount Pesanan Lunas", style = MaterialTheme.typography.bodyLarge, color = TextDarkMuted)
                     }
                 }
 
@@ -98,60 +121,120 @@ fun ReportsScreen(
                 ReportRow("Pembayaran Card/EDC", "Rp ${String.format("%,.0f", cardSales)}")
 
                 Spacer(modifier = Modifier.height(12.dp))
-                Divider(color = SlateBorder)
+                HorizontalDivider(color = CreamBorder)
                 Spacer(modifier = Modifier.height(12.dp))
 
                 ReportRow("Target Omset Harian", "Rp ${String.format("%,.0f", targetAmount)}")
                 val isTargetAchieved = totalRevenue >= targetAmount
                 val targetStatus = if (isTargetAchieved) "TARGET TERCAPAI! 🎉" else "BELUM TERCAPAI"
-                val targetColor = if (isTargetAchieved) StatusCompleted else StatusPending
+                val targetColor = if (isTargetAchieved) StatusCompleted else TextDarkSecondary
                 ReportRow("Status Target Harian", targetStatus, color = targetColor)
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider(color = CreamBorder)
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                // Best Sellers
+                Text("Top 5 Menu Terlaris", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(8.dp))
+                bestSellers.forEach { (name, qty) ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row {
+                            Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFFFFD700), modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(name, style = MaterialTheme.typography.bodyMedium)
+                        }
+                        Text("$qty Terjual", fontWeight = FontWeight.Bold)
+                    }
+                }
             }
         }
 
-        // RIGHT 50%: Crew Bonus Distribution Calculator
+        // RIGHT: Hourly Trend and Crew Bonus Distribution
         Surface(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight(),
             shape = RoundedCornerShape(12.dp),
-            color = SlateSurface,
-            border = androidx.compose.foundation.BorderStroke(1.dp, SlateBorder)
+            color = CreamSurface,
+            border = androidx.compose.foundation.BorderStroke(1.dp, CreamBorder)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(16.dp)
             ) {
+                // Hourly Trend 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.Default.EmojiEvents, contentDescription = null, tint = AmberPrimary)
+                    Icon(Icons.Default.TrendingUp, contentDescription = null, tint = ShawarmaOrange)
+                    Text(
+                        text = "Tren Penjualan Per Jam",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = TextDarkPrimary
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(hourlySales.toList()) { (hour, amount) ->
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp),
+                            color = CreamBackground
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("$hour:00", fontWeight = FontWeight.Bold, color = TextDarkSecondary)
+                                Text("Rp ${String.format("%,.0f", amount)}", fontWeight = FontWeight.Bold, color = ShawarmaOrange)
+                            }
+                        }
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider(color = CreamBorder)
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Default.EmojiEvents, contentDescription = null, tint = ShawarmaOrange)
                     Text(
                         text = "Kalkulasi Bonus Crew Outlet",
-                        style = MaterialTheme.typography.headlineMedium,
+                        style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = TextPrimary
+                        color = TextDarkPrimary
                     )
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
-                Divider(color = SlateBorder)
                 Spacer(modifier = Modifier.height(12.dp))
 
-                Text("Pembagian Rata Bonus Bulanan per Staff Crew:", style = MaterialTheme.typography.titleMedium, color = TextSecondary)
+                Text("Pembagian Rata Bonus Bulanan per Staff Crew:", style = MaterialTheme.typography.titleMedium, color = TextDarkSecondary)
                 Spacer(modifier = Modifier.height(12.dp))
 
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(crewBonusList) { crew ->
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(8.dp),
-                            color = SlateCard
+                            color = CreamBackground
                         ) {
                             Row(
                                 modifier = Modifier
@@ -161,8 +244,8 @@ fun ReportsScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column {
-                                    Text(text = crew.crewName, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-                                    Text(text = "Target Tercapai: ${crew.daysTargetAchieved} Hari", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                                    Text(text = crew.crewName, style = MaterialTheme.typography.titleMedium, color = TextDarkPrimary)
+                                    Text(text = "Target Tercapai: ${crew.daysTargetAchieved} Hari", style = MaterialTheme.typography.bodyMedium, color = TextDarkSecondary)
                                 }
 
                                 Text(
@@ -184,7 +267,7 @@ fun ReportsScreen(
 private fun ReportRow(
     label: String,
     value: String,
-    color: Color = TextPrimary
+    color: Color = TextDarkPrimary
 ) {
     Row(
         modifier = Modifier
@@ -192,7 +275,7 @@ private fun ReportRow(
             .padding(vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(text = label, style = MaterialTheme.typography.bodyLarge, color = TextSecondary)
+        Text(text = label, style = MaterialTheme.typography.bodyLarge, color = TextDarkSecondary)
         Text(text = value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = color)
     }
 }

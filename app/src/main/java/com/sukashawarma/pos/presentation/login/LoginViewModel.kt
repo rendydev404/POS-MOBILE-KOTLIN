@@ -118,7 +118,7 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
         isLoading.value = true
         errorMessage.value = null
 
-        val email = if (user.contains("@")) user else ""
+        val email = if (user.contains("@")) user else "$user$LOGIN_EMAIL_DOMAIN"
 
         viewModelScope.launch {
             try {

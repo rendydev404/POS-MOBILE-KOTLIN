@@ -47,34 +47,6 @@ fun DashboardScreen(
             .fillMaxSize()
             .background(CreamBackground)
     ) {
-        // 1. Top Banner 1: TARGET HARI INI Progress Bar (Matching Screenshot)
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(36.dp),
-            color = TargetPink
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Cancel, contentDescription = null, tint = MarqueeRed, modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("TARGET HARI INI", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = MarqueeRed)
-                }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Rp ${String.format("%,.0f", totalLunasToday)} / Rp 5 Jt", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = TextDarkPrimary)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    val pct = if (totalLunasToday > 0) ((totalLunasToday / 5000000.0) * 100).toInt() else 0
-                    Text("$pct%", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = MarqueeRed)
-                }
-            }
-        }
 
         // 2. Top Banner 2: STOK KRITIS / HABIS Red Marquee (Matching Screenshot)
         Surface(
@@ -328,16 +300,16 @@ private fun BoardColumn(
     Surface(
         modifier = modifier.fillMaxHeight(),
         shape = RoundedCornerShape(12.dp),
-        color = CreamSurface,
+        color = TwGray50,
         border = androidx.compose.foundation.BorderStroke(1.dp, CreamBorder)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(14.dp)
+                .padding(12.dp)
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -367,12 +339,12 @@ private fun BoardColumn(
             }
 
             if (hasSubTabs) {
-                Spacer(modifier = Modifier.height(10.dp))
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(CreamBackground, RoundedCornerShape(8.dp))
-                        .padding(3.dp)
+                        .padding(bottom = 12.dp)
+                        .background(CreamBorder, RoundedCornerShape(8.dp))
+                        .padding(4.dp)
                 ) {
                     listOf("Antrean", "Terjadwal").forEach { tab ->
                         val isSelected = subTabState == tab
@@ -397,15 +369,19 @@ private fun BoardColumn(
             }
 
             if (hasSearchBar) {
-                Spacer(modifier = Modifier.height(10.dp))
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = onSearchQueryChange,
                     placeholder = { Text("Cari antrian...", fontSize = 12.sp) },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
                     shape = RoundedCornerShape(8.dp),
-                    singleLine = true
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = Color.White,
+                        unfocusedContainerColor = Color.White,
+                        unfocusedBorderColor = CreamBorder
+                    )
                 )
             }
 

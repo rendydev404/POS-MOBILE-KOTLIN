@@ -1,14 +1,20 @@
 package com.sukashawarma.pos.presentation.shift
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountBalanceWallet
-import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.LockClock
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material3.*
@@ -16,11 +22,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.sukashawarma.pos.presentation.theme.*
@@ -40,10 +48,23 @@ fun ShiftScreen(
     val pettyCashDescription by viewModel.pettyCashDescription.collectAsState()
     val pettyCashAmount by viewModel.pettyCashAmount.collectAsState()
     val pettyCashHistory by viewModel.pettyCashHistory.collectAsState()
-    val shiftsHistory by viewModel.shiftsHistory.collectAsState()
+    val topupsHistory by viewModel.topupsHistory.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val lastCloseVariance by viewModel.lastCloseVariance.collectAsState()
+
+    var selectedTab by remember { mutableStateOf(0) } // 0 = Pengeluaran, 1 = Topup
+
+    // Photo picker for petty cash receipt
+    var receiptBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    val context = LocalContext.current
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        uri?.let {
+            val inputStream = context.contentResolver.openInputStream(it)
+            val bitmap = BitmapFactory.decodeStream(inputStream)
+            receiptBitmap = bitmap
+        }
+    }
 
     Row(
         modifier = modifier
@@ -102,7 +123,6 @@ fun ShiftScreen(
                                 color = if (isShiftOpen) StatusCompleted else StatusPending
                             )
                         }
-
                     }
                 }
 
@@ -196,7 +216,7 @@ fun ShiftScreen(
             }
         }
 
-        // RIGHT 50%: Live Petty Cash Expenses & Shift History from Supabase
+        // RIGHT 50%: Ledger Tabs (Pengeluaran & Topup)
         Surface(
             modifier = Modifier
                 .weight(1f)
@@ -210,134 +230,263 @@ fun ShiftScreen(
                     .fillMaxSize()
                     .padding(16.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                TabRow(
+                    selectedTabIndex = selectedTab,
+                    containerColor = Color.Transparent,
+                    contentColor = AmberPrimary
                 ) {
-                    Icon(Icons.Default.Receipt, contentDescription = null, tint = AmberPrimary)
-                    Text(
-                        text = "Riwayat Kas Kecil & Struk Supabase",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
+                    Tab(
+                        selected = selectedTab == 0,
+                        onClick = { selectedTab = 0 },
+                        text = { Text("Pengeluaran Kasir", fontWeight = FontWeight.Bold) }
+                    )
+                    Tab(
+                        selected = selectedTab == 1,
+                        onClick = { selectedTab = 1 },
+                        text = { Text("Modal Tambahan (Topup)", fontWeight = FontWeight.Bold) }
                     )
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Form Tambah Pengeluaran Kas Kecil
-                OutlinedTextField(
-                    value = pettyCashDescription,
-                    onValueChange = { viewModel.pettyCashDescription.value = it },
-                    label = { Text("Keterangan (mis. Beli Es Batu)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    singleLine = true
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(
-                        value = pettyCashAmount,
-                        onValueChange = { viewModel.pettyCashAmount.value = it },
-                        label = { Text("Nominal (Rp)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(10.dp),
-                        singleLine = true
-                    )
+                if (selectedTab == 0) {
+                    // Pengeluaran Kasir Tab
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        // Form Kiri (Deskripsi & Nominal)
+                        Column(modifier = Modifier.weight(1f)) {
+                            OutlinedTextField(
+                                value = pettyCashDescription,
+                                onValueChange = { viewModel.pettyCashDescription.value = it },
+                                label = { Text("Keterangan (mis. Beli Es Batu)") },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp),
+                                singleLine = true
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = pettyCashAmount,
+                                onValueChange = { viewModel.pettyCashAmount.value = it },
+                                label = { Text("Nominal (Rp)") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp),
+                                singleLine = true
+                            )
+                        }
+                        
+                        // Foto Struk Upload Kanan
+                        Surface(
+                            modifier = Modifier
+                                .weight(0.5f)
+                                .height(134.dp)
+                                .clickable { imagePicker.launch("image/*") },
+                            shape = RoundedCornerShape(10.dp),
+                            color = SlateCard,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, SlateBorder)
+                        ) {
+                            if (receiptBitmap != null) {
+                                Box(modifier = Modifier.fillMaxSize()) {
+                                    androidx.compose.foundation.Image(
+                                        bitmap = receiptBitmap!!.asImageBitmap(),
+                                        contentDescription = "Struk",
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                    IconButton(
+                                        onClick = { receiptBitmap = null },
+                                        modifier = Modifier.align(Alignment.TopEnd)
+                                    ) {
+                                        Icon(Icons.Default.Close, contentDescription = "Hapus", tint = Color.Red)
+                                    }
+                                }
+                            } else {
+                                Column(
+                                    modifier = Modifier.fillMaxSize(),
+                                    verticalArrangement = Arrangement.Center,
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Icon(Icons.Default.CameraAlt, contentDescription = null, tint = TextMuted)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("Upload Struk", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
                     Button(
-                        onClick = { viewModel.addPettyCashExpense() },
+                        onClick = { 
+                            viewModel.addPettyCashExpense(receiptBitmap) 
+                            receiptBitmap = null
+                        },
                         enabled = !isLoading,
-                        modifier = Modifier.height(56.dp),
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = AmberPrimary),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text("CATAT", color = SlateBackground, fontWeight = FontWeight.Bold)
+                        Text("CATAT PENGELUARAN", color = SlateBackground, fontWeight = FontWeight.Bold)
                     }
-                }
 
-                Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider(color = SlateBorder)
-                Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
+                    HorizontalDivider(color = SlateBorder)
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                if (isLoading) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = AmberPrimary)
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        items(pettyCashHistory) { item ->
-                            Surface(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(10.dp),
-                                color = SlateCard
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(12.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                    if (isLoading) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = AmberPrimary)
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            items(pettyCashHistory) { item ->
+                                val isVoided = item.status == "voided"
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = SlateCard
                                 ) {
                                     Row(
-                                        modifier = Modifier.weight(1f),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(12.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        // Real Receipt Image from Supabase Storage CDN
-                                        if (!item.receiptUrl.isNullOrBlank()) {
-                                            AsyncImage(
-                                                model = ImageRequest.Builder(LocalContext.current)
-                                                    .data(item.receiptUrl)
-                                                    .crossfade(true)
-                                                    .build(),
-                                                contentDescription = item.description,
-                                                contentScale = ContentScale.Crop,
-                                                modifier = Modifier
-                                                    .size(60.dp)
-                                                    .background(SlateBorder, RoundedCornerShape(8.dp))
-                                            )
-                                        } else {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(60.dp)
-                                                    .background(SlateBorder, RoundedCornerShape(8.dp)),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Icon(Icons.Default.Receipt, contentDescription = null, tint = TextMuted)
+                                        Row(
+                                            modifier = Modifier.weight(1f),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                        ) {
+                                            if (!item.receiptUrl.isNullOrBlank()) {
+                                                AsyncImage(
+                                                    model = ImageRequest.Builder(LocalContext.current)
+                                                        .data(item.receiptUrl)
+                                                        .crossfade(true)
+                                                        .build(),
+                                                    contentDescription = item.description,
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier
+                                                        .size(60.dp)
+                                                        .background(SlateBorder, RoundedCornerShape(8.dp))
+                                                )
+                                            } else {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(60.dp)
+                                                        .background(SlateBorder, RoundedCornerShape(8.dp)),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(Icons.Default.Receipt, contentDescription = null, tint = TextMuted)
+                                                }
+                                            }
+
+                                            Column {
+                                                Text(
+                                                    text = item.description ?: "Pengeluaran Kas Kecil",
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isVoided) TextMuted else TextPrimary,
+                                                    textDecoration = if (isVoided) androidx.compose.ui.text.style.TextDecoration.LineThrough else null
+                                                )
+                                                Text(
+                                                    text = if (isVoided) "DIBATALKAN" else "Kategori: ${item.category?.uppercase() ?: "OPERASIONAL"}",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = if (isVoided) StatusPending else TextSecondary
+                                                )
                                             }
                                         }
 
-                                        Column {
+                                        Column(horizontalAlignment = Alignment.End) {
                                             Text(
-                                                text = item.description ?: "Pengeluaran Kas Kecil",
+                                                text = "-Rp ${String.format("%,.0f", item.amount)}",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isVoided) TextMuted else StatusPending,
+                                                textDecoration = if (isVoided) androidx.compose.ui.text.style.TextDecoration.LineThrough else null
+                                            )
+                                            if (!isVoided) {
+                                                Text(
+                                                    text = "BATALKAN",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = StatusPending,
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier
+                                                        .clickable { viewModel.voidPettyCash(item.id, "Kesalahan Kasir") }
+                                                        .padding(top = 8.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Topup (Modal Tambahan) Tab
+                    if (isLoading) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = AmberPrimary)
+                        }
+                    } else if (topupsHistory.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("Tidak ada riwayat topup", color = TextMuted)
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            items(topupsHistory) { topup ->
+                                val isPending = topup.status == "pending"
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = if (isPending) AmberPrimary.copy(alpha = 0.1f) else SlateCard,
+                                    border = if (isPending) androidx.compose.foundation.BorderStroke(1.dp, AmberPrimary) else null
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(12.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "Modal Tambahan (Topup)",
                                                 style = MaterialTheme.typography.titleMedium,
                                                 fontWeight = FontWeight.Bold,
                                                 color = TextPrimary
                                             )
                                             Text(
-                                                text = "Kategori: ${item.category?.uppercase() ?: "OPERASIONAL"}",
+                                                text = if (isPending) "Menunggu Diterima Kasir" else "Telah Diterima",
                                                 style = MaterialTheme.typography.bodyMedium,
-                                                color = TextSecondary
+                                                color = if (isPending) AmberPrimary else TextSecondary
                                             )
-                                            item.expenseDate?.let {
-                                                Text(text = "Tgl: $it", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                                        }
+                                        
+                                        Column(horizontalAlignment = Alignment.End) {
+                                            Text(
+                                                text = "+Rp ${String.format("%,.0f", topup.amount)}",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = StatusCompleted
+                                            )
+                                            if (isPending) {
+                                                Spacer(modifier = Modifier.height(8.dp))
+                                                Button(
+                                                    onClick = { viewModel.receiveTopup(topup.id) },
+                                                    colors = ButtonDefaults.buttonColors(containerColor = AmberPrimary),
+                                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                                    modifier = Modifier.height(32.dp)
+                                                ) {
+                                                    Text("TERIMA DANA", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                }
                                             }
                                         }
                                     }
-
-                                    Text(
-                                        text = "-Rp ${String.format("%,.0f", item.amount)}",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = StatusPending
-                                    )
                                 }
                             }
                         }

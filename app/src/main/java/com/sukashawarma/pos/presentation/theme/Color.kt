@@ -7,21 +7,21 @@ val ShawarmaOrange = Color(0xFFE67E22)
 val ShawarmaOrangeDark = Color(0xFFD35400)
 val ShawarmaOrangeLight = Color(0xFFFFF3E0)
 
-val CreamBackground = Color(0xFFFAF7F2)
+val CreamBackground = Color(0xFFFDFBF7)
 val CreamSurface = Color(0xFFFFFFFF)
 val CreamCard = Color(0xFFFFFFFF)
-val CreamBorder = Color(0xFFE8E3DA)
+val CreamBorder = Color(0xFFE5E7EB) // Match TwGray200
 
 val MarqueeRed = Color(0xFFDC2626)
 val TargetPink = Color(0xFFFFF1F2)
 
-val StatusPending = Color(0xFFEF4444)
-val StatusPreparing = Color(0xFF3B82F6)
-val StatusCompleted = Color(0xFF10B981)
+val StatusPending = Color(0xFFF59E0B) // TwAmber500
+val StatusPreparing = Color(0xFF3B82F6) // TwBlue500
+val StatusCompleted = Color(0xFF10B981) // TwEmerald500
 
-val TextDarkPrimary = Color(0xFF1C1917)
-val TextDarkSecondary = Color(0xFF78716C)
-val TextDarkMuted = Color(0xFFA8A29E)
+val TextDarkPrimary = Color(0xFF1F2937) // TwGray800
+val TextDarkSecondary = Color(0xFF6B7280) // TwGray500
+val TextDarkMuted = Color(0xFF9CA3AF) // TwGray400
 
 // Backward compatibility alias variables
 val AmberPrimary = ShawarmaOrange
@@ -36,9 +36,7 @@ val TextPrimary = TextDarkPrimary
 val TextSecondary = TextDarkSecondary
 val TextMuted = TextDarkMuted
 
-// Vanilla Tailwind palette (order-manual/page.tsx, WalkInCartPanel.tsx, QrisPaymentModal.tsx use
-// plain `amber-500`/`blue-500`/`emerald-500`/`purple-500`/`gray-*` utility classes — a different,
-// un-themed palette from the custom brand colors above, which the rest of the app's screens use).
+// Vanilla Tailwind palette
 val TwAmber50 = Color(0xFFFFFBEB)
 val TwAmber100 = Color(0xFFFEF3C7)
 val TwAmber400 = Color(0xFFFBBF24)

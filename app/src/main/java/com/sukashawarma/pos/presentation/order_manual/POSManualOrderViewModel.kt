@@ -70,6 +70,8 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
     private val gson = Gson()
 
     val currentOutletId = MutableStateFlow("")
+    val currentOutletName = MutableStateFlow("")
+    val currentUsername = MutableStateFlow("")
     val categories = MutableStateFlow<List<Category>>(emptyList())
     val menuItems = MutableStateFlow<List<MenuItem>>(emptyList())
     val isLoading = MutableStateFlow(false)
@@ -178,13 +180,7 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                         item.availableOnlineChannels.isEmpty() ||
                             item.availableOnlineChannels.any { normalizeChannel(it) == activeChannel }
                     }
-                OrderMode.WEBSITE ->
-                    if (!item.isAvailableOnline) {
-                        false
-                    } else {
-                        item.availableOnlineChannels.isEmpty() ||
-                            item.availableOnlineChannels.any { normalizeChannel(it) == "website" }
-                    }
+                OrderMode.WEBSITE -> true
             }
         }
     }
@@ -564,6 +560,41 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                 method = selectedPayment,
                 change = order.changeAmount
             )
+
+            // Auto-print receipt if a printer is configured
+            val printerMac = com.sukashawarma.pos.data.local.PrinterPrefs.getSelectedMac()
+            if (!printerMac.isNullOrBlank()) {
+                try {
+                    val printerManager = com.sukashawarma.pos.data.bluetooth.BluetoothPrinterManager()
+                    val connected = printerManager.ensureConnected(printerMac)
+                    if (connected) {
+                        // Print Customer Receipt
+                        val customerBytes = com.sukashawarma.pos.domain.printer.ReceiptPrinter.generateReceiptBytes(
+                            order = order.copy(orderNumber = serverOrderNumber),
+                            isKitchen = false,
+                            cashierName = currentUsername.value,
+                            outletName = currentOutletName.value
+                        )
+                        printerManager.printBytesChunked(customerBytes)
+                        
+                        // Print Kitchen Ticket
+                        val kitchenBytes = com.sukashawarma.pos.domain.printer.ReceiptPrinter.generateReceiptBytes(
+                            order = order.copy(orderNumber = serverOrderNumber),
+                            isKitchen = true,
+                            cashierName = currentUsername.value,
+                            outletName = currentOutletName.value
+                        )
+                        printerManager.printBytesChunked(kitchenBytes)
+                        
+                        // Mark as printed locally
+                        val updatedEntity = entity.copy(kitchenReceiptPrinted = true)
+                        orderDao.insertOrder(updatedEntity) // Update entity
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
             if (pendingSync) {
                 orderErrorMessage.value = "Order tersimpan lokal (offline) dengan nomor sementara #$serverOrderNumber. " +
                     "Auto-sync ke server belum aktif di versi ini — sinkronkan manual saat online."
