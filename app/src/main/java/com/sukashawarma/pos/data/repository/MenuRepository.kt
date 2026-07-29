@@ -15,6 +15,7 @@ import com.sukashawarma.pos.domain.menu.PUSAT_OUTLET_ID
 import com.sukashawarma.pos.domain.menu.filterByOutlet
 import com.sukashawarma.pos.domain.menu.parseIdList
 import com.sukashawarma.pos.domain.menu.resolveSetting
+import com.sukashawarma.pos.data.remote.dto.UpsertKioskSettingPayload
 import com.sukashawarma.pos.domain.model.Category
 import com.sukashawarma.pos.domain.model.MenuItem
 import com.sukashawarma.pos.domain.model.PackageItem
@@ -63,6 +64,57 @@ class MenuRepository(
 
     suspend fun refresh(outletId: String) {
         refreshInternal(outletId)
+    }
+
+    /** Port of toggleAvail (KasirMenuClient.tsx:242). Items owned by THIS outlet
+     *  flip their own menu_items.is_available column; every other item (global or
+     *  PUSAT) is toggled by adding/removing its id from this outlet's
+     *  unavailable_menu_ids list. */
+    suspend fun toggleAvailability(
+        item: MenuItem,
+        outletId: String,
+        unavailableIds: Set<String>
+    ): Result<Unit> {
+        return try {
+            val response = if (item.outletId == outletId) {
+                api.updateMenuItemAvailability("eq.${item.id}", mapOf("is_available" to !item.isAvailable))
+            } else {
+                val newUnav = if (item.id in unavailableIds) unavailableIds - item.id else unavailableIds + item.id
+                // No on_conflict here — Global Constraint 4 / KasirMenuClient.tsx:257 upserts
+                // unavailable_menu_ids untargeted; PostgREST then resolves on the primary key.
+                api.upsertKioskSettingOnPrimaryKey(
+                    UpsertKioskSettingPayload(outletId, "unavailable_menu_ids", gson.toJson(newUnav.toList()))
+                )
+            }
+            if (!response.isSuccessful) return Result.failure(Exception("HTTP ${response.code()}"))
+            refresh(outletId)
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /** Port of toggleBestseller/toggleUpsell/toggleRecommendation/toggleForceAvail
+     *  (KasirMenuClient.tsx:271-363) — identical bodies, different key. Always routes
+     *  through upsertKioskSetting (on_conflict=outlet_id,key, tsx:285/310/333/356) —
+     *  unlike toggleAvailability's unavailable_menu_ids, per Global Constraint 4. */
+    suspend fun toggleSettingMembership(
+        key: String,
+        itemId: String,
+        outletId: String,
+        currentIds: Set<String>
+    ): Result<Unit> {
+        return try {
+            val newIds = if (itemId in currentIds) currentIds - itemId else currentIds + itemId
+            val response = api.upsertKioskSetting(
+                payload = UpsertKioskSettingPayload(outletId, key, gson.toJson(newIds.toList()))
+            )
+            if (!response.isSuccessful) return Result.failure(Exception("HTTP ${response.code()}"))
+            refresh(outletId)
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 
     private suspend fun refreshInternal(outletId: String): MenuSnapshot? {

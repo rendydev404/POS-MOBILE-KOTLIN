@@ -8,13 +8,19 @@ import com.sukashawarma.pos.data.remote.SupabaseApi
 import com.sukashawarma.pos.data.remote.dto.CategoryDto
 import com.sukashawarma.pos.data.remote.dto.KioskSettingDto
 import com.sukashawarma.pos.data.remote.dto.MenuItemDto
+import com.sukashawarma.pos.data.remote.dto.UpsertKioskSettingPayload
+import com.sukashawarma.pos.domain.model.MenuItem
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.mockk
+import io.mockk.slot
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import retrofit2.Response
@@ -152,5 +158,100 @@ class MenuRepositoryTest {
         assertEquals(item.categoryName, roundTripped.categoryName)
         assertEquals("Rasa pedas", roundTripped.description)
         assertEquals("Menu Utama", roundTripped.categoryName)
+    }
+
+    private fun menuItem(id: String, outletId: String? = null, isAvailable: Boolean = true) = MenuItem(
+        id = id,
+        categoryId = "cat-1",
+        outletId = outletId,
+        name = "Item $id",
+        price = 10_000.0,
+        isAvailable = isAvailable
+    )
+
+    @Test
+    fun `toggleAvailability on own-outlet item patches menu_items and does not touch kiosk_settings`() = runTest {
+        val api = mockk<SupabaseApi>()
+        coEvery { api.updateMenuItemAvailability(any(), any()) } returns Response.success(null)
+
+        val repo = MenuRepository(api, fakeMenuItemDao(), fakeKioskSettingDao(), mockk<OkHttpClient>(relaxed = true))
+        val item = menuItem("item-own", outletId = outletId, isAvailable = true)
+
+        val result = repo.toggleAvailability(item, outletId, unavailableIds = emptySet())
+
+        assertTrue(result.isSuccess)
+        coVerify(exactly = 1) { api.updateMenuItemAvailability("eq.item-own", mapOf("is_available" to false)) }
+        coVerify(exactly = 0) { api.upsertKioskSetting(any(), any()) }
+        coVerify(exactly = 0) { api.upsertKioskSettingOnPrimaryKey(any()) }
+    }
+
+    @Test
+    fun `toggleAvailability on a global item not yet unavailable upserts via the untargeted endpoint`() = runTest {
+        val api = mockk<SupabaseApi>()
+        val payloadSlot = slot<UpsertKioskSettingPayload>()
+        coEvery { api.upsertKioskSettingOnPrimaryKey(capture(payloadSlot)) } returns Response.success(null)
+
+        val repo = MenuRepository(api, fakeMenuItemDao(), fakeKioskSettingDao(), mockk<OkHttpClient>(relaxed = true))
+        val item = menuItem("item-global", outletId = null)
+
+        val result = repo.toggleAvailability(item, outletId, unavailableIds = emptySet())
+
+        assertTrue(result.isSuccess)
+        coVerify(exactly = 0) { api.upsertKioskSetting(any(), any()) }
+        coVerify(exactly = 0) { api.updateMenuItemAvailability(any(), any()) }
+        assertEquals(outletId, payloadSlot.captured.outletId)
+        assertEquals("unavailable_menu_ids", payloadSlot.captured.key)
+        assertTrue(payloadSlot.captured.value.contains("item-global"))
+    }
+
+    @Test
+    fun `toggleAvailability on an already-unavailable item removes it from the list`() = runTest {
+        val api = mockk<SupabaseApi>()
+        val payloadSlot = slot<UpsertKioskSettingPayload>()
+        coEvery { api.upsertKioskSettingOnPrimaryKey(capture(payloadSlot)) } returns Response.success(null)
+
+        val repo = MenuRepository(api, fakeMenuItemDao(), fakeKioskSettingDao(), mockk<OkHttpClient>(relaxed = true))
+        val item = menuItem("item-global", outletId = null)
+
+        val result = repo.toggleAvailability(item, outletId, unavailableIds = setOf("item-global", "item-other"))
+
+        assertTrue(result.isSuccess)
+        assertFalse(payloadSlot.captured.value.contains("item-global"))
+        assertTrue(payloadSlot.captured.value.contains("item-other"))
+    }
+
+    @Test
+    fun `toggleSettingMembership adds then removes via the on_conflict endpoint`() = runTest {
+        val api = mockk<SupabaseApi>()
+        val payloadSlot = slot<UpsertKioskSettingPayload>()
+        coEvery { api.upsertKioskSetting(onConflict = any(), payload = capture(payloadSlot)) } returns Response.success(null)
+
+        val repo = MenuRepository(api, fakeMenuItemDao(), fakeKioskSettingDao(), mockk<OkHttpClient>(relaxed = true))
+
+        val added = repo.toggleSettingMembership("bestseller_ids", "item-1", outletId, currentIds = emptySet())
+        assertTrue(added.isSuccess)
+        assertEquals("bestseller_ids", payloadSlot.captured.key)
+        assertEquals(outletId, payloadSlot.captured.outletId)
+        assertTrue(payloadSlot.captured.value.contains("item-1"))
+
+        val removed = repo.toggleSettingMembership("bestseller_ids", "item-1", outletId, currentIds = setOf("item-1"))
+        assertTrue(removed.isSuccess)
+        assertFalse(payloadSlot.captured.value.contains("item-1"))
+
+        coVerify(exactly = 0) { api.upsertKioskSettingOnPrimaryKey(any()) }
+        coVerify(exactly = 0) { api.updateMenuItemAvailability(any(), any()) }
+    }
+
+    @Test
+    fun `toggleSettingMembership returns failure on a non-2xx response`() = runTest {
+        val api = mockk<SupabaseApi>()
+        coEvery { api.upsertKioskSetting(onConflict = any(), payload = any()) } returns
+            Response.error(500, "error".toResponseBody(null))
+
+        val repo = MenuRepository(api, fakeMenuItemDao(), fakeKioskSettingDao(), mockk<OkHttpClient>(relaxed = true))
+
+        val result = repo.toggleSettingMembership("bestseller_ids", "item-1", outletId, currentIds = emptySet())
+
+        assertTrue(result.isFailure)
     }
 }

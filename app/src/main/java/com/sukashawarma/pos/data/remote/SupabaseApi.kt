@@ -77,6 +77,15 @@ interface SupabaseApi {
         @Body payload: UpsertKioskSettingPayload
     ): Response<Void>
 
+    // Same row, no `on_conflict` param — PostgREST resolves on the primary key.
+    // Mirrors the web's un-targeted `.upsert()` for unavailable_menu_ids only
+    // (KasirMenuClient.tsx:257); every other key uses upsertKioskSetting above.
+    @Headers("Prefer: resolution=merge-duplicates")
+    @POST("rest/v1/kiosk_settings")
+    suspend fun upsertKioskSettingOnPrimaryKey(
+        @Body payload: UpsertKioskSettingPayload
+    ): Response<Void>
+
     // Fetch Active Promos for Outlet
     @GET("rest/v1/outlet_promos")
     suspend fun getPromos(
