@@ -23,12 +23,12 @@ class MenuRepositoryTest {
 
     private val outletId = "outlet-a"
 
-    private fun menuItemDto(id: String, outletId: String? = null) = MenuItemDto(
+    private fun menuItemDto(id: String, outletId: String? = null, description: String? = null) = MenuItemDto(
         id = id,
         categoryId = "cat-1",
         outletId = outletId,
         name = "Item $id",
-        description = null,
+        description = description,
         price = 10_000.0,
         strikePrice = null,
         channelPrices = null,
@@ -100,6 +100,7 @@ class MenuRepositoryTest {
             categoryName = "Utama",
             outletId = outletId,
             name = "Cached Item",
+            description = "Cached description",
             price = 5_000.0,
             strikePrice = null,
             channelPricesJson = null,
@@ -117,5 +118,39 @@ class MenuRepositoryTest {
         val snapshot = repo.snapshot(outletId).first()
         assertEquals(listOf("cached-item"), snapshot.items.map { it.id })
         assertTrue(snapshot.fromCache)
+        // categoryName must survive the offline path since readCache() returns
+        // categories = emptyList() and cannot re-resolve it from a lookup map.
+        assertEquals("Utama", snapshot.items.first().categoryName)
+        assertEquals("Cached description", snapshot.items.first().description)
+    }
+
+    @Test
+    fun `description and categoryName survive a domain to entity to domain round trip`() {
+        val item = MenuItemDto(
+            id = "item-1",
+            categoryId = "cat-1",
+            outletId = null,
+            name = "Item",
+            description = "Rasa pedas",
+            price = 10_000.0,
+            strikePrice = null,
+            channelPrices = null,
+            imageUrl = null,
+            isAvailable = true,
+            isAvailableOnline = true,
+            availableOnlineChannels = null,
+            sortOrder = null,
+            prepTime = null,
+            isPackage = null,
+            packageItems = null,
+            categories = CategoryDto("cat-1", "Menu Utama", 1)
+        ).toDomain()
+
+        val roundTripped = item.toEntity().toDomain()
+
+        assertEquals(item.description, roundTripped.description)
+        assertEquals(item.categoryName, roundTripped.categoryName)
+        assertEquals("Rasa pedas", roundTripped.description)
+        assertEquals("Menu Utama", roundTripped.categoryName)
     }
 }

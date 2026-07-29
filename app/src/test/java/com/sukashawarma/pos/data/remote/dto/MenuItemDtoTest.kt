@@ -1,6 +1,7 @@
 package com.sukashawarma.pos.data.remote.dto
 
 import com.google.gson.Gson
+import com.sukashawarma.pos.data.repository.toDomain
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -17,7 +18,7 @@ class MenuItemDtoTest {
               "category_id": "cat-1",
               "outlet_id": "outlet-a",
               "name": "Shawarma Ayam",
-              "description": null,
+              "description": "Daging ayam dengan bumbu rempah",
               "price": 25000.0,
               "strike_price": 30000.0,
               "channel_prices": {"gofood": 27000.0, "grabfood": 28000.0},
@@ -46,6 +47,11 @@ class MenuItemDtoTest {
         assertEquals(1, dto.packageItems?.size)
         assertEquals("item-2", dto.packageItems?.first()?.menuItemId)
         assertEquals("Menu Utama", dto.categories?.name)
+        assertEquals("Daging ayam dengan bumbu rempah", dto.description)
+
+        val domain = dto.toDomain()
+        assertEquals("Daging ayam dengan bumbu rempah", domain.description)
+        assertEquals("Menu Utama", domain.categoryName)
     }
 
     @Test
@@ -55,5 +61,11 @@ class MenuItemDtoTest {
         assertNull(dto.outletId)
         assertNull(dto.channelPrices)
         assertNull(dto.packageItems)
+        assertNull(dto.categories)
+
+        // categories == null must fall back to "" rather than propagating null.
+        val domain = dto.toDomain()
+        assertNull(domain.description)
+        assertEquals("", domain.categoryName)
     }
 }

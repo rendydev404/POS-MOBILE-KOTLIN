@@ -10,6 +10,7 @@ data class LocalMenuItemEntity(
     val categoryName: String,
     val outletId: String?,
     val name: String,
+    val description: String?,
     val price: Double,
     val strikePrice: Double?,
     val channelPricesJson: String?,

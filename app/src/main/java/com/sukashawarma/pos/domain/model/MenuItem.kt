@@ -18,6 +18,7 @@ data class MenuItem(
     val categoryId: String,
     val outletId: String? = null,
     val name: String,
+    val description: String? = null,
     val price: Double,
     val strikePrice: Double? = null,
     val channelPrices: Map<String, Double> = emptyMap(),
@@ -27,5 +28,6 @@ data class MenuItem(
     val prepTimeMinutes: Int = 10,
     val imageUrl: String? = null,
     val isPackage: Boolean = false,
-    val packageItems: List<PackageItem> = emptyList()
+    val packageItems: List<PackageItem> = emptyList(),
+    val categoryName: String = ""
 )

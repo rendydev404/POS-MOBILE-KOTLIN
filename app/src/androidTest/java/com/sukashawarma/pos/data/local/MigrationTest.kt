@@ -65,4 +65,33 @@ class MigrationTest {
         cursor.close()
         db.close()
     }
+
+    @Test
+    fun migrate3To4_preservesExistingMenuItemsAndAddsDescriptionColumn() {
+        var db = helper.createDatabase(dbName, 3)
+        db.execSQL(
+            """
+            INSERT INTO local_menu_items
+                (id, categoryId, categoryName, outletId, name, price, strikePrice,
+                 channelPricesJson, isAvailable, isAvailableOnline, availableOnlineChannelsJson,
+                 prepTimeMinutes, imageUrl, isPackage, packageItemsJson)
+            VALUES
+                ('item-1', 'cat-1', 'Menu Utama', NULL, 'Shawarma Ayam', 25000.0, NULL,
+                 NULL, 1, 1, NULL, 10, NULL, 0, NULL)
+            """.trimIndent()
+        )
+        db.close()
+
+        db = helper.runMigrationsAndValidate(
+            dbName, 4, true,
+            AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4
+        )
+
+        val cursor = db.query("SELECT COUNT(*), description FROM local_menu_items WHERE id = 'item-1'")
+        cursor.moveToFirst()
+        assert(cursor.getInt(0) == 1) { "local_menu_items row lost during migration" }
+        assert(cursor.isNull(1)) { "description should default to null for pre-existing rows" }
+        cursor.close()
+        db.close()
+    }
 }

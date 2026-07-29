@@ -87,7 +87,7 @@ class MenuRepository(
                 forceAvailableIds = resolveSetting(settingDtos, "force_available_menu_ids", outletId).toSet()
             )
 
-            writeCache(filtered, categories, settings)
+            writeCache(filtered, settings)
             MenuSnapshot(items = filtered, categories = categories, settings = settings, fromCache = false)
         } catch (e: Exception) {
             null
@@ -102,11 +102,10 @@ class MenuRepository(
         return MenuSnapshot(items = items, categories = emptyList(), settings = settings, fromCache = true)
     }
 
-    private suspend fun writeCache(items: List<MenuItem>, categories: List<Category>, settings: KioskSettings) {
-        val categoryNameById = categories.associate { it.id to it.name }
+    private suspend fun writeCache(items: List<MenuItem>, settings: KioskSettings) {
         val now = System.currentTimeMillis()
         menuItemDao.clearMenuItems()
-        menuItemDao.insertMenuItems(items.map { it.toEntity(categoryNameById[it.categoryId] ?: "") })
+        menuItemDao.insertMenuItems(items.map { it.toEntity() })
         kioskSettingDao.upsertAll(settings.toEntities(now))
     }
 }
@@ -118,11 +117,12 @@ private fun PackageItemDto.toDomain() = PackageItem(
     quantity = quantity
 )
 
-private fun MenuItemDto.toDomain(): MenuItem = MenuItem(
+internal fun MenuItemDto.toDomain(): MenuItem = MenuItem(
     id = id,
     categoryId = categoryId ?: "",
     outletId = outletId,
     name = name,
+    description = description,
     price = price,
     strikePrice = strikePrice,
     channelPrices = channelPrices ?: emptyMap(),
@@ -132,15 +132,17 @@ private fun MenuItemDto.toDomain(): MenuItem = MenuItem(
     prepTimeMinutes = prepTime ?: 10,
     imageUrl = imageUrl,
     isPackage = isPackage ?: false,
-    packageItems = packageItems?.map { it.toDomain() } ?: emptyList()
+    packageItems = packageItems?.map { it.toDomain() } ?: emptyList(),
+    categoryName = categories?.name ?: ""
 )
 
-private fun MenuItem.toEntity(categoryName: String): LocalMenuItemEntity = LocalMenuItemEntity(
+internal fun MenuItem.toEntity(): LocalMenuItemEntity = LocalMenuItemEntity(
     id = id,
     categoryId = categoryId,
     categoryName = categoryName,
     outletId = outletId,
     name = name,
+    description = description,
     price = price,
     strikePrice = strikePrice,
     channelPricesJson = if (channelPrices.isEmpty()) null else gson.toJson(channelPrices),
@@ -153,11 +155,12 @@ private fun MenuItem.toEntity(categoryName: String): LocalMenuItemEntity = Local
     packageItemsJson = if (packageItems.isEmpty()) null else gson.toJson(packageItems)
 )
 
-private fun LocalMenuItemEntity.toDomain(): MenuItem = MenuItem(
+internal fun LocalMenuItemEntity.toDomain(): MenuItem = MenuItem(
     id = id,
     categoryId = categoryId,
     outletId = outletId,
     name = name,
+    description = description,
     price = price,
     strikePrice = strikePrice,
     channelPrices = channelPricesJson?.let { gson.fromJson<Map<String, Double>>(it, mapType) } ?: emptyMap(),
@@ -167,7 +170,8 @@ private fun LocalMenuItemEntity.toDomain(): MenuItem = MenuItem(
     prepTimeMinutes = prepTimeMinutes,
     imageUrl = imageUrl,
     isPackage = isPackage,
-    packageItems = packageItemsJson?.let { gson.fromJson<List<PackageItem>>(it, packageListType) } ?: emptyList()
+    packageItems = packageItemsJson?.let { gson.fromJson<List<PackageItem>>(it, packageListType) } ?: emptyList(),
+    categoryName = categoryName
 )
 
 private fun KioskSettings.toEntities(syncedAt: Long): List<LocalKioskSettingEntity> = listOf(
