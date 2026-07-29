@@ -31,10 +31,15 @@ import com.sukashawarma.pos.presentation.reports.ReportsScreen
 import com.sukashawarma.pos.presentation.reports.ReportsViewModel
 import com.sukashawarma.pos.presentation.settings.SettingsScreen
 import com.sukashawarma.pos.presentation.settings.SettingsViewModel
+import com.sukashawarma.pos.presentation.shift.CloseShiftScreen
 import com.sukashawarma.pos.presentation.shift.ShiftScreen
 import com.sukashawarma.pos.presentation.shift.ShiftViewModel
 import com.sukashawarma.pos.presentation.theme.CreamBackground
 import com.sukashawarma.pos.presentation.theme.SukaShawarmaPOSTheme
+
+import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
+import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
+import com.sukashawarma.pos.presentation.components.POSAdaptiveScaffold
 
 class MainActivity : ComponentActivity() {
     private val loginViewModel: LoginViewModel by viewModels()
@@ -51,6 +56,7 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { /* no-op — alarm suara/realtime tetap jalan walau ditolak, hanya notifikasi sistem yang hilang */ }
 
+    @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -59,6 +65,8 @@ class MainActivity : ComponentActivity() {
             requestNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
         setContent {
+            val windowSizeClass = calculateWindowSizeClass(this)
+            
             SukaShawarmaPOSTheme {
                 val activeSession by loginViewModel.activeSession.collectAsState()
 
@@ -86,52 +94,46 @@ class MainActivity : ComponentActivity() {
                     val session = activeSession!!
                     var currentTab by remember { mutableStateOf(POSTab.DASHBOARD) }
 
-                    Row(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(CreamBackground)
+                    POSAdaptiveScaffold(
+                        windowSizeClass = windowSizeClass.widthSizeClass,
+                        currentTab = currentTab,
+                        onTabSelected = { currentTab = it },
+                        outletName = session.outletName,
+                        onLogoutClick = {
+                            loginViewModel.logout()
+                            dashboardViewModel.setSession("", "", "Kasir")
+                            posManualOrderViewModel.currentOutletId.value = ""
+                            menuManagementViewModel.setOutlet("")
+                        }
                     ) {
-                        // Persistent Side Navigation Bar (100% Matching Website Screenshot)
-                        SideNavRail(
-                            currentTab = currentTab,
-                            onTabSelected = { currentTab = it },
-                            outletName = session.outletName,
-                            onLogoutClick = {
-                                loginViewModel.logout()
-                                dashboardViewModel.setSession("", "", "Kasir")
-                                posManualOrderViewModel.currentOutletId.value = ""
-                                menuManagementViewModel.setOutlet("")
-                            }
-                        )
-
-                        // Main Content Area
-                        Box(
-                            modifier = Modifier
-                                .fillMaxHeight()
-                                .weight(1f)
-                                .background(CreamBackground)
-                        ) {
-                            Column(modifier = Modifier.fillMaxSize()) {
-                                // Admin Rules & Target Banner
-                                com.sukashawarma.pos.presentation.components.BriefingBanner(outletId = session.outletId)
-                                
-                                Box(modifier = Modifier.weight(1f)) {
-                                    when (currentTab) {
-                                        POSTab.DASHBOARD -> DashboardScreen(
-                                            viewModel = dashboardViewModel,
-                                            onNewOrderClick = { currentTab = POSTab.ORDER_MANUAL }
-                                        )
-                                        POSTab.ORDER_MANUAL -> POSManualOrderScreen(viewModel = posManualOrderViewModel)
-                                        POSTab.INFO_PORSI -> InfoPorsiScreen(viewModel = infoPorsiViewModel)
-                                        POSTab.MENU_MANAGEMENT -> MenuManagementScreen(viewModel = menuManagementViewModel)
-                                        POSTab.SHIFT_PETTY_CASH, POSTab.SHIFT_CLOSE -> ShiftScreen(viewModel = shiftViewModel)
-                                        POSTab.HISTORI_BONUS -> OrderHistoryScreen(viewModel = orderHistoryViewModel)
-                                        POSTab.KIOSK_CONTROL -> SettingsScreen(viewModel = settingsViewModel)
-                                        POSTab.REPORTS -> ReportsScreen(viewModel = reportsViewModel)
-                                        POSTab.SETTINGS -> SettingsScreen(viewModel = settingsViewModel)
-                                        POSTab.PANDUAN -> SettingsScreen(viewModel = settingsViewModel)
-                                        POSTab.STOK_OUTLET -> MenuManagementScreen(viewModel = menuManagementViewModel)
-                                    }
+                        Column(modifier = Modifier.fillMaxSize().background(CreamBackground)) {
+                            // Admin Rules & Target Banner
+                            com.sukashawarma.pos.presentation.components.BriefingBanner(outletId = session.outletId)
+                            
+                            Box(modifier = Modifier.weight(1f)) {
+                                when (currentTab) {
+                                    POSTab.DASHBOARD -> DashboardScreen(
+                                        viewModel = dashboardViewModel,
+                                        windowSizeClass = windowSizeClass.widthSizeClass,
+                                        onNewOrderClick = { currentTab = POSTab.ORDER_MANUAL }
+                                    )
+                                    POSTab.ORDER_MANUAL -> POSManualOrderScreen(viewModel = posManualOrderViewModel)
+                                    POSTab.INFO_PORSI -> InfoPorsiScreen(viewModel = infoPorsiViewModel)
+                                    POSTab.MENU_MANAGEMENT -> MenuManagementScreen(viewModel = menuManagementViewModel)
+                                    POSTab.SHIFT_PETTY_CASH -> ShiftScreen(
+                                        viewModel = shiftViewModel,
+                                        onNavigateToCloseShift = { currentTab = POSTab.SHIFT_CLOSE }
+                                    )
+                                    POSTab.SHIFT_CLOSE -> CloseShiftScreen(
+                                        viewModel = shiftViewModel,
+                                        onBack = { currentTab = POSTab.SHIFT_PETTY_CASH }
+                                    )
+                                    POSTab.HISTORI_BONUS -> OrderHistoryScreen(viewModel = orderHistoryViewModel)
+                                    POSTab.KIOSK_CONTROL -> SettingsScreen(viewModel = settingsViewModel)
+                                    POSTab.REPORTS -> ReportsScreen(viewModel = reportsViewModel)
+                                    POSTab.SETTINGS -> SettingsScreen(viewModel = settingsViewModel)
+                                    POSTab.PANDUAN -> SettingsScreen(viewModel = settingsViewModel)
+                                    POSTab.STOK_OUTLET -> MenuManagementScreen(viewModel = menuManagementViewModel)
                                 }
                             }
                         }

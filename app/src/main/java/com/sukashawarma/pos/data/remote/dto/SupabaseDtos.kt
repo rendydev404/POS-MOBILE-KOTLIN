@@ -89,6 +89,7 @@ data class OrderDto(
     val source: String,
     @SerializedName("payment_method") val paymentMethod: String?,
     @SerializedName("discount_amount") val discountAmount: Double?,
+    @SerializedName("promo_subsidy") val promoSubsidy: Double?,
     @SerializedName("total_amount") val totalAmount: Double,
     @SerializedName("amount_received") val amountReceived: Double?,
     @SerializedName("change_amount") val changeAmount: Double?,
@@ -128,6 +129,7 @@ data class PettyCashExpenseDto(
     val amount: Double,
     val description: String?,
     @SerializedName("expense_date") val expenseDate: String?,
+    @SerializedName("created_at") val createdAt: String? = null,
     @SerializedName("receipt_url") val receiptUrl: String?,
     val status: String? = null
 )

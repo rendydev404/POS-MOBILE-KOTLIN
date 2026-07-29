@@ -4,7 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.sukashawarma.pos.POSApplication
-import com.sukashawarma.pos.data.remote.SupabaseClient
+import com.sukashawarma.pos.domain.menu.KioskSettings
 import com.sukashawarma.pos.domain.model.Category
 import com.sukashawarma.pos.domain.model.MenuItem
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -15,13 +15,13 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MenuManagementViewModel(application: Application) : AndroidViewModel(application) {
-    private val api = SupabaseClient.api
     private val repository = (application as POSApplication).menuRepository
 
     private val currentOutletId = MutableStateFlow("")
 
     val categories = MutableStateFlow<List<Category>>(emptyList())
     val menuItems = MutableStateFlow<List<MenuItem>>(emptyList())
+    val kioskSettings = MutableStateFlow(KioskSettings.EMPTY)
     val selectedCategoryId = MutableStateFlow("")
     val searchQuery = MutableStateFlow("")
     val isLoading = MutableStateFlow(false)
@@ -33,6 +33,7 @@ class MenuManagementViewModel(application: Application) : AndroidViewModel(appli
                 .collect { snapshot ->
                     categories.value = snapshot.categories
                     menuItems.value = snapshot.items
+                    kioskSettings.value = snapshot.settings
                     isLoading.value = false
                 }
         }
@@ -45,20 +46,20 @@ class MenuManagementViewModel(application: Application) : AndroidViewModel(appli
 
     fun toggleAvailability(item: MenuItem) {
         viewModelScope.launch {
-            val newStatus = !item.isAvailable
-            // Optimistic local update
-            val currentList = menuItems.value.toMutableList()
-            val index = currentList.indexOfFirst { it.id == item.id }
-            if (index >= 0) {
-                currentList[index] = item.copy(isAvailable = newStatus)
-                menuItems.value = currentList
-            }
+            repository.toggleAvailability(item, currentOutletId.value, kioskSettings.value.unavailableIds)
+        }
+    }
 
-            try {
-                api.updateMenuItemAvailability("eq.${item.id}", mapOf("is_available" to newStatus))
-            } catch (e: Exception) {
-                e.printStackTrace()
+    fun toggleSettingMembership(key: String, itemId: String) {
+        viewModelScope.launch {
+            val currentIds = when (key) {
+                "bestseller_ids" -> kioskSettings.value.bestsellers
+                "upsell_ids" -> kioskSettings.value.upsells
+                "recommendation_ids" -> kioskSettings.value.recommendations
+                "force_available_menu_ids" -> kioskSettings.value.forceAvailableIds
+                else -> emptySet()
             }
+            repository.toggleSettingMembership(key, itemId, currentOutletId.value, currentIds)
         }
     }
 }

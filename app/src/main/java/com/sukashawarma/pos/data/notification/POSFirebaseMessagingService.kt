@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.content.pm.PackageManager
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
+import androidx.core.text.HtmlCompat
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.sukashawarma.pos.R
@@ -35,14 +36,24 @@ class POSFirebaseMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
         super.onMessageReceived(message)
 
-        OrderAlertPlayer(applicationContext).playNewOrderAlert()
+        val isOwnerMessage = message.data["type"] == "broadcast" || message.data["type"] == "owner_message"
 
-        val title = message.notification?.title ?: message.data["title"] ?: "Pesanan Baru Masuk"
+        // Hanya bunyikan alert jika bukan pesan dari owner
+        if (!isOwnerMessage) {
+            OrderAlertPlayer(applicationContext).playNewOrderAlert()
+        }
+
+        var title: CharSequence = message.notification?.title ?: message.data["title"] ?: "Pesanan Baru Masuk"
         val body = message.notification?.body ?: message.data["body"] ?: "Ada pesanan baru menunggu diproses."
+
+        if (isOwnerMessage) {
+            title = "PESAN DARI OWNER: $title"
+        }
+
         showSystemNotification(title, body)
     }
 
-    private fun showSystemNotification(title: String, body: String) {
+    private fun showSystemNotification(title: CharSequence, body: String) {
         val notification = NotificationCompat.Builder(this, NotificationChannels.NEW_ORDER_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)

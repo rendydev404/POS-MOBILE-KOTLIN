@@ -1,15 +1,17 @@
 package com.sukashawarma.pos.domain.usecase
 
-import com.sukashawarma.pos.data.bluetooth.ESCPosEncoder
 import com.sukashawarma.pos.domain.model.Order
 import com.sukashawarma.pos.domain.model.PaymentMethod
+import com.sukashawarma.pos.domain.printer.EscPosBuilder
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 class PrintReceiptUseCase {
-    private val currencyFormat = NumberFormat.getCurrencyInstance(Locale("id", "ID"))
+    private val currencyFormat = NumberFormat.getCurrencyInstance(Locale("id", "ID")).apply {
+        maximumFractionDigits = 0
+    }
     private val dateFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
 
     fun generateCustomerReceiptBytes(
@@ -17,119 +19,128 @@ class PrintReceiptUseCase {
         outletName: String,
         cashierName: String
     ): ByteArray {
-        val encoder = ESCPosEncoder()
-        encoder.init()
+        val builder = EscPosBuilder().init()
 
         // Header
-        encoder.alignCenter()
-        encoder.boldOn()
-        encoder.text("SUKA SHAWARMA\n")
-        encoder.boldOff()
-        encoder.text("Cabang $outletName\n")
-        encoder.text("========================================\n")
+        builder.alignCenter()
+            .bold(true).size(2, 2).textLine("SUKA SHAWARMA")
+            .bold(false).size(1, 1).newline()
+            .textLine("Cabang $outletName")
+            .textLine("Timur Tengah dalam Setiap Gigitan")
+            .separator()
 
         // Metadata
-        encoder.alignLeft()
-        val dateStr = dateFormat.format(Date(order.createdAt))
+        builder.alignLeft()
+            .textLine("Waktu    : ${dateFormat.format(Date(order.createdAt))}")
+            .textLine("Pelanggan: ${order.customerName}")
+            .textLine("Kasir    : $cashierName")
+        
         val paymentStr = when (order.paymentMethod) {
             PaymentMethod.CASH -> "TUNAI"
             PaymentMethod.QRIS -> "QRIS"
             PaymentMethod.CARD -> "CARD/EDC"
             PaymentMethod.VA -> "VIRTUAL ACCOUNT"
         }
-        encoder.text(encoder.formatTwoColumns(dateStr, paymentStr, 40) + "\n")
-        encoder.text("Pelanggan: ${order.customerName}\n")
-        encoder.text("Kasir: $cashierName\n")
-        encoder.text("----------------------------------------\n")
+        builder.textLine("Metode   : $paymentStr")
+            .separator()
 
         // Double Height Nomor Antrean
-        encoder.alignCenter()
-        encoder.doubleHeightOn()
-        encoder.text("No. ${order.orderNumber}\n")
-        encoder.doubleHeightOff()
-        encoder.text("----------------------------------------\n")
+        builder.alignCenter()
+            .size(1, 2).bold(true).textLine("No. ${order.orderNumber}")
+            .size(1, 1).bold(false)
+            .separator()
 
-        // Item List
-        encoder.alignLeft()
+        // Items (32 chars for 58mm printer)
+        builder.alignLeft()
         for (item in order.items) {
-            val itemLine = "${item.quantity}x ${item.name}"
+            val qtyStr = "${item.quantity}x"
             val priceStr = formatRupiah(item.subtotal)
-            encoder.text(encoder.formatTwoColumns(itemLine, priceStr, 40) + "\n")
+            val nameSpace = 32 - qtyStr.length - priceStr.length - 1
+            val safeName = padRight(item.name, nameSpace)
+            
+            val line = "$qtyStr $safeName${padLeft(priceStr, priceStr.length)}"
+            builder.textLine(line)
+            
             if (item.note.isNotBlank()) {
-                encoder.text("   - ${item.note}\n")
+                builder.textLine("   Note: ${item.note}")
             }
         }
-        encoder.text("----------------------------------------\n")
+        builder.separator()
 
         // Totals
-        encoder.text(encoder.formatTwoColumns("Subtotal", formatRupiah(order.subtotal), 40) + "\n")
+        builder.alignRight()
+        builder.textLine("Subtotal: ${formatRupiah(order.subtotal)}")
         if (order.discountAmount > 0) {
-            encoder.text(encoder.formatTwoColumns("Diskon", "-${formatRupiah(order.discountAmount)}", 40) + "\n")
+            builder.textLine("Diskon: -${formatRupiah(order.discountAmount)}")
         }
-        encoder.boldOn()
-        encoder.text(encoder.formatTwoColumns("TOTAL", formatRupiah(order.totalAmount), 40) + "\n")
-        encoder.boldOff()
+        
+        builder.bold(true).size(1, 2)
+            .textLine("TOTAL: ${formatRupiah(order.totalAmount)}")
+            .bold(false).size(1, 1)
 
         if (order.paymentMethod == PaymentMethod.CASH) {
-            encoder.text(encoder.formatTwoColumns("Tunai", formatRupiah(order.amountReceived), 40) + "\n")
-            encoder.text(encoder.formatTwoColumns("Kembalian", formatRupiah(order.changeAmount), 40) + "\n")
+            builder.textLine("Tunai: ${formatRupiah(order.amountReceived)}")
+            builder.textLine("Kembali: ${formatRupiah(order.changeAmount)}")
         }
-        encoder.text("----------------------------------------\n")
-
+        builder.newline()
+        
         // Footer
-        encoder.alignCenter()
-        encoder.text("Terima kasih & selamat menikmati!\n\n\n")
+        builder.alignCenter()
+            .textLine("Terima Kasih!")
+            .textLine("Silakan datang kembali")
+            .feed(4).cut()
 
-        // Paper Cut
-        encoder.paperCut()
-
-        return encoder.getReceiptBytes()
+        return builder.getBytes()
     }
 
     fun generateKitchenReceiptBytes(order: Order): ByteArray {
-        val encoder = ESCPosEncoder()
-        encoder.init()
+        val builder = EscPosBuilder().init()
 
         // Header
-        encoder.alignCenter()
-        encoder.boldOn()
-        encoder.text("STRUK DAPUR\n")
-        encoder.boldOff()
-        encoder.text("----------------------------------------\n")
+        builder.alignCenter()
+            .bold(true).size(2, 2).textLine("STRUK DAPUR")
+            .bold(false).size(1, 1).newline()
+            .separator()
 
         // Metadata
-        encoder.alignLeft()
-        val dateStr = dateFormat.format(Date(order.createdAt))
-        encoder.text("$dateStr\n")
-        encoder.text("Pelanggan: ${order.customerName}\n")
-        encoder.text("----------------------------------------\n")
+        builder.alignLeft()
+            .textLine(dateFormat.format(Date(order.createdAt)))
+            .textLine("Pelanggan: ${order.customerName}")
+            .separator()
 
         // Double Height Nomor Antrean
-        encoder.alignCenter()
-        encoder.doubleHeightOn()
-        encoder.text("No. ${order.orderNumber}\n")
-        encoder.doubleHeightOff()
-        encoder.text("----------------------------------------\n")
+        builder.alignCenter()
+            .size(1, 2).bold(true).textLine("No. ${order.orderNumber}")
+            .size(1, 1).bold(false)
+            .separator()
 
         // Items
-        encoder.alignLeft()
+        builder.alignLeft()
         for (item in order.items) {
-            encoder.boldOn()
-            encoder.text("${item.quantity}x ${item.name}\n")
-            encoder.boldOff()
+            builder.bold(true).size(2, 2)
+                .textLine("${item.quantity}x ${item.name}")
+                .bold(false).size(1, 1)
+            
             if (item.note.isNotBlank()) {
-                encoder.text("   - ${item.note}\n")
+                builder.textLine("   - ${item.note}")
             }
         }
-        encoder.text("========================================\n\n\n")
+        builder.newline().newline()
+        builder.alignCenter().textLine("--- BATAS POTONG ---")
+        builder.feed(4).cut()
 
-        // Paper Cut
-        encoder.paperCut()
-
-        return encoder.getReceiptBytes()
+        return builder.getBytes()
     }
 
     private fun formatRupiah(amount: Double): String {
-        return "Rp ${String.format("%,.0f", amount).replace(',', '.')}"
+        return currencyFormat.format(amount).replace("Rp", "Rp ").replace(",00", "")
+    }
+
+    private fun padRight(str: String, n: Int): String {
+        return if (str.length > n) str.substring(0, n) else str.padEnd(n, ' ')
+    }
+
+    private fun padLeft(str: String, n: Int): String {
+        return if (str.length > n) str.substring(0, n) else str.padStart(n, ' ')
     }
 }

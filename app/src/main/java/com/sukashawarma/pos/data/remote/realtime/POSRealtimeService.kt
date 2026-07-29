@@ -62,8 +62,12 @@ class POSRealtimeService : Service() {
                     val manager = getSystemService(NotificationManager::class.java)
                     manager?.cancel(msgId)
                 } else if (eventType == "INSERT" || eventType == "UPDATE") {
-                    val title = record.optString("title", "Pesan dari Owner")
+                    var title = record.optString("title", "Pesan dari Owner")
                     val body = record.optString("body", "Ada pesan baru untuk Anda.")
+                    
+                    // Tambahkan prefix "PESAN DARI OWNER: " agar konsisten dengan permintaan user
+                    title = "PESAN DARI OWNER: $title"
+                    
                     showPushNotification(msgId, title, body)
                 }
                 GlobalEventBus.ownerMessageRefreshEvent.tryEmit(Unit)

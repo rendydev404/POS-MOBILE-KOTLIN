@@ -144,6 +144,13 @@ interface SupabaseApi {
         @Query("order") order: String = "start_time.desc"
     ): Response<List<ShiftDto>>
 
+    // Update Shift (e.g. for closing shift natively via PATCH)
+    @PATCH("rest/v1/shifts")
+    suspend fun updateShift(
+        @Query("id") shiftIdFilter: String,
+        @Body patch: Map<String, Any>
+    ): Response<Void>
+
     // Fetch Real Petty Cash Expenses from Supabase
     @GET("rest/v1/petty_cash_expenses")
     suspend fun getPettyCashExpenses(

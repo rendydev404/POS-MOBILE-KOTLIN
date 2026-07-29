@@ -24,9 +24,18 @@ import com.sukashawarma.pos.domain.model.OrderStatus
 import com.sukashawarma.pos.presentation.components.OrderCard
 import com.sukashawarma.pos.presentation.theme.*
 
+import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.Tab
+import kotlinx.coroutines.launch
+
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun DashboardScreen(
     viewModel: DashboardViewModel,
+    windowSizeClass: WindowWidthSizeClass = WindowWidthSizeClass.Expanded,
     onNewOrderClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -41,6 +50,9 @@ fun DashboardScreen(
     var activeSourceFilter by remember { mutableStateOf("Semua") }
     var preparingSubTab by remember { mutableStateOf("Antrean") }
     var completedSearchQuery by remember { mutableStateOf("") }
+
+    val pagerState = rememberPagerState(pageCount = { 3 })
+    val coroutineScope = rememberCoroutineScope()
 
     Column(
         modifier = modifier
@@ -210,14 +222,10 @@ fun DashboardScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 5. 3-Column Order Board (Matching Screenshot Layout & Styling)
-            Row(
-                modifier = Modifier.fillMaxSize(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // Column 1: Menunggu Pembayaran
+            // 5. Adaptive Order Board (Row for Expanded, Pager for Compact/Medium)
+            val column1: @Composable () -> Unit = {
                 BoardColumn(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxSize(),
                     title = "Menunggu Pembayaran",
                     icon = Icons.Default.Schedule,
                     badgeCount = pendingOrders.size,
@@ -233,10 +241,11 @@ fun DashboardScreen(
                         }
                     }
                 }
+            }
 
-                // Column 2: Sedang Diproses
+            val column2: @Composable () -> Unit = {
                 BoardColumn(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxSize(),
                     title = "Sedang Diproses",
                     icon = Icons.Default.Restaurant,
                     badgeCount = preparingOrders.size,
@@ -255,10 +264,11 @@ fun DashboardScreen(
                         }
                     }
                 }
+            }
 
-                // Column 3: Selesai / Lunas
+            val column3: @Composable () -> Unit = {
                 BoardColumn(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxSize(),
                     title = "Selesai / Lunas",
                     icon = Icons.Default.CheckCircle,
                     badgeCount = completedOrders.size,
@@ -274,6 +284,47 @@ fun DashboardScreen(
                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
                                 onPrintReceipt = { o -> viewModel.printReceipt(o, isKitchen = false) }
                             )
+                        }
+                    }
+                }
+            }
+
+            if (windowSizeClass == WindowWidthSizeClass.Expanded) {
+                // 3-Column layout for Tablets (Landscape)
+                Row(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Box(modifier = Modifier.weight(1f)) { column1() }
+                    Box(modifier = Modifier.weight(1f)) { column2() }
+                    Box(modifier = Modifier.weight(1f)) { column3() }
+                }
+            } else {
+                // Swipeable Tabs (HorizontalPager) for Phones & Tablet Portrait
+                Column(modifier = Modifier.fillMaxSize()) {
+                    val tabs = listOf("Menunggu (${pendingOrders.size})", "Diproses (${preparingOrders.size})", "Selesai (${completedOrders.size})")
+                    TabRow(
+                        selectedTabIndex = pagerState.currentPage,
+                        containerColor = CreamBackground,
+                        contentColor = ShawarmaOrange,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    ) {
+                        tabs.forEachIndexed { index, title ->
+                            Tab(
+                                selected = pagerState.currentPage == index,
+                                onClick = { coroutineScope.launch { pagerState.animateScrollToPage(index) } },
+                                text = { Text(title, fontWeight = FontWeight.Bold, maxLines = 1) }
+                            )
+                        }
+                    }
+                    HorizontalPager(
+                        state = pagerState,
+                        modifier = Modifier.fillMaxSize()
+                    ) { page ->
+                        when (page) {
+                            0 -> column1()
+                            1 -> column2()
+                            2 -> column3()
                         }
                     }
                 }

@@ -62,6 +62,16 @@ class EscPosBuilder {
         return this
     }
 
+    fun lineSpacing(spacing: Int): EscPosBuilder {
+        buffer.addAll(arrayOf(0x1B.toByte(), 0x33.toByte(), spacing.toByte()))
+        return this
+    }
+
+    fun defaultLineSpacing(): EscPosBuilder {
+        buffer.addAll(arrayOf(0x1B.toByte(), 0x32.toByte()))
+        return this
+    }
+
     fun cut(): EscPosBuilder {
         // Full cut: GS V 0
         buffer.addAll(arrayOf(0x1D.toByte(), 0x56.toByte(), 0x00.toByte()))
