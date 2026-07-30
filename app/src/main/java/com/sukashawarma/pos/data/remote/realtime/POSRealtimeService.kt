@@ -24,6 +24,7 @@ class POSRealtimeService : Service() {
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private lateinit var realtimeManager: OrderRealtimeManager
+    private lateinit var onlineSyncManager: OrderOnlineSyncManager
     private lateinit var alertPlayer: OrderAlertPlayer
     
     private var currentOutletId: String = ""
@@ -35,10 +36,13 @@ class POSRealtimeService : Service() {
         
         alertPlayer = OrderAlertPlayer(this)
         realtimeManager = OrderRealtimeManager(SupabaseClient.okHttpClient, serviceScope)
+        onlineSyncManager = OrderOnlineSyncManager(SupabaseClient.okHttpClient, serviceScope)
         
         realtimeManager.onConnectionState = { connected ->
             GlobalEventBus.isRealtimeConnected.value = connected
         }
+        
+        onlineSyncManager.connect()
         
         realtimeManager.onChange = { table, eventType, record ->
             if (table == "orders") {
@@ -73,6 +77,8 @@ class POSRealtimeService : Service() {
                 GlobalEventBus.ownerMessageRefreshEvent.tryEmit(Unit)
             } else if (table == "daily_sales_targets") {
                 GlobalEventBus.targetRefreshEvent.tryEmit(Unit)
+            } else if (table == "bypass_requests") {
+                GlobalEventBus.bypassRequestEvent.tryEmit(Unit)
             }
         }
     }
@@ -89,6 +95,7 @@ class POSRealtimeService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         realtimeManager.disconnect()
+        onlineSyncManager.disconnect()
         serviceScope.cancel()
     }
 

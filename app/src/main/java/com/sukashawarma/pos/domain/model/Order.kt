@@ -47,6 +47,9 @@ data class Order(
     val amountReceived: Double = 0.0,
     val changeAmount: Double = 0.0,
     val kitchenReceiptPrinted: Boolean = false,
+    val customerReceiptPrinted: Boolean = false,
+    val cancellationStatus: String? = null,
+    val cancellationUserName: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val isOffline: Boolean = false,
     val channel: String? = null

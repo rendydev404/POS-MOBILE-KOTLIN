@@ -107,76 +107,68 @@ fun HeaderAndFilters(
     onExport: () -> Unit,
     exportDisabled: Boolean
 ) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        color = Color.White,
-        shadowElevation = 2.dp
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Icon(Icons.Default.Assessment, contentDescription = null, tint = ShawarmaOrange, modifier = Modifier.size(32.dp))
-                Column {
-                    Text("Laporan & Analitik Cabang", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF111827))
-                    Text("Insight bisnis Anda secara real-time", fontSize = 12.sp, color = Color(0xFF6B7280))
-                }
-            }
+        Column {
+            Text("Laporan & Analitik Cabang", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF111827))
+            Text("Insight bisnis Anda secara real-time", fontSize = 12.sp, color = Color(0xFF6B7280))
+        }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                FilterDropdown(
-                    selected = when (channel) {
-                        "all" -> "Semua Channel"
-                        "food_apps" -> "Semua Food Apps"
-                        "offline" -> "POS Kasir"
-                        else -> channel.capitalize()
-                    },
-                    options = listOf("Semua Channel" to "all", "Semua Food Apps" to "food_apps", "POS Kasir" to "offline", "GoFood" to "gofood", "GrabFood" to "grabfood"),
-                    onSelect = { onChannelChanged(it) }
-                )
-                
-                FilterDropdown(
-                    selected = when (payment) {
-                        "all" -> "Semua Metode"
-                        "cash" -> "Tunai"
-                        "qris" -> "QRIS"
-                        "card" -> "Kartu"
-                        else -> "Semua Metode"
-                    },
-                    options = listOf("Semua Metode" to "all", "Tunai" to "cash", "QRIS" to "qris", "Kartu" to "card"),
-                    onSelect = { onPaymentChanged(it) }
-                )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            FilterDropdown(
+                selected = when (channel) {
+                    "all" -> "Semua Channel"
+                    "food_apps" -> "Semua Food Apps"
+                    "offline" -> "POS Kasir"
+                    else -> channel.capitalize()
+                },
+                options = listOf("Semua Channel" to "all", "Semua Food Apps" to "food_apps", "POS Kasir" to "offline", "GoFood" to "gofood", "GrabFood" to "grabfood"),
+                onSelect = { onChannelChanged(it) }
+            )
+            
+            FilterDropdown(
+                selected = when (payment) {
+                    "all" -> "Semua Metode"
+                    "cash" -> "Tunai"
+                    "qris" -> "QRIS"
+                    "card" -> "Kartu"
+                    else -> "Semua Metode"
+                },
+                options = listOf("Semua Metode" to "all", "Tunai" to "cash", "QRIS" to "qris", "Kartu" to "card"),
+                onSelect = { onPaymentChanged(it) }
+            )
 
-                FilterDropdown(
-                    selected = when (status) {
-                        "all" -> "Semua Status"
-                        "completed" -> "Selesai"
-                        "cancelled" -> "Dibatalkan"
-                        else -> "Semua Status"
-                    },
-                    options = listOf("Semua Status" to "all", "Selesai" to "completed", "Dibatalkan" to "cancelled"),
-                    onSelect = { onStatusChanged(it) }
-                )
+            FilterDropdown(
+                selected = when (status) {
+                    "all" -> "Semua Status"
+                    "completed" -> "Selesai"
+                    "cancelled" -> "Dibatalkan"
+                    else -> "Semua Status"
+                },
+                options = listOf("Semua Status" to "all", "Selesai" to "completed", "Dibatalkan" to "cancelled"),
+                onSelect = { onStatusChanged(it) }
+            )
 
-                FilterDropdown(
-                    selected = range.label,
-                    options = DateRange.values().map { it.label to it.name },
-                    onSelect = { name -> onRangeChanged(DateRange.valueOf(name)) }
-                )
+            FilterDropdown(
+                selected = range.label,
+                options = DateRange.values().map { it.label to it.name },
+                onSelect = { name -> onRangeChanged(DateRange.valueOf(name)) }
+            )
 
-                Button(
-                    onClick = onExport,
-                    enabled = !exportDisabled,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1)),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("PDF Eksekutif")
-                }
+            Button(
+                onClick = onExport,
+                enabled = !exportDisabled,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1)),
+                shape = RoundedCornerShape(20.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                modifier = Modifier.height(36.dp)
+            ) {
+                Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Cetak Laporan", fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -191,25 +183,34 @@ fun FilterDropdown(selected: String, options: List<Pair<String, String>>, onSele
         expanded = expanded,
         onExpandedChange = { expanded = !expanded }
     ) {
-        OutlinedTextField(
-            value = selected,
-            onValueChange = {},
-            readOnly = true,
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            modifier = Modifier.menuAnchor().width(160.dp),
-            colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(
-                unfocusedBorderColor = Color(0xFFE5E7EB),
-                focusedBorderColor = ShawarmaOrange
-            ),
-            shape = RoundedCornerShape(8.dp)
-        )
+        Surface(
+            modifier = Modifier.menuAnchor().clickable { expanded = true }.height(36.dp),
+            shape = RoundedCornerShape(20.dp),
+            color = Color.White,
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(selected, fontSize = 12.sp, color = Color(0xFF374151), fontWeight = FontWeight.Medium)
+                Spacer(modifier = Modifier.width(6.dp))
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowDown, 
+                    contentDescription = null, 
+                    modifier = Modifier.size(16.dp),
+                    tint = Color(0xFF6B7280)
+                )
+            }
+        }
         ExposedDropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false }
         ) {
             options.forEach { option ->
                 DropdownMenuItem(
-                    text = { Text(option.first) },
+                    text = { Text(option.first, fontSize = 12.sp) },
                     onClick = {
                         onSelect(option.second)
                         expanded = false

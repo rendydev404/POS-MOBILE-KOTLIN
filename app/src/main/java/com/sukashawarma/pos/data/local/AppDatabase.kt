@@ -22,7 +22,7 @@ import com.sukashawarma.pos.data.local.entity.SyncQueueEntity
         SyncQueueEntity::class,
         LocalKioskSettingEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -82,13 +82,25 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                try {
+                    db.execSQL("ALTER TABLE local_orders ADD COLUMN customerReceiptPrinted INTEGER NOT NULL DEFAULT 0")
+                    db.execSQL("ALTER TABLE local_orders ADD COLUMN cancellationStatus TEXT")
+                    db.execSQL("ALTER TABLE local_orders ADD COLUMN cancellationUserName TEXT")
+                } catch (e: Exception) {
+                    // Ignore if columns already exist
+                }
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "pos_sukashawarma.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                  .fallbackToDestructiveMigration()
                  .build()
                 INSTANCE = instance

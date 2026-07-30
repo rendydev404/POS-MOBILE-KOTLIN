@@ -18,12 +18,16 @@ object SupabaseClient {
     // anon key itself pre-login, i.e. same as an unauthenticated web visitor.
     private val authInterceptor = Interceptor { chain ->
         val bearer = SessionTokenHolder.accessToken ?: ANON_KEY
-        val request = chain.request().newBuilder()
+        val original = chain.request()
+        val requestBuilder = original.newBuilder()
             .header("apikey", ANON_KEY)
             .header("Authorization", "Bearer $bearer")
-            .header("Content-Type", "application/json")
-            .build()
-        chain.proceed(request)
+        
+        if (original.header("Content-Type") == null) {
+            requestBuilder.header("Content-Type", "application/json")
+        }
+        
+        chain.proceed(requestBuilder.build())
     }
 
     val okHttpClient = OkHttpClient.Builder()

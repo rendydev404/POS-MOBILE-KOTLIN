@@ -90,6 +90,12 @@ class OrderRealtimeManager(
                             put("schema", "public")
                             put("table", "daily_sales_targets")
                         })
+                        put(JSONObject().apply {
+                            put("event", "*")
+                            put("schema", "public")
+                            put("table", "bypass_requests")
+                            put("filter", "outlet_id=eq.$outletId")
+                        })
                     })
                 })
                 put("access_token", SessionTokenHolder.accessToken ?: BuildConfig.SUPABASE_ANON_KEY)

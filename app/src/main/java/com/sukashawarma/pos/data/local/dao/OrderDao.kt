@@ -24,6 +24,12 @@ interface OrderDao {
     @Query("UPDATE local_orders SET kitchenReceiptPrinted = :printed WHERE id = :orderId")
     suspend fun updateKitchenReceiptStatus(orderId: String, printed: Boolean)
 
+    @Query("UPDATE local_orders SET customerReceiptPrinted = :printed WHERE id = :orderId")
+    suspend fun updateCustomerReceiptStatus(orderId: String, printed: Boolean)
+
+    @Query("UPDATE local_orders SET cancellationStatus = :status, cancellationUserName = :userName WHERE id = :orderId")
+    suspend fun updateCancellationStatus(orderId: String, status: String?, userName: String?)
+
     @Query("SELECT MAX(orderNumber) FROM local_orders WHERE outletId = :outletId AND orderNumber >= 9001")
     suspend fun getMaxOfflineOrderNumber(outletId: String): Int?
 

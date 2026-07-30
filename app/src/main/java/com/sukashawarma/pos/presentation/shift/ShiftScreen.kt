@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -30,6 +31,8 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import coil.compose.AsyncImage
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
@@ -178,7 +181,8 @@ fun ShiftScreen(
                                             selectedBitmap = null
                                             selectedImageUri = null
                                         },
-                                        isLoading = isLoading
+                                        isLoading = isLoading,
+                                        pettyCashBalance = pettyCashBalance
                                     )
                                 }
                             }
@@ -231,7 +235,8 @@ fun ShiftScreen(
                                     selectedBitmap = null
                                     selectedImageUri = null
                                 },
-                                isLoading = isLoading
+                                isLoading = isLoading,
+                                pettyCashBalance = pettyCashBalance
                             )
                         }
                         item {
@@ -244,18 +249,20 @@ fun ShiftScreen(
     }
 
     if (showOpenShiftDialog) {
-        var modalAwal by remember { mutableStateOf("") }
+        // Observe viewModel's openShiftInput so prefilled value is shown
+        val openShiftInput by viewModel.openShiftInput.collectAsState()
+        
         AlertDialog(
             onDismissRequest = { showOpenShiftDialog = false },
             title = { Text("Buka Shift", fontWeight = FontWeight.Bold) },
             text = {
                 Column {
-                    Text("Masukkan modal awal di laci kasir (uang kembalian).")
+                    Text("Masukkan Dana Operasional (Petty Cash).", fontSize = 14.sp)
                     Spacer(Modifier.height(16.dp))
                     OutlinedTextField(
-                        value = modalAwal,
-                        onValueChange = { modalAwal = it },
-                        label = { Text("Modal Awal (Rp)") },
+                        value = openShiftInput,
+                        onValueChange = { viewModel.openShiftInput.value = it },
+                        label = { Text("Dana Operasional (Rp)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -264,7 +271,6 @@ fun ShiftScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.openShiftInput.value = modalAwal
                         viewModel.openShift()
                         showOpenShiftDialog = false
                     },
@@ -398,81 +404,143 @@ fun CatatPengeluaranForm(
     description: String, onDescriptionChange: (String) -> Unit,
     category: String, onCategoryChange: (String) -> Unit,
     hasImage: Boolean, onPickImage: () -> Unit,
-    onSubmit: () -> Unit, isLoading: Boolean
+    onSubmit: () -> Unit, isLoading: Boolean,
+    pettyCashBalance: Double
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        modifier = Modifier.fillMaxWidth().border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(12.dp))
+        modifier = Modifier.fillMaxWidth().border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(16.dp))
     ) {
-        Column(Modifier.padding(20.dp)) {
-            Text("Catat Pengeluaran", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-            Text("Gunakan dana petty cash untuk operasional", color = Color.Gray, fontSize = 12.sp)
-            Spacer(Modifier.height(16.dp))
-            
-            OutlinedTextField(
-                value = amount,
-                onValueChange = onAmountChange,
-                label = { Text("Nominal (Rp)") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
-            Spacer(Modifier.height(12.dp))
-            OutlinedTextField(
-                value = description,
-                onValueChange = onDescriptionChange,
-                label = { Text("Keterangan Pengeluaran") },
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(Modifier.height(12.dp))
-            
-            // Simple dropdown for category simulation using ExposedDropdownMenuBox is ideal, 
-            // but a row of selectable chips is easier and matches some web designs.
-            Text("Kategori", fontSize = 12.sp, color = Color.Gray)
-            Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("operasional" to "Operasional", "bahan_baku" to "Bahan Baku", "lainnya" to "Lainnya").forEach { (key, label) ->
-                    FilterChip(
-                        selected = category == key,
-                        onClick = { onCategoryChange(key) },
-                        label = { Text(label) }
+        Column {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.White)
+                    .padding(horizontal = 20.dp, vertical = 16.dp)
+            ) {
+                Icon(androidx.compose.material.icons.Icons.Default.ShoppingCart, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(10.dp))
+                Text("Catat Pengeluaran (Ambil dari Petty Cash)", fontWeight = FontWeight.Bold, color = Color(0xFF111827))
+            }
+            HorizontalDivider(color = Color(0xFFF3F4F6))
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFFF9FAFB))
+                    .padding(20.dp)
+            ) {
+                // Category
+                Text("KATEGORI", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                Spacer(Modifier.height(6.dp))
+                Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("operasional" to "Operasional", "bahan_baku" to "Bahan Baku", "lainnya" to "Lainnya").forEach { (key, label) ->
+                        FilterChip(
+                            selected = category == key,
+                            onClick = { onCategoryChange(key) },
+                            label = { Text(label) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = Color(0xFFFEE2E2),
+                                selectedLabelColor = Color(0xFFB91C1C)
+                            )
+                        )
+                    }
+                }
+                
+                // Description
+                Text("KETERANGAN / NAMA BARANG", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = onDescriptionChange,
+                    placeholder = { Text("Contoh: Beli es kristal 2 bungkus", fontSize = 14.sp, color = Color.Gray) },
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedContainerColor = Color.White,
+                        focusedContainerColor = Color.White,
+                        unfocusedBorderColor = Color(0xFFE5E7EB),
+                        focusedBorderColor = Color(0xFFEF4444)
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                )
+
+                // Amount
+                Text("NOMINAL (RP)", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = amount,
+                    onValueChange = onAmountChange,
+                    placeholder = { Text("20000", fontSize = 14.sp, color = Color.Gray) },
+                    leadingIcon = { Text("Rp", color = Color.Gray, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 12.dp)) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedContainerColor = Color.White,
+                        focusedContainerColor = Color.White,
+                        unfocusedBorderColor = Color(0xFFE5E7EB),
+                        focusedBorderColor = Color(0xFFEF4444)
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                )
+
+                // Image
+                Text("FOTO BUKTI STRUK (WAJIB)", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                Spacer(Modifier.height(6.dp))
+                Button(
+                    onClick = onPickImage,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (hasImage) Color(0xFFFEE2E2) else Color(0xFFFEF2F2),
+                        contentColor = if (hasImage) Color(0xFFB91C1C) else Color(0xFFB91C1C)
+                    ),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    elevation = ButtonDefaults.buttonElevation(0.dp)
+                ) {
+                    Icon(
+                        Icons.Default.CameraAlt, 
+                        contentDescription = null, 
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        if (hasImage) "Foto Bukti Terlampir" else "Pilih file struk...", 
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
-            }
-            
-            Spacer(Modifier.height(16.dp))
-            Button(
-                onClick = onPickImage,
-                colors = ButtonDefaults.buttonColors(containerColor = if (hasImage) Color(0xFFECFDF5) else Color(0xFFF3F4F6)),
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Icon(
-                    Icons.Default.CameraAlt, 
-                    contentDescription = null, 
-                    tint = if (hasImage) Color(0xFF10B981) else Color.Gray,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    if (hasImage) "Foto Bukti Terlampir" else "Lampirkan Foto Struk", 
-                    color = if (hasImage) Color(0xFF10B981) else Color.DarkGray
-                )
-            }
-            
-            Spacer(Modifier.height(16.dp))
-            Button(
-                onClick = onSubmit,
-                enabled = !isLoading && amount.isNotBlank() && description.isNotBlank() && hasImage,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF111827)),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                if (isLoading) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White)
-                } else {
-                    Text("Catat Pengeluaran", fontWeight = FontWeight.Bold)
+                
+                // Submit Button
+                Button(
+                    onClick = onSubmit,
+                    enabled = !isLoading && amount.isNotBlank() && description.isNotBlank() && hasImage && pettyCashBalance > 0,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFDC2626), // red-600
+                        disabledContainerColor = Color(0xFFDC2626).copy(alpha = 0.5f)
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    if (isLoading) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Menyimpan...", fontWeight = FontWeight.Bold)
+                    } else {
+                        Text("Simpan Pengeluaran", fontWeight = FontWeight.Bold)
+                    }
+                }
+                if (pettyCashBalance <= 0) {
+                    Text(
+                        text = "Saldo Petty Cash kosong, tidak bisa melakukan pengeluaran.",
+                        color = Color(0xFFEF4444), // red-500
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
                 }
             }
         }
@@ -542,13 +610,15 @@ fun RiwayatAktivitasMobile(ledgerItems: List<LedgerItem>, viewModel: ShiftViewMo
 @Composable
 fun LedgerItemRow(item: LedgerItem, viewModel: ShiftViewModel) {
     var showVoidDialog by remember { mutableStateOf(false) }
+    var showReceiptUrl by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
 
     Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
         Row(Modifier.weight(1f), verticalAlignment = Alignment.Top) {
             when (item) {
                 is LedgerItem.Expense -> {
                     val exp = item.data
-                    val isVoided = exp.status == "voided"
+                    val isVoided = exp.deletedAt != null
                     Box(
                         Modifier.size(44.dp).clip(RoundedCornerShape(8.dp))
                             .background(if (isVoided) Color(0xFFF3F4F6) else Color(0xFFFEF2F2)),
@@ -572,6 +642,29 @@ fun LedgerItemRow(item: LedgerItem, viewModel: ShiftViewModel) {
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(formatTime(exp.createdAt ?: exp.expenseDate), color = Color.Gray, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+                        if (isVoided && !exp.deleteReason.isNullOrBlank()) {
+                            Text(
+                                "Alasan Batal: ${exp.deleteReason}",
+                                color = Color(0xFFEF4444),
+                                fontSize = 10.sp,
+                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.padding(top = 2.dp)
+                            )
+                        }
+                        if (!exp.receiptUrl.isNullOrBlank()) {
+                            Text(
+                                "Lihat Bukti Foto",
+                                color = Color(0xFF3B82F6),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier
+                                    .padding(top = 4.dp)
+                                    .clickable {
+                                        showReceiptUrl = exp.receiptUrl
+                                    }
+                            )
+                        }
                     }
                 }
                 is LedgerItem.Topup -> {
@@ -641,7 +734,7 @@ fun LedgerItemRow(item: LedgerItem, viewModel: ShiftViewModel) {
             when (item) {
                 is LedgerItem.Expense -> {
                     val exp = item.data
-                    val isVoided = exp.status == "voided"
+                    val isVoided = exp.deletedAt != null
                     Text(
                         "-${formatRupiah(exp.amount)}", 
                         fontWeight = FontWeight.Black, 
@@ -726,6 +819,41 @@ fun LedgerItemRow(item: LedgerItem, viewModel: ShiftViewModel) {
                 }
             }
         )
+    }
+
+    if (showReceiptUrl != null) {
+        Dialog(onDismissRequest = { showReceiptUrl = null }) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.White)
+                    .padding(16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Bukti Pengeluaran", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.padding(bottom = 12.dp))
+                    AsyncImage(
+                        model = showReceiptUrl,
+                        contentDescription = "Bukti Foto",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 200.dp, max = 400.dp)
+                            .clip(RoundedCornerShape(8.dp)),
+                        contentScale = ContentScale.Fit
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = { showReceiptUrl = null },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Black),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Tutup", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
     }
 }
 

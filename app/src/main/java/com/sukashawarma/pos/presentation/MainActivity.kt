@@ -36,7 +36,8 @@ import com.sukashawarma.pos.presentation.shift.ShiftScreen
 import com.sukashawarma.pos.presentation.shift.ShiftViewModel
 import com.sukashawarma.pos.presentation.theme.CreamBackground
 import com.sukashawarma.pos.presentation.theme.SukaShawarmaPOSTheme
-
+import com.sukashawarma.pos.presentation.attendance.AttendanceViewModel
+import com.sukashawarma.pos.presentation.attendance.AttendanceOverlay
 import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
 import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import com.sukashawarma.pos.presentation.components.POSAdaptiveScaffold
@@ -51,6 +52,7 @@ class MainActivity : ComponentActivity() {
     private val shiftViewModel: ShiftViewModel by viewModels()
     private val settingsViewModel: SettingsViewModel by viewModels()
     private val infoPorsiViewModel: InfoPorsiViewModel by viewModels()
+    private val attendanceViewModel: AttendanceViewModel by viewModels()
 
     private val requestNotificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -81,6 +83,7 @@ class MainActivity : ComponentActivity() {
                         shiftViewModel.setOutlet(session.outletId)
                         reportsViewModel.setOutlet(session.outletId)
                         infoPorsiViewModel.currentOutletId.value = session.outletId
+                        attendanceViewModel.setSession(session.outletId, session.username)
                     }
                 }
 
@@ -94,49 +97,54 @@ class MainActivity : ComponentActivity() {
                     val session = activeSession!!
                     var currentTab by remember { mutableStateOf(POSTab.DASHBOARD) }
 
-                    POSAdaptiveScaffold(
-                        windowSizeClass = windowSizeClass.widthSizeClass,
-                        currentTab = currentTab,
-                        onTabSelected = { currentTab = it },
-                        outletName = session.outletName,
-                        onLogoutClick = {
-                            loginViewModel.logout()
-                            dashboardViewModel.setSession("", "", "Kasir")
-                            posManualOrderViewModel.currentOutletId.value = ""
-                            menuManagementViewModel.setOutlet("")
-                        }
-                    ) {
-                        Column(modifier = Modifier.fillMaxSize().background(CreamBackground)) {
-                            // Admin Rules & Target Banner
-                            com.sukashawarma.pos.presentation.components.BriefingBanner(outletId = session.outletId)
-                            
-                            Box(modifier = Modifier.weight(1f)) {
-                                when (currentTab) {
-                                    POSTab.DASHBOARD -> DashboardScreen(
-                                        viewModel = dashboardViewModel,
-                                        windowSizeClass = windowSizeClass.widthSizeClass,
-                                        onNewOrderClick = { currentTab = POSTab.ORDER_MANUAL }
-                                    )
-                                    POSTab.ORDER_MANUAL -> POSManualOrderScreen(viewModel = posManualOrderViewModel)
-                                    POSTab.INFO_PORSI -> InfoPorsiScreen(viewModel = infoPorsiViewModel)
-                                    POSTab.MENU_MANAGEMENT -> MenuManagementScreen(viewModel = menuManagementViewModel)
-                                    POSTab.SHIFT_PETTY_CASH -> ShiftScreen(
-                                        viewModel = shiftViewModel,
-                                        onNavigateToCloseShift = { currentTab = POSTab.SHIFT_CLOSE }
-                                    )
-                                    POSTab.SHIFT_CLOSE -> CloseShiftScreen(
-                                        viewModel = shiftViewModel,
-                                        onBack = { currentTab = POSTab.SHIFT_PETTY_CASH }
-                                    )
-                                    POSTab.HISTORI_BONUS -> OrderHistoryScreen(viewModel = orderHistoryViewModel)
-                                    POSTab.KIOSK_CONTROL -> SettingsScreen(viewModel = settingsViewModel)
-                                    POSTab.REPORTS -> ReportsScreen(viewModel = reportsViewModel)
-                                    POSTab.SETTINGS -> SettingsScreen(viewModel = settingsViewModel)
-                                    POSTab.PANDUAN -> SettingsScreen(viewModel = settingsViewModel)
-                                    POSTab.STOK_OUTLET -> MenuManagementScreen(viewModel = menuManagementViewModel)
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        POSAdaptiveScaffold(
+                            windowSizeClass = windowSizeClass.widthSizeClass,
+                            currentTab = currentTab,
+                            onTabSelected = { currentTab = it },
+                            outletName = session.outletName,
+                            onLogoutClick = {
+                                loginViewModel.logout()
+                                dashboardViewModel.setSession("", "", "Kasir")
+                                posManualOrderViewModel.currentOutletId.value = ""
+                                menuManagementViewModel.setOutlet("")
+                            }
+                        ) {
+                            Column(modifier = Modifier.fillMaxSize().background(CreamBackground)) {
+                                // Admin Rules & Target Banner
+                                com.sukashawarma.pos.presentation.components.BriefingBanner(outletId = session.outletId)
+                                
+                                Box(modifier = Modifier.weight(1f)) {
+                                    when (currentTab) {
+                                        POSTab.DASHBOARD -> DashboardScreen(
+                                            viewModel = dashboardViewModel,
+                                            windowSizeClass = windowSizeClass.widthSizeClass,
+                                            onNewOrderClick = { currentTab = POSTab.ORDER_MANUAL }
+                                        )
+                                        POSTab.ORDER_MANUAL -> POSManualOrderScreen(viewModel = posManualOrderViewModel)
+                                        POSTab.INFO_PORSI -> InfoPorsiScreen(viewModel = infoPorsiViewModel)
+                                        POSTab.MENU_MANAGEMENT -> MenuManagementScreen(viewModel = menuManagementViewModel)
+                                        POSTab.SHIFT_PETTY_CASH -> ShiftScreen(
+                                            viewModel = shiftViewModel,
+                                            onNavigateToCloseShift = { currentTab = POSTab.SHIFT_CLOSE }
+                                        )
+                                        POSTab.SHIFT_CLOSE -> CloseShiftScreen(
+                                            viewModel = shiftViewModel,
+                                            onBack = { currentTab = POSTab.SHIFT_PETTY_CASH }
+                                        )
+                                        POSTab.HISTORI_BONUS -> OrderHistoryScreen(viewModel = orderHistoryViewModel)
+                                        POSTab.KIOSK_CONTROL -> SettingsScreen(viewModel = settingsViewModel)
+                                        POSTab.REPORTS -> ReportsScreen(viewModel = reportsViewModel)
+                                        POSTab.SETTINGS -> SettingsScreen(viewModel = settingsViewModel)
+                                        POSTab.PANDUAN -> SettingsScreen(viewModel = settingsViewModel)
+                                        POSTab.STOK_OUTLET -> MenuManagementScreen(viewModel = menuManagementViewModel)
+                                    }
                                 }
                             }
                         }
+                        
+                        // Add overlay on top of EVERYTHING if locked
+                        AttendanceOverlay(viewModel = attendanceViewModel)
                     }
                 }
             }

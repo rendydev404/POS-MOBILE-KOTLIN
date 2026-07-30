@@ -8,4 +8,5 @@ object GlobalEventBus {
     val targetRefreshEvent = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val orderSyncEvent = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val isRealtimeConnected = MutableStateFlow(false)
+    val bypassRequestEvent = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 }

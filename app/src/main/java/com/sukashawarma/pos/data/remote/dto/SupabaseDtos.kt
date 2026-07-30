@@ -94,6 +94,9 @@ data class OrderDto(
     @SerializedName("amount_received") val amountReceived: Double?,
     @SerializedName("change_amount") val changeAmount: Double?,
     @SerializedName("kitchen_receipt_printed") val kitchenReceiptPrinted: Boolean?,
+    @SerializedName("customer_receipt_printed") val customerReceiptPrinted: Boolean?,
+    @SerializedName("cancellation_status") val cancellationStatus: String?,
+    @SerializedName("cancellation_user_name") val cancellationUserName: String?,
     @SerializedName("created_at") val createdAt: String,
     val channel: String?,
     @SerializedName("order_items") val orderItems: List<OrderItemDto>?
@@ -116,8 +119,11 @@ data class ShiftDto(
     @SerializedName("start_time") val startTime: String?,
     @SerializedName("end_time") val endTime: String?,
     @SerializedName("starting_cash") val startingCash: Double,
+    @SerializedName("starting_petty_cash") val startingPettyCash: Double?,
     @SerializedName("actual_ending_cash") val actualEndingCash: Double?,
     @SerializedName("expected_ending_cash") val expectedEndingCash: Double?,
+    @SerializedName("actual_ending_petty_cash") val actualEndingPettyCash: Double?,
+    @SerializedName("expected_ending_petty_cash") val expectedEndingPettyCash: Double?,
     val variance: Double?,
     val status: String
 )
@@ -131,7 +137,8 @@ data class PettyCashExpenseDto(
     @SerializedName("expense_date") val expenseDate: String?,
     @SerializedName("created_at") val createdAt: String? = null,
     @SerializedName("receipt_url") val receiptUrl: String?,
-    val status: String? = null
+    @SerializedName("deleted_at") val deletedAt: String? = null,
+    @SerializedName("delete_reason") val deleteReason: String? = null
 )
 
 // Mirrors the real `orders` table columns. order_number is assigned server-side by
@@ -159,12 +166,13 @@ data class CreateOrderPayload(
 
 data class OpenShiftPayload(
     @SerializedName("p_outlet_id") val outletId: String,
-    @SerializedName("p_starting_cash") val startingCash: Double
+    @SerializedName("p_starting_petty_cash") val startingPettyCash: Double
 )
 
 data class CloseShiftPayload(
     @SerializedName("p_shift_id") val shiftId: String,
-    @SerializedName("p_actual_cash") val actualCash: Double
+    @SerializedName("p_actual_cash") val actualCash: Double,
+    @SerializedName("p_actual_petty_cash") val actualPettyCash: Double?
 )
 
 data class ShiftIdPayload(
@@ -230,10 +238,11 @@ data class MonthlyBonusPayload(
 )
 
 data class MonthlyBonusResultDto(
-    @SerializedName("total_bonus") val totalBonus: Double,
-    @SerializedName("bonus_per_crew") val bonusPerCrew: Double,
-    @SerializedName("crew_count") val crewCount: Int,
-    @SerializedName("days_achieved") val daysAchieved: Int
+    @SerializedName("crew_name") val crewName: String,
+    @SerializedName("role") val role: String,
+    @SerializedName("outlet_name") val outletName: String,
+    @SerializedName("days_target_reached") val daysTargetReached: Int,
+    @SerializedName("total_bonus_received") val totalBonusReceived: Double
 )
 
 data class DailyBonusBreakdownDto(
@@ -275,4 +284,35 @@ data class OwnerMessageDto(
     val body: String,
     @SerializedName("created_at") val createdAt: String,
     @SerializedName("expires_at") val expiresAt: String?
+)
+
+data class AttendanceDto(
+    val id: String,
+    @SerializedName("outlet_staff_id") val outletStaffId: String?,
+    @SerializedName("outlet_id") val outletId: String,
+    val type: String,
+    @SerializedName("ts_server") val tsServer: String?
+)
+
+data class DailyChecklistRecordDto(
+    val id: String,
+    @SerializedName("outlet_id") val outletId: String,
+    @SerializedName("staff_id") val staffId: String,
+    @SerializedName("record_date") val recordDate: String
+)
+
+data class BypassRequestDto(
+    val id: String,
+    @SerializedName("outlet_id") val outletId: String,
+    @SerializedName("staff_id") val staffId: String,
+    @SerializedName("request_type") val requestType: String,
+    val status: String,
+    @SerializedName("created_at") val createdAt: String
+)
+
+data class CreateBypassRequestPayload(
+    @SerializedName("outlet_id") val outletId: String,
+    @SerializedName("staff_id") val staffId: String,
+    @SerializedName("request_type") val requestType: String,
+    val status: String = "pending"
 )

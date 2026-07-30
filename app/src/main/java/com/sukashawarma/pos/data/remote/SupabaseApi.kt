@@ -208,4 +208,42 @@ interface SupabaseApi {
 
     @POST("rest/v1/rpc/get_my_active_messages")
     suspend fun getMyActiveMessages(@Body payload: Map<String, String> = emptyMap()): Response<List<OwnerMessageDto>>
+
+    @GET("rest/v1/attendance")
+    suspend fun getAttendance(
+        @QueryMap filters: Map<String, String>,
+        @Query("select") select: String = "*",
+        @Query("order") order: String = "created_at.desc"
+    ): Response<List<AttendanceDto>>
+
+    @GET("rest/v1/daily_checklist_records")
+    suspend fun getDailyChecklistRecords(
+        @QueryMap filters: Map<String, String>,
+        @Query("select") select: String = "*"
+    ): Response<List<DailyChecklistRecordDto>>
+
+    @POST("rest/v1/bypass_requests")
+    @Headers("Prefer: return=representation")
+    suspend fun createBypassRequest(
+        @Body payload: CreateBypassRequestPayload
+    ): Response<List<BypassRequestDto>>
+    
+    @GET("rest/v1/bypass_requests")
+    suspend fun getBypassRequests(
+        @QueryMap filters: Map<String, String>,
+        @Query("select") select: String = "*",
+        @Query("order") order: String = "created_at.desc"
+    ): Response<List<BypassRequestDto>>
+
+    // Web POS API Endpoints (https://pos.sukashawarma.com)
+    @POST
+    suspend fun pullOnlineOrder(
+        @Url url: String,
+        @Body payload: Map<String, String>
+    ): Response<ResponseBody>
+    
+    @POST
+    suspend fun syncActiveOrders(
+        @Url url: String
+    ): Response<ResponseBody>
 }

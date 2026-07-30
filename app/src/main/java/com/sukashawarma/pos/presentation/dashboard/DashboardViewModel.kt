@@ -19,6 +19,9 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import java.time.Instant
+import java.time.ZoneId
+import java.time.LocalDate
 
 class DashboardViewModel(application: Application) : AndroidViewModel(application) {
     private val database = (application as POSApplication).database
@@ -61,7 +64,13 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     val completedOrders: StateFlow<List<Order>> = orders
-        .map { list -> list.filter { it.status == OrderStatus.COMPLETED || it.status == OrderStatus.READY } }
+        .map { list -> 
+            val today = LocalDate.now(ZoneId.systemDefault())
+            list.filter { 
+                (it.status == OrderStatus.COMPLETED || it.status == OrderStatus.READY) && 
+                isToday(it.createdAt, today)
+            } 
+        }
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     init {
@@ -130,8 +139,12 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 val dtos = res.body()!!
                 dtos.forEach { dto -> orderDao.insertOrder(dtoToEntity(dto)) }
 
-                val completed = dtos.filter { it.status.equals("completed", ignoreCase = true) || it.status.equals("ready", ignoreCase = true) }
-                totalLunasToday.value = completed.sumOf { it.totalAmount }
+                val today = LocalDate.now(ZoneId.systemDefault())
+                val completedToday = dtos.filter { 
+                    (it.status.equals("completed", ignoreCase = true) || it.status.equals("ready", ignoreCase = true)) &&
+                    isToday(parseIsoTimestamp(it.createdAt), today)
+                }
+                totalLunasToday.value = completedToday.sumOf { it.totalAmount }
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -199,6 +212,46 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             printStatusMessage.value = if (printed) null else "Gagal mencetak struk."
         }
     }
+    
+    fun markKitchenReceiptPrinted(order: Order) {
+        viewModelScope.launch {
+            orderDao.updateKitchenReceiptStatus(order.id, true)
+            try {
+                api.updateOrderStatus(
+                    orderIdFilter = "eq.${order.id}",
+                    patch = mapOf("kitchen_receipt_printed" to "true")
+                )
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+    }
+
+    fun markCustomerReceiptPrinted(order: Order) {
+        viewModelScope.launch {
+            orderDao.updateCustomerReceiptStatus(order.id, true)
+            try {
+                api.updateOrderStatus(
+                    orderIdFilter = "eq.${order.id}",
+                    patch = mapOf("customer_receipt_printed" to "true")
+                )
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+    }
+
+    fun requestCancellation(order: Order, reason: String) {
+        viewModelScope.launch {
+            // Kita asumsi untuk web POS butuh approval (cancellation_status = pending_approval)
+            orderDao.updateCancellationStatus(order.id, "pending_approval", null) // username biarkan null utk Native
+            try {
+                api.updateOrderStatus(
+                    orderIdFilter = "eq.${order.id}",
+                    patch = mapOf(
+                        "cancellation_status" to "pending_approval",
+                        "cancellation_reason" to reason
+                    )
+                )
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+    }
 
     private fun mapEntityToOrder(entity: LocalOrderEntity): Order {
         val itemType = object : TypeToken<List<OrderItem>>() {}.type
@@ -219,6 +272,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             amountReceived = entity.amountReceived,
             changeAmount = entity.changeAmount,
             kitchenReceiptPrinted = entity.kitchenReceiptPrinted,
+            customerReceiptPrinted = entity.customerReceiptPrinted,
+            cancellationStatus = entity.cancellationStatus,
+            cancellationUserName = entity.cancellationUserName,
             createdAt = entity.createdAt,
             isOffline = entity.isPendingSync,
             channel = entity.channel
@@ -250,6 +306,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             amountReceived = dto.amountReceived ?: 0.0,
             changeAmount = dto.changeAmount ?: 0.0,
             kitchenReceiptPrinted = dto.kitchenReceiptPrinted ?: false,
+            customerReceiptPrinted = dto.customerReceiptPrinted ?: false,
+            cancellationStatus = dto.cancellationStatus,
+            cancellationUserName = dto.cancellationUserName,
             createdAt = parseIsoTimestamp(dto.createdAt),
             isPendingSync = false,
             channel = dto.channel
@@ -273,4 +332,9 @@ private fun parseIsoTimestamp(iso: String): Long = try {
     java.time.Instant.parse(if (iso.endsWith("Z") || iso.contains("+")) iso else "${iso}Z").toEpochMilli()
 } catch (e: Exception) {
     System.currentTimeMillis()
+}
+
+private fun isToday(timestamp: Long, today: LocalDate): Boolean {
+    val orderDate = Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()).toLocalDate()
+    return orderDate == today
 }

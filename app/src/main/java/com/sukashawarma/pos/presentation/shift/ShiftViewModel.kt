@@ -103,18 +103,18 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
                         initialCash.value = openShift.startingCash
                         
                         // Use start time to filter items
-                        val startTime = openShift.startTime ?: ""
+                        val startMillis = LedgerItem.parseDate(openShift.startTime)
                         
                         // Fetch Expenses
-                        val pettyRes = api.getPettyCashExpenses(outletId)
+                        val pettyRes = api.getPettyCashExpenses("eq.$outletId")
                         val expenses = pettyRes.body()?.filter { 
-                            (it.createdAt ?: it.expenseDate ?: "") >= startTime 
+                            LedgerItem.parseDate(it.createdAt ?: it.expenseDate) >= startMillis 
                         } ?: emptyList()
 
                         // Fetch Topups
                         val topupsRes = api.getPettyCashTopups(mapOf("outlet_id" to "eq.$outletId"))
                         val topups = topupsRes.body()?.filter { 
-                            it.createdAt >= startTime 
+                            LedgerItem.parseDate(it.createdAt) >= startMillis 
                         } ?: emptyList()
 
                         // Fetch Cash Orders
@@ -123,7 +123,7 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
                             "status" to "eq.completed"
                         ))
                         val cashOrders = ordersRes.body()?.filter { 
-                            it.createdAt >= startTime && it.paymentMethod == "cash"
+                            LedgerItem.parseDate(it.createdAt) >= startMillis && it.paymentMethod == "cash"
                         } ?: emptyList()
 
                         // Build Ledger
@@ -141,10 +141,8 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
                         shiftSalesTotal.value = salesTotal
                         expectedCash.value = initialCash.value + salesTotal
                         
-                        val startPetty = openShift.startingCash // Wait, ShiftDto doesn't have startingPettyCash. We might need to assume 0 or check if it's there. 
-                        // In page.tsx: const startPetty = Number(shiftData.starting_petty_cash) || 0
-                        // Since startingPettyCash is missing in ShiftDto, we'll try fetching it or default to 0. 
-                        // Actually, the API getPettyCashBalance calculates it. Let's rely on the RPC or calculate locally.
+                        val startPetty = openShift.startingPettyCash ?: 0.0
+                        initialPettyCash.value = startPetty
                         
                         val topupsSum = topups
                             .filter { it.status in listOf("completed", "approved", "approved_by_finance", "forwarded_by_leader") }
@@ -152,7 +150,7 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
                         approvedTopupsTotal.value = topupsSum
                         
                         val expensesSum = expenses
-                            .filter { it.status != "voided" } // Also check if deleted_at exists, but DTO might just have status
+                            .filter { it.deletedAt == null } // Only sum non-voided expenses
                             .sumOf { it.amount }
                         expensesTotal.value = expensesSum
 
@@ -166,10 +164,29 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
                         ledgerItems.value = emptyList()
                         pettyCashBalance.value = 0.0
                         initialCash.value = 0.0
+                        initialPettyCash.value = 0.0
                         expectedCash.value = 0.0
                         
                         // Fetch last closed shift for starting petty cash prep if needed
-                        // Not strictly required since openShift API takes startingCash
+                        try {
+                            val lastShiftRes = api.getShifts(
+                                mapOf(
+                                    "outlet_id" to "eq.$outletId",
+                                    "status" to "eq.closed",
+                                    "order" to "start_time.desc",
+                                    "limit" to "1"
+                                )
+                            )
+                            if (lastShiftRes.isSuccessful && !lastShiftRes.body().isNullOrEmpty()) {
+                                val lastShift = lastShiftRes.body()!!.first()
+                                val endingBalance = lastShift.actualEndingPettyCash 
+                                    ?: lastShift.expectedEndingPettyCash 
+                                    ?: lastShift.startingPettyCash ?: 0.0
+                                openShiftInput.value = endingBalance.toInt().toString()
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -332,12 +349,12 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
             val stream = java.io.ByteArrayOutputStream()
             bitmap.compress(Bitmap.CompressFormat.JPEG, 85, stream)
             val fileName = "${outletId}_pettycash_${System.currentTimeMillis()}.jpg"
-            val objectPath = "$outletId/$fileName" // Matching web path structure
+            val objectPath = "petty-cash-receipts/$outletId/$fileName" // Include bucket name
             val body = stream.toByteArray().toRequestBody("image/jpeg".toMediaTypeOrNull())
 
             val uploadRes = api.uploadPaymentProof(objectPath = objectPath, contentType = "image/jpeg", file = body)
             if (uploadRes.isSuccessful) {
-                "${SupabaseClient.BASE_URL}storage/v1/object/public/petty-cash-receipts/$objectPath"
+                "${SupabaseClient.BASE_URL}storage/v1/object/public/$objectPath"
             } else null
         } catch (e: Exception) {
             e.printStackTrace()

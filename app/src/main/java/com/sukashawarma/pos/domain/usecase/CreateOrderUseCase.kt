@@ -45,6 +45,7 @@ class CreateOrderUseCase(
             outletId = outletId,
             orderNumber = orderNumber,
             customerName = if (customerName.isBlank()) "Pelanggan" else customerName,
+            status = com.sukashawarma.pos.domain.model.OrderStatus.PREPARING,
             source = source,
             paymentMethod = paymentMethod,
             items = items,

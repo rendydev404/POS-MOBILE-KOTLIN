@@ -236,7 +236,16 @@ fun DashboardScreen(
                             OrderCard(
                                 order = order,
                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
-                                onPrintReceipt = { o -> viewModel.printReceipt(o, isKitchen = false) }
+                                onCancelOrder = { o, reason -> viewModel.requestCancellation(o, reason) },
+                                onPrintKitchen = { o -> 
+                                    viewModel.printReceipt(o, isKitchen = true)
+                                    viewModel.markKitchenReceiptPrinted(o)
+                                },
+                                onPrintCustomer = { o -> 
+                                    viewModel.printReceipt(o, isKitchen = false)
+                                    viewModel.markCustomerReceiptPrinted(o)
+                                },
+                                onReprint = { o -> viewModel.printReceipt(o, isKitchen = false) }
                             )
                         }
                     }
@@ -259,7 +268,16 @@ fun DashboardScreen(
                             OrderCard(
                                 order = order,
                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
-                                onPrintReceipt = { o -> viewModel.printReceipt(o, isKitchen = true) }
+                                onCancelOrder = { o, reason -> viewModel.requestCancellation(o, reason) },
+                                onPrintKitchen = { o -> 
+                                    viewModel.printReceipt(o, isKitchen = true)
+                                    viewModel.markKitchenReceiptPrinted(o)
+                                },
+                                onPrintCustomer = { o -> 
+                                    viewModel.printReceipt(o, isKitchen = false)
+                                    viewModel.markCustomerReceiptPrinted(o)
+                                },
+                                onReprint = { o -> viewModel.printReceipt(o, isKitchen = false) }
                             )
                         }
                     }
@@ -282,7 +300,16 @@ fun DashboardScreen(
                             OrderCard(
                                 order = order,
                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
-                                onPrintReceipt = { o -> viewModel.printReceipt(o, isKitchen = false) }
+                                onCancelOrder = { o, reason -> viewModel.requestCancellation(o, reason) },
+                                onPrintKitchen = { o -> 
+                                    viewModel.printReceipt(o, isKitchen = true)
+                                    viewModel.markKitchenReceiptPrinted(o)
+                                },
+                                onPrintCustomer = { o -> 
+                                    viewModel.printReceipt(o, isKitchen = false)
+                                    viewModel.markCustomerReceiptPrinted(o)
+                                },
+                                onReprint = { o -> viewModel.printReceipt(o, isKitchen = false) }
                             )
                         }
                     }

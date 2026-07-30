@@ -117,7 +117,11 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
     private fun collectMenuSnapshot() {
         viewModelScope.launch {
             currentOutletId.filter { it.isNotBlank() }
-                .flatMapLatest { outletId -> repository.snapshot(outletId) }
+                .flatMapLatest { outletId ->
+                    // Also fetch promos for this outlet asynchronously
+                    fetchActivePromos(outletId)
+                    repository.snapshot(outletId)
+                }
                 .collect { snapshot ->
                     categories.value = snapshot.categories
                     if (snapshot.categories.isNotEmpty() && selectedCategoryId.value.isEmpty()) {
@@ -127,6 +131,42 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                     kioskSettings.value = snapshot.settings
                     isLoading.value = false
                 }
+        }
+    }
+
+    private fun fetchActivePromos(outletId: String) {
+        viewModelScope.launch {
+            try {
+                val response = api.getPromos("eq.$outletId", "eq.true")
+                if (response.isSuccessful) {
+                    val promoDtos = response.body() ?: emptyList()
+                    val mappedPromos = promoDtos.mapNotNull { dto ->
+                        val scope = when(dto.scope?.lowercase()) {
+                            "global" -> com.sukashawarma.pos.domain.model.PromoScope.GLOBAL
+                            "item" -> com.sukashawarma.pos.domain.model.PromoScope.ITEM
+                            else -> return@mapNotNull null
+                        }
+                        val type = when(dto.discountType?.lowercase()) {
+                            "percentage" -> com.sukashawarma.pos.domain.model.DiscountType.PERCENTAGE
+                            "nominal" -> com.sukashawarma.pos.domain.model.DiscountType.NOMINAL
+                            else -> return@mapNotNull null
+                        }
+                        com.sukashawarma.pos.domain.model.Promo(
+                            id = dto.id,
+                            outletId = dto.outletId,
+                            name = "Promo (ID: ${dto.id.take(4)})", // Placeholder since Dto lacks name
+                            scope = scope,
+                            menuItemId = null, // Backend handles item mapping differently if needed
+                            discountType = type,
+                            discountValue = dto.discountValue ?: 0.0,
+                            isActive = dto.isActive ?: false
+                        )
+                    }
+                    activePromos.value = mappedPromos
+                }
+            } catch (e: Exception) {
+                // Ignore for offline mode, wait for retry mechanism if needed
+            }
         }
     }
 
@@ -549,6 +589,9 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                 amountReceived = order.amountReceived,
                 changeAmount = order.changeAmount,
                 kitchenReceiptPrinted = false,
+                customerReceiptPrinted = false,
+                cancellationStatus = null,
+                cancellationUserName = null,
                 createdAt = order.createdAt,
                 isPendingSync = pendingSync,
                 channel = order.channel
@@ -568,14 +611,8 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                     val printerManager = com.sukashawarma.pos.data.bluetooth.BluetoothPrinterManager()
                     val connected = printerManager.ensureConnected(printerMac)
                     if (connected) {
-                        // Print Customer Receipt
-                        val customerBytes = com.sukashawarma.pos.domain.printer.ReceiptPrinter.generateReceiptBytes(
-                            order = order.copy(orderNumber = serverOrderNumber),
-                            isKitchen = false,
-                            cashierName = currentUsername.value,
-                            outletName = currentOutletName.value
-                        )
-                        printerManager.printBytesChunked(customerBytes)
+                        // Customer Receipt Auto Print removed to match Web POS and save paper
+                        // Cashier can print manually via "Cetak Ulang Struk"
                         
                         // Print Kitchen Ticket
                         val kitchenBytes = com.sukashawarma.pos.domain.printer.ReceiptPrinter.generateReceiptBytes(
