@@ -68,6 +68,12 @@ interface SupabaseApi {
         @Query("select") select: String = "key,value,outlet_id"
     ): Response<List<KioskSettingDto>>
 
+    @GET("rest/v1/global_settings")
+    suspend fun getGlobalSettings(
+        @Query("key") keyFilter: String = "eq.print_layout",
+        @Query("select") select: String = "key,value"
+    ): Response<List<GlobalSettingDto>>
+
     // Upsert one kiosk_settings row (bestseller/upsell/recommendation/unavailable/etc. list for
     // one outlet+key). Contract only in sub-project A — B is the first caller.
     @Headers("Prefer: resolution=merge-duplicates")
@@ -222,11 +228,30 @@ interface SupabaseApi {
         @Query("select") select: String = "*"
     ): Response<List<DailyChecklistRecordDto>>
 
+    @GET("rest/v1/checklist_categories")
+    suspend fun getChecklistCategories(
+        @QueryMap filters: Map<String, String>,
+        @Query("select") select: String = "id,checklist_items(id,is_required)",
+        @Query("phase") phase: String = "eq.buka"
+    ): Response<List<ChecklistCategoryDto>>
+
+    @GET("rest/v1/daily_checklist_ticks")
+    suspend fun getDailyChecklistTicks(
+        @QueryMap filters: Map<String, String>,
+        @Query("select") select: String = "item_id,record_id"
+    ): Response<List<DailyChecklistTickDto>>
+
     @POST("rest/v1/bypass_requests")
     @Headers("Prefer: return=representation")
     suspend fun createBypassRequest(
         @Body payload: CreateBypassRequestPayload
     ): Response<List<BypassRequestDto>>
+    
+    @POST("rest/v1/cancellation_requests")
+    @Headers("Prefer: return=representation")
+    suspend fun createCancellationRequest(
+        @Body payload: CreateCancellationRequestPayload
+    ): Response<List<CancellationRequestResponse>>
     
     @GET("rest/v1/bypass_requests")
     suspend fun getBypassRequests(
@@ -246,4 +271,10 @@ interface SupabaseApi {
     suspend fun syncActiveOrders(
         @Url url: String
     ): Response<ResponseBody>
+
+    @POST
+    suspend fun parseReceipt(
+        @Url url: String,
+        @Body payload: ParseReceiptPayload
+    ): Response<ParseReceiptResponse>
 }

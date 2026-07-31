@@ -62,6 +62,7 @@ class POSRealtimeService : Service() {
                 }
             } else if (table == "owner_messages") {
                 val msgId = record.optString("id").hashCode()
+                android.util.Log.d("POS_DEBUG", "Realtime event for owner_messages: $eventType, record: $record")
                 if (eventType == "DELETE") {
                     val manager = getSystemService(NotificationManager::class.java)
                     manager?.cancel(msgId)
@@ -72,6 +73,8 @@ class POSRealtimeService : Service() {
                     // Tambahkan prefix "PESAN DARI OWNER: " agar konsisten dengan permintaan user
                     title = "PESAN DARI OWNER: $title"
                     
+                    android.util.Log.d("POS_DEBUG", "Showing push notification for owner message: $title")
+                    alertPlayer.playOwnerMessageAlert()
                     showPushNotification(msgId, title, body)
                 }
                 GlobalEventBus.ownerMessageRefreshEvent.tryEmit(Unit)
@@ -146,9 +149,14 @@ class POSRealtimeService : Service() {
             .setAutoCancel(true)
             .build()
             
+        android.util.Log.d("POS_DEBUG", "Notification builder created, checking permission...")
+            
         if (androidx.core.app.ActivityCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
             val manager = getSystemService(NotificationManager::class.java)
             manager?.notify(id, notification)
+            android.util.Log.d("POS_DEBUG", "Notification Manager notify called with id $id")
+        } else {
+            android.util.Log.d("POS_DEBUG", "Permission POST_NOTIFICATIONS is NOT granted!")
         }
     }
 

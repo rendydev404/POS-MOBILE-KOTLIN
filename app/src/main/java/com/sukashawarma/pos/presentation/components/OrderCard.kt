@@ -140,6 +140,89 @@ fun OrderCard(
         )
     }
 
+    var showReprintDialog by remember { mutableStateOf(false) }
+
+    if (showReprintDialog) {
+        androidx.compose.ui.window.Dialog(onDismissRequest = { showReprintDialog = false }) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = Color.White,
+                tonalElevation = 8.dp
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .background(Color(0xFFEFF6FF), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Outlined.Print,
+                            contentDescription = null,
+                            tint = Color(0xFF2563EB),
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Cetak Ulang Struk",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextSlateDark
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Pilih struk yang ingin dicetak ulang",
+                        fontSize = 14.sp,
+                        color = TextSlate,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                showReprintDialog = false
+                                onPrintKitchen(order)
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = TextBlue),
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Text("Dapur", fontWeight = FontWeight.Bold)
+                        }
+                        
+                        Button(
+                            onClick = {
+                                showReprintDialog = false
+                                onPrintCustomer(order)
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = TextEmerald),
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Text("Customer", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -508,77 +591,27 @@ fun OrderCard(
                             }
                         }
                     } else if (order.status == OrderStatus.PREPARING) {
-                        Button(
-                            onClick = { showCancelDialog = true },
-                            modifier = Modifier.weight(1f).height(48.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFEE2E2))
-                        ) {
-                            Icon(Icons.Outlined.Cancel, contentDescription = null, tint = TextRed, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Batal", color = TextRed, fontWeight = FontWeight.Bold)
-                        }
-
-                        if (!order.kitchenReceiptPrinted) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(
-                                onClick = { 
-                                    onPrintKitchen(order)
-                                    onStatusChange(order, OrderStatus.PREPARING) // Web handles state changes internally, but we can do it via ViewModel 
-                                },
-                                modifier = Modifier.weight(2f).height(48.dp),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = TextBlue)
-                            ) {
-                                Icon(Icons.Default.RestaurantMenu, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Mulai Masak", color = Color.White, fontWeight = FontWeight.Bold)
-                            }
-                        } else if (!order.customerReceiptPrinted) {
-                            Button(
-                                onClick = { onPrintCustomer(order) },
-                                modifier = Modifier.weight(2f).height(48.dp),
+                                onClick = { onStatusChange(order, OrderStatus.COMPLETED) },
+                                modifier = Modifier.weight(1f).height(48.dp),
                                 shape = RoundedCornerShape(12.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = TextEmerald)
                             ) {
-                                Icon(Icons.Outlined.Print, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                                Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Cetak Struk", color = Color.White, fontWeight = FontWeight.Bold)
+                                Text("Selesai", color = Color.White, fontWeight = FontWeight.Bold)
                             }
-                        } else {
-                            // Completed / Printed both
-                            Row(modifier = Modifier.weight(2f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(
-                                    onClick = { onStatusChange(order, OrderStatus.COMPLETED) },
-                                    modifier = Modifier.weight(1f).height(48.dp),
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = TextEmerald)
-                                ) {
-                                    Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Selesai", color = Color.White, fontWeight = FontWeight.Bold)
-                                }
-                                OutlinedButton(
-                                    onClick = { onReprint(order) },
-                                    modifier = Modifier.width(56.dp).height(48.dp),
-                                    shape = RoundedCornerShape(12.dp),
-                                    border = androidx.compose.foundation.BorderStroke(2.dp, DefaultBorder),
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TextSlate)
-                                ) {
-                                    Icon(Icons.Outlined.Print, contentDescription = null, modifier = Modifier.size(20.dp))
-                                }
+                            OutlinedButton(
+                                onClick = { showReprintDialog = true },
+                                modifier = Modifier.width(56.dp).height(48.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, DefaultBorder),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = TextSlateDark),
+                                contentPadding = PaddingValues(0.dp)
+                            ) {
+                                Icon(Icons.Outlined.Print, contentDescription = null, modifier = Modifier.size(20.dp))
                             }
-                        }
-                    } else if (order.status == OrderStatus.COMPLETED) {
-                        OutlinedButton(
-                            onClick = { onReprint(order) },
-                            modifier = Modifier.fillMaxWidth().height(48.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, DefaultBorder),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = TextSlateDark)
-                        ) {
-                            Icon(Icons.Outlined.Print, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Cetak Struk", fontWeight = FontWeight.Bold)
                         }
                     }
                 }

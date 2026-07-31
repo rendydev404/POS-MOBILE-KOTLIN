@@ -35,6 +35,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun DashboardScreen(
     viewModel: DashboardViewModel,
+    printerViewModel: com.sukashawarma.pos.presentation.printer.BluetoothPrinterViewModel,
     windowSizeClass: WindowWidthSizeClass = WindowWidthSizeClass.Expanded,
     onNewOrderClick: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -42,6 +43,17 @@ fun DashboardScreen(
     val pendingOrders by viewModel.pendingOrders.collectAsState()
     val preparingOrders by viewModel.preparingOrders.collectAsState()
     val completedOrders by viewModel.completedOrders.collectAsState()
+    
+    val printerConnectionStatus by printerViewModel.connectionStatus.collectAsState()
+    val connectedDeviceName by printerViewModel.connectedDeviceName.collectAsState()
+    var showPrinterDialog by remember { mutableStateOf(false) }
+
+    if (showPrinterDialog) {
+        com.sukashawarma.pos.presentation.printer.BluetoothPrinterDialog(
+            viewModel = printerViewModel,
+            onDismiss = { showPrinterDialog = false }
+        )
+    }
 
     val currentOutletName by viewModel.currentOutletName.collectAsState()
     val totalLunasToday by viewModel.totalLunasToday.collectAsState()
@@ -50,9 +62,17 @@ fun DashboardScreen(
     var activeSourceFilter by remember { mutableStateOf("Semua") }
     var preparingSubTab by remember { mutableStateOf("Antrean") }
     var completedSearchQuery by remember { mutableStateOf("") }
+    val printStatusMessage by viewModel.printStatusMessage.collectAsState()
 
     val pagerState = rememberPagerState(pageCount = { 3 })
     val coroutineScope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    LaunchedEffect(printStatusMessage) {
+        printStatusMessage?.let { msg ->
+            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
 
     Column(
         modifier = modifier
@@ -179,16 +199,21 @@ fun DashboardScreen(
             ) {
                 Surface(
                     shape = RoundedCornerShape(6.dp),
-                    color = CreamSurface,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, CreamBorder)
+                    color = if (printerConnectionStatus == com.sukashawarma.pos.presentation.printer.ConnectionStatus.CONNECTED) TwEmerald50 else CreamSurface,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, if (printerConnectionStatus == com.sukashawarma.pos.presentation.printer.ConnectionStatus.CONNECTED) TwEmerald100 else CreamBorder),
+                    modifier = Modifier.clickable { showPrinterDialog = true }
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.Lock, contentDescription = null, tint = TextDarkMuted, modifier = Modifier.size(12.dp))
+                        val icon = if (printerConnectionStatus == com.sukashawarma.pos.presentation.printer.ConnectionStatus.CONNECTED) Icons.Default.CheckCircle else Icons.Default.Lock
+                        val tint = if (printerConnectionStatus == com.sukashawarma.pos.presentation.printer.ConnectionStatus.CONNECTED) TwEmerald600 else TextDarkMuted
+                        val text = if (printerConnectionStatus == com.sukashawarma.pos.presentation.printer.ConnectionStatus.CONNECTED) "PRINTER KASIR TERHUBUNG (${connectedDeviceName ?: ""})" else "PRINTER KASIR BELUM TERHUBUNG"
+                        
+                        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(12.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("PRINTER KASIR BELUM TERHUBUNG", style = MaterialTheme.typography.bodySmall, fontSize = 10.sp, color = TextDarkMuted, fontWeight = FontWeight.Bold)
+                        Text(text, style = MaterialTheme.typography.bodySmall, fontSize = 10.sp, color = tint, fontWeight = FontWeight.Bold)
                     }
                 }
 
@@ -236,16 +261,27 @@ fun DashboardScreen(
                             OrderCard(
                                 order = order,
                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
-                                onCancelOrder = { o, reason -> viewModel.requestCancellation(o, reason) },
+                                onCancelOrder = { o, reason -> 
+                                    viewModel.requestCancellation(o, reason) { waUrl ->
+                                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(waUrl))
+                                        try {
+                                            context.startActivity(intent)
+                                        } catch (e: Exception) {
+                                            e.printStackTrace()
+                                        }
+                                    } 
+                                },
                                 onPrintKitchen = { o -> 
-                                    viewModel.printReceipt(o, isKitchen = true)
-                                    viewModel.markKitchenReceiptPrinted(o)
+                                    viewModel.printReceipt(context, o, isKitchen = true) {
+                                        viewModel.markKitchenReceiptPrinted(o)
+                                    }
                                 },
                                 onPrintCustomer = { o -> 
-                                    viewModel.printReceipt(o, isKitchen = false)
-                                    viewModel.markCustomerReceiptPrinted(o)
+                                    viewModel.printReceipt(context, o, isKitchen = false) {
+                                        viewModel.markCustomerReceiptPrinted(o)
+                                    }
                                 },
-                                onReprint = { o -> viewModel.printReceipt(o, isKitchen = false) }
+                                onReprint = { o -> viewModel.printReceipt(context, o, isKitchen = false) }
                             )
                         }
                     }
@@ -268,16 +304,27 @@ fun DashboardScreen(
                             OrderCard(
                                 order = order,
                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
-                                onCancelOrder = { o, reason -> viewModel.requestCancellation(o, reason) },
+                                onCancelOrder = { o, reason -> 
+                                    viewModel.requestCancellation(o, reason) { waUrl ->
+                                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(waUrl))
+                                        try {
+                                            context.startActivity(intent)
+                                        } catch (e: Exception) {
+                                            e.printStackTrace()
+                                        }
+                                    } 
+                                },
                                 onPrintKitchen = { o -> 
-                                    viewModel.printReceipt(o, isKitchen = true)
-                                    viewModel.markKitchenReceiptPrinted(o)
+                                    viewModel.printReceipt(context, o, isKitchen = true) {
+                                        viewModel.markKitchenReceiptPrinted(o)
+                                    }
                                 },
                                 onPrintCustomer = { o -> 
-                                    viewModel.printReceipt(o, isKitchen = false)
-                                    viewModel.markCustomerReceiptPrinted(o)
+                                    viewModel.printReceipt(context, o, isKitchen = false) {
+                                        viewModel.markCustomerReceiptPrinted(o)
+                                    }
                                 },
-                                onReprint = { o -> viewModel.printReceipt(o, isKitchen = false) }
+                                onReprint = { o -> viewModel.printReceipt(context, o, isKitchen = false) }
                             )
                         }
                     }
@@ -300,16 +347,27 @@ fun DashboardScreen(
                             OrderCard(
                                 order = order,
                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
-                                onCancelOrder = { o, reason -> viewModel.requestCancellation(o, reason) },
+                                onCancelOrder = { o, reason -> 
+                                    viewModel.requestCancellation(o, reason) { waUrl ->
+                                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(waUrl))
+                                        try {
+                                            context.startActivity(intent)
+                                        } catch (e: Exception) {
+                                            e.printStackTrace()
+                                        }
+                                    } 
+                                },
                                 onPrintKitchen = { o -> 
-                                    viewModel.printReceipt(o, isKitchen = true)
-                                    viewModel.markKitchenReceiptPrinted(o)
+                                    viewModel.printReceipt(context, o, isKitchen = true) {
+                                        viewModel.markKitchenReceiptPrinted(o)
+                                    }
                                 },
                                 onPrintCustomer = { o -> 
-                                    viewModel.printReceipt(o, isKitchen = false)
-                                    viewModel.markCustomerReceiptPrinted(o)
+                                    viewModel.printReceipt(context, o, isKitchen = false) {
+                                        viewModel.markCustomerReceiptPrinted(o)
+                                    }
                                 },
-                                onReprint = { o -> viewModel.printReceipt(o, isKitchen = false) }
+                                onReprint = { o -> viewModel.printReceipt(context, o, isKitchen = false) }
                             )
                         }
                     }

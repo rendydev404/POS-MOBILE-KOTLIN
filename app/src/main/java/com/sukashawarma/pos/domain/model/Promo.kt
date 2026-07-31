@@ -18,5 +18,6 @@ data class Promo(
     val menuItemId: String? = null,
     val discountType: DiscountType,
     val discountValue: Double,
+    val minPurchase: Double? = null,
     val isActive: Boolean = true
 )

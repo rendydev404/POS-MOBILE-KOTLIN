@@ -15,25 +15,60 @@ class PrintReceiptUseCase {
     private val dateFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
 
     fun generateCustomerReceiptBytes(
+        context: android.content.Context,
         order: Order,
         outletName: String,
-        cashierName: String
+        cashierName: String,
+        layout: com.sukashawarma.pos.data.remote.dto.CustomerLayoutDto? = null
     ): ByteArray {
         val builder = EscPosBuilder().init()
+        
+        val paperWidth = layout?.paperWidth ?: 58
+        val charWidth = if (paperWidth == 80) 48 else 32
+        val showLogo = layout?.showLogo ?: true
+        val headerText = if (layout?.headerText.isNullOrBlank()) "SUKA SHAWARMA" else layout!!.headerText
+        val footerText = if (layout?.footerText.isNullOrBlank()) "Terima Kasih!\nSilakan datang kembali" else layout!!.footerText
+        val showCashier = layout?.showCashier ?: true
+        val isBigFont = layout?.fontScale == "besar"
+        val showItemNotes = layout?.showItemNotes ?: true
+
+        // Print Logo
+        if (showLogo) {
+            try {
+                val bitmap = android.graphics.BitmapFactory.decodeResource(context.resources, com.sukashawarma.pos.R.mipmap.ic_launcher)
+                val targetWidth = if (paperWidth == 80) 170 else 140
+                val scaledBitmap = android.graphics.Bitmap.createScaledBitmap(
+                    bitmap,
+                    targetWidth, 
+                    (targetWidth * bitmap.height) / bitmap.width,
+                    true
+                )
+                builder.alignCenter().bitmap(scaledBitmap)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
 
         // Header
-        builder.alignCenter()
-            .bold(true).size(2, 2).textLine("SUKA SHAWARMA")
+        builder.alignCenter().bold(true)
+        if (isBigFont) builder.size(1, 2) else builder.size(2, 2)
+        builder.textLine(headerText)
             .bold(false).size(1, 1).newline()
-            .textLine("Cabang $outletName")
-            .textLine("Timur Tengah dalam Setiap Gigitan")
-            .separator()
+            
+        if (layout?.headerText.isNullOrBlank()) {
+            builder.textLine("Cabang $outletName")
+                .textLine("Timur Tengah dalam Setiap Gigitan")
+        }
+        builder.separator(charWidth)
 
         // Metadata
         builder.alignLeft()
             .textLine("Waktu    : ${dateFormat.format(Date(order.createdAt))}")
             .textLine("Pelanggan: ${order.customerName}")
-            .textLine("Kasir    : $cashierName")
+        
+        if (showCashier) {
+            builder.textLine("Kasir    : $cashierName")
+        }
         
         val paymentStr = when (order.paymentMethod) {
             PaymentMethod.CASH -> "TUNAI"
@@ -42,30 +77,20 @@ class PrintReceiptUseCase {
             PaymentMethod.VA -> "VIRTUAL ACCOUNT"
         }
         builder.textLine("Metode   : $paymentStr")
-            .separator()
+            .separator(charWidth)
 
         // Double Height Nomor Antrean
         builder.alignCenter()
             .size(1, 2).bold(true).textLine("No. ${order.orderNumber}")
             .size(1, 1).bold(false)
-            .separator()
+            .separator(charWidth)
 
-        // Items (32 chars for 58mm printer)
+        // Items
         builder.alignLeft()
         for (item in order.items) {
-            val qtyStr = "${item.quantity}x"
-            val priceStr = formatRupiah(item.subtotal)
-            val nameSpace = 32 - qtyStr.length - priceStr.length - 1
-            val safeName = padRight(item.name, nameSpace)
-            
-            val line = "$qtyStr $safeName${padLeft(priceStr, priceStr.length)}"
-            builder.textLine(line)
-            
-            if (item.note.isNotBlank()) {
-                builder.textLine("   Note: ${item.note}")
-            }
+            buildItem(builder, item, charWidth, isBigFont, true, showItemNotes)
         }
-        builder.separator()
+        builder.separator(charWidth)
 
         // Totals
         builder.alignRight()
@@ -86,50 +111,101 @@ class PrintReceiptUseCase {
         
         // Footer
         builder.alignCenter()
-            .textLine("Terima Kasih!")
-            .textLine("Silakan datang kembali")
-            .feed(4).cut()
+        val footerLines = footerText.split("\n")
+        for (line in footerLines) {
+            builder.textLine(line)
+        }
+        builder.feed(4).cut()
 
         return builder.getBytes()
     }
 
-    fun generateKitchenReceiptBytes(order: Order): ByteArray {
+    fun generateKitchenReceiptBytes(
+        order: Order,
+        outletName: String,
+        cashierName: String,
+        layout: com.sukashawarma.pos.data.remote.dto.KitchenLayoutDto? = null
+    ): ByteArray {
         val builder = EscPosBuilder().init()
+
+        val paperWidth = layout?.paperWidth ?: 58
+        val charWidth = if (paperWidth == 80) 48 else 32
+        val headerText = if (layout?.headerText.isNullOrBlank()) "STRUK DAPUR" else layout!!.headerText
+        val showCustomer = layout?.showCustomer ?: true
+        val isBigFont = true // Kitchen receipt items are always large
 
         // Header
         builder.alignCenter()
-            .bold(true).size(2, 2).textLine("STRUK DAPUR")
+            .bold(true).size(1, 2).textLine(headerText)
             .bold(false).size(1, 1).newline()
-            .separator()
+            .separator(charWidth)
 
         // Metadata
         builder.alignLeft()
             .textLine(dateFormat.format(Date(order.createdAt)))
-            .textLine("Pelanggan: ${order.customerName}")
-            .separator()
+        
+        if (showCustomer) {
+            builder.textLine("Pelanggan: ${order.customerName}")
+        }
 
         // Double Height Nomor Antrean
-        builder.alignCenter()
+        builder.alignCenter().newline()
             .size(1, 2).bold(true).textLine("No. ${order.orderNumber}")
-            .size(1, 1).bold(false)
-            .separator()
+            .size(1, 1).bold(false).newline()
+            .separator(charWidth)
+            .alignLeft()
 
         // Items
-        builder.alignLeft()
         for (item in order.items) {
-            builder.bold(true).size(2, 2)
-                .textLine("${item.quantity}x ${item.name}")
-                .bold(false).size(1, 1)
-            
-            if (item.note.isNotBlank()) {
-                builder.textLine("   - ${item.note}")
-            }
+            buildItem(builder, item, charWidth, isBigFont, false, true)
         }
         builder.newline().newline()
         builder.alignCenter().textLine("--- BATAS POTONG ---")
         builder.feed(4).cut()
 
         return builder.getBytes()
+    }
+
+    private fun buildItem(
+        builder: EscPosBuilder, 
+        item: com.sukashawarma.pos.domain.model.OrderItem, 
+        charWidth: Int, 
+        isBigFont: Boolean, 
+        showPrice: Boolean,
+        showItemNotes: Boolean
+    ) {
+        val qtyStr = if (item.isChild) "  ${item.quantity}x" else "${item.quantity}x"
+        val priceStr = if (showPrice) formatRupiah(item.subtotal) else ""
+        
+        val cleanName = if (item.isChild && item.name.uppercase().startsWith("EXTRA")) {
+            item.name.substring(5).trim()
+        } else {
+            item.name
+        }
+
+        val prefix = if (item.isChild) "\u251C\u2500 EXTRA " else ""
+        val namePart = prefix + cleanName
+        
+        val maxNameLen = if (priceStr.isEmpty()) {
+            charWidth - qtyStr.length - 1
+        } else {
+            charWidth - qtyStr.length - priceStr.length - 2
+        }
+
+        val safeName = if (namePart.length > maxNameLen) namePart.substring(0, maxNameLen) else namePart.padEnd(maxNameLen, ' ')
+        
+        if (isBigFont) builder.size(1, 2).bold(true)
+        if (priceStr.isEmpty()) {
+            builder.textLine("$qtyStr $safeName")
+        } else {
+            builder.textLine("$qtyStr $safeName $priceStr")
+        }
+        if (isBigFont) builder.size(1, 1).bold(false)
+        
+        if (showItemNotes && item.note.isNotBlank()) {
+            val notePrefix = if (item.isChild) "   \u2502  \u2514\u2500 " else "   \u2514\u2500 "
+            builder.textLine("$notePrefix${item.note}")
+        }
     }
 
     private fun formatRupiah(amount: Double): String {

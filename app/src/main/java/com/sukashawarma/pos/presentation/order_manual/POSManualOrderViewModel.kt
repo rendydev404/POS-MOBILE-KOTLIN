@@ -11,6 +11,7 @@ import com.sukashawarma.pos.data.local.entity.LocalOrderEntity
 import com.sukashawarma.pos.data.remote.SupabaseClient
 import com.sukashawarma.pos.data.remote.dto.CreateOrderItemPayload
 import com.sukashawarma.pos.data.remote.dto.CreateOrderPayload
+import com.sukashawarma.pos.data.remote.dto.ParseReceiptPayload
 import com.sukashawarma.pos.domain.menu.KioskSettings
 import com.sukashawarma.pos.domain.menu.isItemAvailable
 import com.sukashawarma.pos.domain.model.*
@@ -38,14 +39,17 @@ import java.util.UUID
 data class OrderSuccessInfo(
     val orderNumber: Int,
     val method: PaymentMethod,
-    val change: Double
+    val change: Double,
+    val orderEntity: com.sukashawarma.pos.data.local.entity.LocalOrderEntity,
+    val outletName: String
 )
 
 data class CartTotals(
     val subtotal: Double,
     val discount: Double,
     val promoSubsidyAmount: Double,
-    val total: Double
+    val total: Double,
+    val missingAmount: Double? = null
 )
 
 /**
@@ -89,6 +93,8 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
     val promoSubsidy = MutableStateFlow("")
     val cashInput = MutableStateFlow("")
     val showInfoBanner = MutableStateFlow(true)
+    
+    val isScanningReceipt = MutableStateFlow(false)
 
     val cartLines = MutableStateFlow<List<CartLine>>(emptyList())
     val activePromos = MutableStateFlow<List<Promo>>(emptyList())
@@ -249,6 +255,77 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     // ---------------------------------------------------------------------
+    // AI Receipt Scanner
+    // ---------------------------------------------------------------------
+
+    fun handleScanImage(base64Image: String) {
+        viewModelScope.launch {
+            try {
+                isScanningReceipt.value = true
+                val menuText = menuItems.value.joinToString("\n") { "${it.id} - ${it.name} - Rp${it.price}" }
+                
+                val payload = ParseReceiptPayload(imageBase64 = base64Image, menuText = menuText)
+                val response = api.parseReceipt("https://app.sukashawarma.com/api/parse-receipt", payload)
+                
+                if (response.isSuccessful) {
+                    val data = response.body()
+                    if (data?.error != null) {
+                        orderErrorMessage.value = data.error
+                    } else {
+                        val newLines = mutableListOf<CartLine>()
+                        data?.items?.forEach { parsed ->
+                            val matchedMenu = menuItems.value.find { m -> m.name.equals(parsed.name, ignoreCase = true) }
+                            if (matchedMenu != null) {
+                                newLines.add(
+                                    CartLine(
+                                        cartItemId = UUID.randomUUID().toString(),
+                                        menuItemId = matchedMenu.id,
+                                        name = matchedMenu.name,
+                                        unitPrice = priceFor(matchedMenu),
+                                        quantity = parsed.qty,
+                                        note = if (parsed.matched) "" else "UNMATCHED: PILIH MANUAL"
+                                    )
+                                )
+                            } else {
+                                newLines.add(
+                                    CartLine(
+                                        cartItemId = UUID.randomUUID().toString(),
+                                        menuItemId = "unmatched",
+                                        name = parsed.name,
+                                        unitPrice = parsed.price ?: 0.0,
+                                        quantity = parsed.qty,
+                                        note = "UNMATCHED: PILIH MANUAL"
+                                    )
+                                )
+                            }
+                        }
+                        data?.subsidies?.forEach { sub ->
+                            newLines.add(
+                                CartLine(
+                                    cartItemId = UUID.randomUUID().toString(),
+                                    menuItemId = "subsidy",
+                                    name = sub.name,
+                                    unitPrice = sub.amount,
+                                    quantity = 1,
+                                    note = ""
+                                )
+                            )
+                        }
+                        cartLines.value = cartLines.value + newLines
+                    }
+                } else {
+                    orderErrorMessage.value = "Gagal memproses nota: ${response.message()}"
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                orderErrorMessage.value = "Terjadi kesalahan saat memproses gambar."
+            } finally {
+                isScanningReceipt.value = false
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------------
     // Item detail modal — port of §5 (page.tsx:78-82, 430-443, 1206-1338)
     // ---------------------------------------------------------------------
 
@@ -370,11 +447,20 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
         }
         val calc = calculateCartUseCase.execute(items, activePromos.value)
         val subsidy = promoSubsidyAmount()
+        
+        // Calculate missing amount for promo
+        var missingAmount: Double? = null
+        val activePromo = activePromos.value.firstOrNull()
+        if (activePromo != null && activePromo.minPurchase != null && calc.subtotal > 0 && calc.subtotal < activePromo.minPurchase) {
+            missingAmount = activePromo.minPurchase - calc.subtotal
+        }
+
         return CartTotals(
             subtotal = calc.subtotal,
             discount = calc.totalDiscount,
             promoSubsidyAmount = subsidy,
-            total = maxOf(0.0, calc.finalTotal - subsidy)
+            total = maxOf(0.0, calc.finalTotal - subsidy),
+            missingAmount = missingAmount
         )
     }
 
@@ -601,36 +687,12 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
             orderSuccessInfo.value = OrderSuccessInfo(
                 orderNumber = serverOrderNumber,
                 method = selectedPayment,
-                change = order.changeAmount
+                change = order.changeAmount,
+                orderEntity = entity,
+                outletName = currentOutletName.value
             )
 
-            // Auto-print receipt if a printer is configured
-            val printerMac = com.sukashawarma.pos.data.local.PrinterPrefs.getSelectedMac()
-            if (!printerMac.isNullOrBlank()) {
-                try {
-                    val printerManager = com.sukashawarma.pos.data.bluetooth.BluetoothPrinterManager()
-                    val connected = printerManager.ensureConnected(printerMac)
-                    if (connected) {
-                        // Customer Receipt Auto Print removed to match Web POS and save paper
-                        // Cashier can print manually via "Cetak Ulang Struk"
-                        
-                        // Print Kitchen Ticket
-                        val kitchenBytes = com.sukashawarma.pos.domain.printer.ReceiptPrinter.generateReceiptBytes(
-                            order = order.copy(orderNumber = serverOrderNumber),
-                            isKitchen = true,
-                            cashierName = currentUsername.value,
-                            outletName = currentOutletName.value
-                        )
-                        printerManager.printBytesChunked(kitchenBytes)
-                        
-                        // Mark as printed locally
-                        val updatedEntity = entity.copy(kitchenReceiptPrinted = true)
-                        orderDao.insertOrder(updatedEntity) // Update entity
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
+
 
             if (pendingSync) {
                 orderErrorMessage.value = "Order tersimpan lokal (offline) dengan nomor sementara #$serverOrderNumber. " +

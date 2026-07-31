@@ -40,8 +40,12 @@ object ReceiptPrinter {
             builder.newline()
         }
 
+        builder.alignCenter()
+            .newline()
+            .bold(true).size(2, 2).textLine("No. ${order.orderNumber}")
+            .bold(false).size(1, 1).newline()
+
         builder.alignLeft()
-            .textLine("No. Order: #${order.orderNumber}")
             .textLine("Pelanggan: ${order.customerName}")
             .textLine("Waktu    : ${formatDate(order.createdAt)}")
             .textLine("Kasir    : $cashierName")
@@ -58,27 +62,38 @@ object ReceiptPrinter {
         for (item in order.items) {
             if (isKitchen) {
                 // Kitchen receipt: larger font, no price
-                builder.bold(true).size(2, 2)
-                    .textLine("${item.quantity}x ${item.name}")
-                    .bold(false).size(1, 1)
+                if (item.isChild) {
+                    val cleanName = if (item.name.uppercase().startsWith("EXTRA")) item.name.substring(5).trim() else item.name
+                    builder.textLine("    |- EXTRA $cleanName")
+                } else {
+                    builder.bold(true).size(2, 2)
+                        .textLine("${item.quantity}x ${item.name}")
+                        .bold(false).size(1, 1)
+                }
                 
                 if (item.note.isNotBlank()) {
                     builder.textLine("   Catatan: ${item.note}")
                 }
             } else {
                 // Customer receipt
-                val qtyStr = "${item.quantity}x"
                 val priceStr = formatCurrency(item.subtotal)
-                // 32 - 4 (qty) - length(price) - 1 = available for name
-                val nameSpace = 32 - 4 - priceStr.length - 1
+                val lineStr = if (item.isChild) {
+                    val cleanName = if (item.name.uppercase().startsWith("EXTRA")) item.name.substring(5).trim() else item.name
+                    val prefix = "    |- EXTRA "
+                    val nameSpace = 32 - prefix.length - priceStr.length - 1
+                    val safeName = if (cleanName.length > nameSpace) cleanName.substring(0, maxOf(0, nameSpace)) else padRight(cleanName, maxOf(0, nameSpace))
+                    prefix + safeName + " " + padLeft(priceStr, priceStr.length)
+                } else {
+                    val qtyStr = "${item.quantity}x"
+                    val nameSpace = 32 - 4 - priceStr.length - 1
+                    val safeName = if (item.name.length > nameSpace) item.name.substring(0, maxOf(0, nameSpace)) else padRight(item.name, maxOf(0, nameSpace))
+                    padRight(qtyStr, 4) + safeName + " " + padLeft(priceStr, priceStr.length)
+                }
                 
-                val safeName = if (item.name.length > nameSpace) item.name.substring(0, nameSpace) else padRight(item.name, nameSpace)
-                val line = padRight(qtyStr, 4) + safeName + " " + padLeft(priceStr, priceStr.length)
-                
-                builder.textLine(line)
+                builder.textLine(lineStr)
                 
                 if (item.note.isNotBlank()) {
-                    builder.textLine("   Note: ${item.note}")
+                    builder.textLine("  - ${item.note}")
                 }
             }
         }

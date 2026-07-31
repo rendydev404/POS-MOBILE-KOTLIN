@@ -53,6 +53,7 @@ class MainActivity : ComponentActivity() {
     private val settingsViewModel: SettingsViewModel by viewModels()
     private val infoPorsiViewModel: InfoPorsiViewModel by viewModels()
     private val attendanceViewModel: AttendanceViewModel by viewModels()
+    private val printerViewModel: com.sukashawarma.pos.presentation.printer.BluetoothPrinterViewModel by viewModels()
 
     private val requestNotificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -118,10 +119,11 @@ class MainActivity : ComponentActivity() {
                                     when (currentTab) {
                                         POSTab.DASHBOARD -> DashboardScreen(
                                             viewModel = dashboardViewModel,
+                                            printerViewModel = printerViewModel,
                                             windowSizeClass = windowSizeClass.widthSizeClass,
                                             onNewOrderClick = { currentTab = POSTab.ORDER_MANUAL }
                                         )
-                                        POSTab.ORDER_MANUAL -> POSManualOrderScreen(viewModel = posManualOrderViewModel)
+                                        POSTab.ORDER_MANUAL -> POSManualOrderScreen(viewModel = posManualOrderViewModel, printerViewModel = printerViewModel)
                                         POSTab.INFO_PORSI -> InfoPorsiScreen(viewModel = infoPorsiViewModel)
                                         POSTab.MENU_MANAGEMENT -> MenuManagementScreen(viewModel = menuManagementViewModel)
                                         POSTab.SHIFT_PETTY_CASH -> ShiftScreen(

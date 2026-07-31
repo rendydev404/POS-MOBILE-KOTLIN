@@ -35,11 +35,14 @@ class POSFirebaseMessagingService : FirebaseMessagingService() {
 
     override fun onMessageReceived(message: RemoteMessage) {
         super.onMessageReceived(message)
+        android.util.Log.d("POS_DEBUG", "FCM Message received: data=${message.data}, notification=${message.notification}")
 
         val isOwnerMessage = message.data["type"] == "broadcast" || message.data["type"] == "owner_message"
 
         // Hanya bunyikan alert jika bukan pesan dari owner
-        if (!isOwnerMessage) {
+        if (isOwnerMessage) {
+            OrderAlertPlayer(applicationContext).playOwnerMessageAlert()
+        } else {
             OrderAlertPlayer(applicationContext).playNewOrderAlert()
         }
 
@@ -54,18 +57,30 @@ class POSFirebaseMessagingService : FirebaseMessagingService() {
     }
 
     private fun showSystemNotification(title: CharSequence, body: String) {
+        val intent = android.content.Intent(this, com.sukashawarma.pos.presentation.MainActivity::class.java).apply {
+            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+        val pendingIntent = android.app.PendingIntent.getActivity(
+            this, 0, intent, android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
         val notification = NotificationCompat.Builder(this, NotificationChannels.NEW_ORDER_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(body)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(pendingIntent)
             .setAutoCancel(true)
             .build()
 
+        android.util.Log.d("POS_DEBUG", "FCM Notification builder created, checking permission...")
+
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            android.util.Log.d("POS_DEBUG", "FCM Permission POST_NOTIFICATIONS is NOT granted!")
             return
         }
         val manager = getSystemService(NotificationManager::class.java)
         manager?.notify(System.currentTimeMillis().toInt(), notification)
+        android.util.Log.d("POS_DEBUG", "FCM Notification Manager notify called")
     }
 }

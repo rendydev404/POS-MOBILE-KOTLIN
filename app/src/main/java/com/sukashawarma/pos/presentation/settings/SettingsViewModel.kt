@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
-    private val printerManager = BluetoothPrinterManager()
+    private val printerManager = BluetoothPrinterManager
 
     // Pair<name, macAddress> — only devices already paired via Android Bluetooth settings.
     val bluetoothDevices = MutableStateFlow<List<Pair<String, String>>>(emptyList())

@@ -42,4 +42,21 @@ class OrderAlertPlayer(context: Context) {
         } catch (_: Exception) {
         }
     }
+
+    fun playOwnerMessageAlert() {
+        try {
+            ToneGenerator(AudioManager.STREAM_ALARM, 90).startTone(ToneGenerator.TONE_PROP_PROMPT, 500)
+        } catch (_: Exception) {
+        }
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 150, 50, 150), -1))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(longArrayOf(0, 150, 50, 150), -1)
+            }
+        } catch (_: Exception) {
+        }
+    }
 }

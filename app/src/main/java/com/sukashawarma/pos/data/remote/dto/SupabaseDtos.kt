@@ -294,25 +294,85 @@ data class AttendanceDto(
     @SerializedName("ts_server") val tsServer: String?
 )
 
+data class ChecklistItemDto(
+    val id: String,
+    @SerializedName("is_required") val isRequired: Boolean
+)
+
+data class ChecklistCategoryDto(
+    val id: String,
+    @SerializedName("checklist_items") val checklistItems: List<ChecklistItemDto>? = null
+)
+
+data class DailyChecklistTickDto(
+    @SerializedName("item_id") val itemId: String,
+    @SerializedName("record_id") val recordId: String
+)
+
 data class DailyChecklistRecordDto(
     val id: String,
     @SerializedName("outlet_id") val outletId: String,
     @SerializedName("staff_id") val staffId: String,
-    @SerializedName("record_date") val recordDate: String
+    @SerializedName("date") val date: String
 )
 
 data class BypassRequestDto(
     val id: String,
     @SerializedName("outlet_id") val outletId: String,
-    @SerializedName("staff_id") val staffId: String,
-    @SerializedName("request_type") val requestType: String,
+    @SerializedName("staff_id") val staffId: String? = null,
+    @SerializedName("request_type") val requestType: String? = null,
     val status: String,
     @SerializedName("created_at") val createdAt: String
 )
 
 data class CreateBypassRequestPayload(
     @SerializedName("outlet_id") val outletId: String,
-    @SerializedName("staff_id") val staffId: String,
-    @SerializedName("request_type") val requestType: String,
+    @SerializedName("staff_id") val staffId: String? = null,
+    @SerializedName("request_type") val requestType: String? = null,
+    @SerializedName("requested_by_name") val requestedByName: String? = null,
+    val reason: String? = null,
     val status: String = "pending"
 )
+
+data class CreateCancellationRequestPayload(
+    @SerializedName("order_id") val orderId: String,
+    val reason: String,
+    @SerializedName("expires_at") val expiresAt: String,
+    @SerializedName("previous_order_status") val previousOrderStatus: String,
+    @SerializedName("requested_by") val requestedBy: String,
+    val token: String? = null
+)
+
+data class CancellationRequestResponse(
+    val token: String
+)
+
+data class GlobalSettingDto(
+    val key: String,
+    val value: String?
+)
+
+data class CustomerLayoutDto(
+    val paperWidth: Int = 58,
+    val showLogo: Boolean = true,
+    val headerText: String = "",
+    val footerText: String = "Terima kasih & selamat menikmati!",
+    val fontScale: String = "normal",
+    val showCashier: Boolean = true,
+    val showCustomer: Boolean = true,
+    val showItemNotes: Boolean = true
+)
+
+data class KitchenLayoutDto(
+    val paperWidth: Int = 58,
+    val showLogo: Boolean = false,
+    val headerText: String = "STRUK DAPUR",
+    val fontScale: String = "normal",
+    val showCustomer: Boolean = true
+)
+
+data class PrintLayoutDto(
+    @SerializedName("struk_customer") val strukCustomer: CustomerLayoutDto? = null,
+    @SerializedName("struk_dapur") val strukDapur: KitchenLayoutDto? = null
+)
+

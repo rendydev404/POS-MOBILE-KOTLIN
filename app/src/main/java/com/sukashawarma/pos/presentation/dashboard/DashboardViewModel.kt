@@ -9,6 +9,7 @@ import com.sukashawarma.pos.data.local.entity.LocalOrderEntity
 import com.sukashawarma.pos.data.notification.OrderAlertPlayer
 import com.sukashawarma.pos.data.remote.SupabaseClient
 import com.sukashawarma.pos.data.remote.dto.OrderDto
+import com.sukashawarma.pos.data.remote.dto.PrintLayoutDto
 import com.sukashawarma.pos.data.remote.realtime.OrderRealtimeManager
 import com.sukashawarma.pos.data.sync.OrderSyncEngine
 import com.sukashawarma.pos.domain.model.*
@@ -29,7 +30,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private val api = SupabaseClient.api
     private val gson = Gson()
     private val printReceiptUseCase = PrintReceiptUseCase()
-    val printerManager = BluetoothPrinterManager()
+    val printerManager = BluetoothPrinterManager
     private val alertPlayer = OrderAlertPlayer(application)
     private val syncEngine = OrderSyncEngine(orderDao, api)
 
@@ -41,6 +42,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     val totalLunasToday = MutableStateFlow(0.0)
     val criticalStockNames = MutableStateFlow("")
     val lowStockCount = MutableStateFlow(0)
+    
+    val printLayout = MutableStateFlow<PrintLayoutDto?>(null)
 
     val isRealtimeConnected = MutableStateFlow(false)
     val pendingSyncCount: StateFlow<Int> = currentOutletId
@@ -95,6 +98,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         currentOutletName.value = outletName
         currentCashierName.value = cashierName
         fetchRealCriticalStockFromSupabase()
+        fetchPrintLayout()
         viewModelScope.launch {
             trySyncPendingOrders(outletId)
             syncOrdersFromServer(outletId)
@@ -137,7 +141,15 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             val res = api.getOrders(mapOf("outlet_id" to "eq.$outletId"))
             if (res.isSuccessful && res.body() != null) {
                 val dtos = res.body()!!
-                dtos.forEach { dto -> orderDao.insertOrder(dtoToEntity(dto)) }
+                dtos.forEach { dto -> 
+                    val existing = orderDao.getOrderById(dto.id)
+                    val newEntity = dtoToEntity(dto)
+                    if (existing != null) {
+                        orderDao.insertOrder(newEntity.copy(itemsJson = existing.itemsJson))
+                    } else {
+                        orderDao.insertOrder(newEntity)
+                    }
+                }
 
                 val today = LocalDate.now(ZoneId.systemDefault())
                 val completedToday = dtos.filter { 
@@ -170,6 +182,23 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    private fun fetchPrintLayout() {
+        viewModelScope.launch {
+            try {
+                val res = api.getGlobalSettings()
+                if (res.isSuccessful && res.body()?.isNotEmpty() == true) {
+                    val rawValue = res.body()!!.first().value
+                    if (!rawValue.isNullOrBlank()) {
+                        try {
+                            val parsed = gson.fromJson(rawValue, PrintLayoutDto::class.java)
+                            printLayout.value = parsed
+                        } catch (e: Exception) { e.printStackTrace() }
+                    }
+                }
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+    }
+
     fun updateOrderStatus(order: Order, newStatus: OrderStatus) {
         viewModelScope.launch {
             orderDao.updateOrderStatus(order.id, newStatus.name)
@@ -186,7 +215,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     val printStatusMessage = MutableStateFlow<String?>(null)
 
-    fun printReceipt(order: Order, isKitchen: Boolean = false) {
+    fun printReceipt(context: android.content.Context, order: Order, isKitchen: Boolean = false, onSuccess: () -> Unit = {}) {
         viewModelScope.launch {
             val printerMac = com.sukashawarma.pos.data.local.PrinterPrefs.getSelectedMac()
             if (printerMac.isNullOrBlank()) {
@@ -200,16 +229,28 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             }
 
             val bytes = if (isKitchen) {
-                printReceiptUseCase.generateKitchenReceiptBytes(order)
-            } else {
-                printReceiptUseCase.generateCustomerReceiptBytes(
+                printReceiptUseCase.generateKitchenReceiptBytes(
                     order = order,
                     outletName = currentOutletName.value,
-                    cashierName = currentCashierName.value
+                    cashierName = currentCashierName.value,
+                    layout = printLayout.value?.strukDapur
+                )
+            } else {
+                printReceiptUseCase.generateCustomerReceiptBytes(
+                    context = context,
+                    order = order,
+                    outletName = currentOutletName.value,
+                    cashierName = currentCashierName.value,
+                    layout = printLayout.value?.strukCustomer
                 )
             }
             val printed = printerManager.printBytesChunked(bytes)
-            printStatusMessage.value = if (printed) null else "Gagal mencetak struk."
+            if (printed) {
+                printStatusMessage.value = null
+                onSuccess()
+            } else {
+                printStatusMessage.value = "Gagal mencetak struk."
+            }
         }
     }
     
@@ -237,18 +278,62 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    fun requestCancellation(order: Order, reason: String) {
+    fun requestCancellation(order: Order, reason: String, onWaUrlReady: (String) -> Unit) {
         viewModelScope.launch {
-            // Kita asumsi untuk web POS butuh approval (cancellation_status = pending_approval)
-            orderDao.updateCancellationStatus(order.id, "pending_approval", null) // username biarkan null utk Native
+            val staffName = currentCashierName.value
+            orderDao.updateCancellationStatus(order.id, "pending_approval", staffName)
             try {
                 api.updateOrderStatus(
                     orderIdFilter = "eq.${order.id}",
                     patch = mapOf(
                         "cancellation_status" to "pending_approval",
-                        "cancellation_reason" to reason
+                        "cancellation_reason" to reason,
+                        "cancellation_user_name" to staffName
                     )
                 )
+
+                // Generate expiresAt +24 hours
+                val expiresAt = java.time.Instant.now().plus(24, java.time.temporal.ChronoUnit.HOURS).toString()
+                val staffId = com.sukashawarma.pos.data.local.SessionPrefs.getStaffId() ?: ""
+                
+                val payload = com.sukashawarma.pos.data.remote.dto.CreateCancellationRequestPayload(
+                    orderId = order.id,
+                    reason = reason,
+                    expiresAt = expiresAt,
+                    previousOrderStatus = order.status.name.lowercase(),
+                    requestedBy = staffId
+                )
+
+                val res = api.createCancellationRequest(payload)
+                if (res.isSuccessful && res.body()?.isNotEmpty() == true) {
+                    val token = res.body()!!.first().token
+                    val magicLink = "https://app.sukashawarma.com/cancellations/approve?token=$token"
+                    
+                    val currencyFormat = java.text.NumberFormat.getCurrencyInstance(java.util.Locale("id", "ID")).apply {
+                        maximumFractionDigits = 0
+                    }
+                    val formattedPrice = currencyFormat.format(order.totalAmount).replace("Rp", "Rp ")
+                    
+                    val message = """
+*PERMINTAAN PEMBATALAN PESANAN*
+
+Outlet: ${currentOutletName.value}
+No Order: ${order.orderNumber}
+Pelanggan: ${order.customerName}
+Total: $formattedPrice
+Alasan: $reason
+Diajukan Oleh: $staffName
+
+Silakan klik link berikut untuk *MENYETUJUI* atau *MENOLAK* pembatalan ini (link hanya berlaku 1 kali):
+
+$magicLink
+                    """.trimIndent()
+
+                    val encodedMessage = android.net.Uri.encode(message)
+                    val phone = "6285218446637"
+                    val waUrl = "whatsapp://send?phone=$phone&text=$encodedMessage"
+                    onWaUrlReady(waUrl)
+                }
             } catch (e: Exception) { e.printStackTrace() }
         }
     }
@@ -283,12 +368,15 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     private fun dtoToEntity(dto: OrderDto): LocalOrderEntity {
         val items = (dto.orderItems ?: emptyList()).map { item ->
+            val nameUpper = item.menuItemName.uppercase()
+            val isChild = nameUpper.startsWith("EXTRA ") || nameUpper.startsWith("? EXTRA") || nameUpper.startsWith(" EXTRA")
             OrderItem(
                 menuItemId = item.menuItemId,
                 name = item.menuItemName,
                 quantity = item.quantity,
                 unitPrice = item.unitPrice,
-                subtotal = item.subtotal
+                subtotal = item.subtotal,
+                isChild = isChild
             )
         }
         return LocalOrderEntity(

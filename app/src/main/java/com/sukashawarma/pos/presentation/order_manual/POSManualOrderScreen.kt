@@ -38,6 +38,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.launch
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -53,6 +54,13 @@ import coil.request.ImageRequest
 import com.sukashawarma.pos.domain.model.*
 import com.sukashawarma.pos.presentation.theme.*
 
+import com.sukashawarma.pos.presentation.printer.BluetoothPrinterDialog
+import com.sukashawarma.pos.presentation.printer.BluetoothPrinterViewModel
+import androidx.compose.material.icons.filled.Print
+import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.BluetoothConnected
+import androidx.compose.material.icons.filled.BluetoothDisabled
+
 /**
  * Port of apps/pos-kasir/app/kasir/order-manual/page.tsx +
  * components/kasir/WalkInCartPanel.tsx + components/kasir/QrisPaymentModal.tsx.
@@ -65,6 +73,7 @@ import com.sukashawarma.pos.presentation.theme.*
 @Composable
 fun POSManualOrderScreen(
     viewModel: POSManualOrderViewModel,
+    printerViewModel: BluetoothPrinterViewModel,
     modifier: Modifier = Modifier
 ) {
     val mode by viewModel.mode.collectAsState()
@@ -94,12 +103,39 @@ fun POSManualOrderScreen(
     }
     val totals = remember(cartLines, promoSubsidy, channel, mode) { viewModel.cartTotals() }
 
+    val context = LocalContext.current
+    val imagePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let {
+            try {
+                val inputStream = context.contentResolver.openInputStream(it)
+                val bytes = inputStream?.readBytes()
+                inputStream?.close()
+                if (bytes != null) {
+                    val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.DEFAULT)
+                    viewModel.handleScanImage("data:image/jpeg;base64,$base64")
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+    
+    val isScanningReceipt by viewModel.isScanningReceipt.collectAsState()
+    
+    val connectionStatus by printerViewModel.connectionStatus.collectAsState()
+    val isPrinterConnected = connectionStatus == com.sukashawarma.pos.presentation.printer.ConnectionStatus.CONNECTED
+    var showPrinterDialog by remember { mutableStateOf(false) }
+
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(TwGray50)
     ) {
-        OrderManualHeader(mode = mode)
+        OrderManualHeader(
+            mode = mode, 
+            isPrinterConnected = isPrinterConnected,
+            onPrinterClick = { showPrinterDialog = true }
+        )
 
         OrderModeTabRow(mode = mode, onModeSelected = { viewModel.switchMode(it) })
 
@@ -128,10 +164,11 @@ fun POSManualOrderScreen(
                     onSearchChange = { viewModel.searchQuery.value = it },
                     categories = categories,
                     selectedCatId = selectedCatId,
-                    onCategorySelected = { viewModel.selectedCategoryId.value = it }
+                    onCategorySelected = { viewModel.selectedCategoryId.value = it },
+                    onScanReceiptClick = { imagePickerLauncher.launch("image/*") }
                 )
 
-                if (isLoading) {
+                if (isLoading || isScanningReceipt) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = TwAmber500)
                     }
@@ -190,8 +227,17 @@ fun POSManualOrderScreen(
         )
     }
 
+    val printerConnectionStatus by printerViewModel.connectionStatus.collectAsState()
+    val currentUsername by viewModel.currentUsername.collectAsState()
+
     orderSuccessInfo?.let { success ->
-        OrderSuccessOverlay(success = success, onDismiss = { viewModel.dismissSuccess() })
+        OrderSuccessOverlay(
+            success = success, 
+            printerConnectionStatus = printerConnectionStatus,
+            onPrintKitchen = { printerViewModel.printReceiptAsync(context, success, currentUsername, isKitchen = true) },
+            onPrintCustomer = { printerViewModel.printReceiptAsync(context, success, currentUsername, isKitchen = false) },
+            onDismiss = { viewModel.dismissSuccess() }
+        )
     }
 
     orderErrorMessage?.let { message ->
@@ -210,19 +256,51 @@ fun POSManualOrderScreen(
             }
         }
     }
+    
+    if (showPrinterDialog) {
+        BluetoothPrinterDialog(
+            viewModel = printerViewModel,
+            onDismiss = { showPrinterDialog = false }
+        )
+    }
 }
 
 @Composable
-private fun OrderManualHeader(mode: OrderMode) {
+private fun OrderManualHeader(
+    mode: OrderMode,
+    isPrinterConnected: Boolean,
+    onPrinterClick: () -> Unit
+) {
     val (title, subtitle) = when (mode) {
         OrderMode.WALKIN -> "Order Offline — Pesanan Baru" to "Catat pesanan pelanggan secara offline / langsung"
         OrderMode.ENDORSE -> "Order Endorse" to "Catat pesanan endorse dengan harga Rp 0"
         OrderMode.WEBSITE -> "Order Website — Backup Mandiri" to "Input cadangan pesanan via Website / WA"
         OrderMode.ONLINE -> "Input Food Apps" to "Input pesanan dari aplikasi makanan"
     }
-    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = TwGray900)
-        Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = TwGray500)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column {
+            Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = TwGray900)
+            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = TwGray500)
+        }
+        
+        IconButton(
+            onClick = onPrinterClick,
+            modifier = Modifier
+                .background(if (isPrinterConnected) TwEmerald50 else TwRed50, CircleShape)
+                .border(1.dp, if (isPrinterConnected) TwEmerald100 else TwRed100, CircleShape)
+        ) {
+            Icon(
+                imageVector = if (isPrinterConnected) Icons.Default.BluetoothConnected else Icons.Default.BluetoothDisabled,
+                contentDescription = "Printer Settings",
+                tint = if (isPrinterConnected) TwEmerald600 else TwRed600
+            )
+        }
     }
 }
 
@@ -355,7 +433,8 @@ private fun SearchAndCategoryCard(
     onSearchChange: (String) -> Unit,
     categories: List<Category>,
     selectedCatId: String,
-    onCategorySelected: (String) -> Unit
+    onCategorySelected: (String) -> Unit,
+    onScanReceiptClick: () -> Unit
 ) {
     Surface(
         shape = RoundedCornerShape(16.dp),
@@ -364,20 +443,34 @@ private fun SearchAndCategoryCard(
         shadowElevation = 1.dp
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = onSearchChange,
-                placeholder = { Text("Cari menu...", color = TwGray400) },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = TwGray400) },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(10.dp),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    unfocusedContainerColor = TwGray50,
-                    focusedContainerColor = TwGray50,
-                    unfocusedBorderColor = TwGray200
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = onSearchChange,
+                    placeholder = { Text("Cari menu...", color = TwGray400) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = TwGray400) },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedContainerColor = TwGray50,
+                        focusedContainerColor = TwGray50,
+                        unfocusedBorderColor = TwGray200
+                    )
                 )
-            )
+                
+                Spacer(modifier = Modifier.width(8.dp))
+                
+                IconButton(
+                    onClick = onScanReceiptClick,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .background(TwAmber50, RoundedCornerShape(10.dp))
+                        .border(1.dp, TwAmber400, RoundedCornerShape(10.dp))
+                ) {
+                    Icon(Icons.Default.PhotoCamera, contentDescription = "Scan Nota AI", tint = TwAmber600)
+                }
+            }
             Spacer(modifier = Modifier.height(10.dp))
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 item {
@@ -675,9 +768,28 @@ private fun CartPanel(
                 }
             }
 
+
             Divider(color = TwGray100, modifier = Modifier.padding(vertical = 12.dp))
 
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                totals.missingAmount?.let { amount ->
+                    Surface(
+                        color = TwRed50,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, TwRed200),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                    ) {
+                        Text(
+                            "Tambah Rp ${String.format("%,.0f", amount)} lagi untuk dapat diskon promo!",
+                            color = TwRed600,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(8.dp),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Subtotal", style = MaterialTheme.typography.bodyMedium, color = TwGray500)
                     Text("Rp ${String.format("%,.0f", totals.subtotal)}", style = MaterialTheme.typography.bodyMedium, color = TwGray700, fontWeight = FontWeight.Bold)
@@ -1232,8 +1344,25 @@ private fun QrisModal(
 }
 
 @Composable
-private fun OrderSuccessOverlay(success: OrderSuccessInfo, onDismiss: () -> Unit) {
-    Dialog(onDismissRequest = onDismiss) {
+private fun OrderSuccessOverlay(
+    success: OrderSuccessInfo, 
+    printerConnectionStatus: com.sukashawarma.pos.presentation.printer.ConnectionStatus,
+    onPrintKitchen: suspend () -> Boolean,
+    onPrintCustomer: suspend () -> Boolean,
+    onDismiss: () -> Unit
+) {
+    var printStep by remember { androidx.compose.runtime.mutableStateOf(0) } // 0: Kitchen, 1: Customer, 2: Done
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    var isPrinting by remember { androidx.compose.runtime.mutableStateOf(false) }
+
+    // Dialog is unclosable manually until finished, so no effect on dismissRequest unless done.
+    Dialog(
+        onDismissRequest = { 
+            if (printStep == 2) onDismiss() 
+        },
+        properties = androidx.compose.ui.window.DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)
+    ) {
         Surface(shape = RoundedCornerShape(20.dp), color = Color.White) {
             Column(
                 modifier = Modifier.padding(28.dp).width(320.dp),
@@ -1255,12 +1384,93 @@ private fun OrderSuccessOverlay(success: OrderSuccessInfo, onDismiss: () -> Unit
                     }
                 }
                 Spacer(modifier = Modifier.height(20.dp))
-                Button(
-                    onClick = onDismiss,
+
+                // Step indicators
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = TwAmber500)
+                    horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    Text("Transaksi Baru", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = "1. Dapur", 
+                        color = if (printStep >= 0) TwBlue600 else TwGray400,
+                        fontWeight = if (printStep == 0) FontWeight.Bold else FontWeight.Normal
+                    )
+                    Text(text = "-->", color = TwGray400)
+                    Text(
+                        text = "2. Customer", 
+                        color = if (printStep >= 1) TwBlue600 else TwGray400,
+                        fontWeight = if (printStep == 1) FontWeight.Bold else FontWeight.Normal
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+                
+                when (printStep) {
+                    0 -> {
+                        Button(
+                            onClick = {
+                                if (printerConnectionStatus != com.sukashawarma.pos.presentation.printer.ConnectionStatus.CONNECTED) {
+                                    android.widget.Toast.makeText(context, "Bluetooth Printer belum terkoneksi!", android.widget.Toast.LENGTH_SHORT).show()
+                                    return@Button
+                                }
+                                scope.launch {
+                                    isPrinting = true
+                                    val successPrint = onPrintKitchen()
+                                    isPrinting = false
+                                    if (successPrint) {
+                                        printStep = 1
+                                    } else {
+                                        android.widget.Toast.makeText(context, "Gagal mencetak struk dapur. Periksa printer.", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !isPrinting,
+                            colors = ButtonDefaults.buttonColors(containerColor = TwBlue500)
+                        ) {
+                            Icon(Icons.Filled.Print, contentDescription = "Print Kitchen", modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Cetak Struk Dapur", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    1 -> {
+                        Button(
+                            onClick = {
+                                if (printerConnectionStatus != com.sukashawarma.pos.presentation.printer.ConnectionStatus.CONNECTED) {
+                                    android.widget.Toast.makeText(context, "Bluetooth Printer belum terkoneksi!", android.widget.Toast.LENGTH_SHORT).show()
+                                    return@Button
+                                }
+                                scope.launch {
+                                    isPrinting = true
+                                    val successPrint = onPrintCustomer()
+                                    isPrinting = false
+                                    if (successPrint) {
+                                        printStep = 2
+                                    } else {
+                                        android.widget.Toast.makeText(context, "Gagal mencetak struk customer. Periksa printer.", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !isPrinting,
+                            colors = ButtonDefaults.buttonColors(containerColor = TwBlue500)
+                        ) {
+                            Icon(Icons.Filled.Print, contentDescription = "Print Customer", modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Cetak Struk Customer", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    2 -> {
+                        Text("Semua struk berhasil dicetak!", color = TwEmerald600, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(
+                            onClick = onDismiss,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = TwEmerald500)
+                        ) {
+                            Text("Selesai & Transaksi Baru", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
         }

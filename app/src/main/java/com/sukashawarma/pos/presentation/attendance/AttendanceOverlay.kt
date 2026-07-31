@@ -10,6 +10,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -23,7 +26,10 @@ fun AttendanceOverlay(viewModel: AttendanceViewModel) {
     val isLocked by viewModel.isLocked.collectAsState()
     val lockReason by viewModel.lockReason.collectAsState()
     val bypassStatus by viewModel.bypassStatus.collectAsState()
+    val spvPhone by viewModel.spvPhone.collectAsState()
     val context = LocalContext.current
+    var reason by remember { mutableStateOf("") }
+    var showReasonInput by remember { mutableStateOf(false) }
 
     if (isLocked) {
         Box(
@@ -65,20 +71,57 @@ fun AttendanceOverlay(viewModel: AttendanceViewModel) {
                     
                     if (bypassStatus == "pending") {
                         Text(
-                            text = "Menunggu persetujuan SPV...",
+                            text = "Menunggu persetujuan Regional Manager...",
                             color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.Bold
                         )
+                    } else if (showReasonInput) {
+                        OutlinedTextField(
+                            value = reason,
+                            onValueChange = { reason = it },
+                            label = { Text("Alasan Bypass") },
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            OutlinedButton(
+                                onClick = { showReasonInput = false },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Batal")
+                            }
+                            Button(
+                                onClick = {
+                                    if (reason.isNotBlank()) {
+                                        viewModel.requestBypass(reason) { waText ->
+                                            val message = android.net.Uri.encode(waText)
+                                            val phone = if (spvPhone.isNotBlank()) spvPhone else "6285218446637"
+                                            val uriString = "whatsapp://send?phone=$phone&text=$message"
+                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uriString))
+                                            try {
+                                                context.startActivity(intent)
+                                            } catch (e: Exception) {
+                                                android.widget.Toast.makeText(context, "WhatsApp tidak terpasang di perangkat ini", android.widget.Toast.LENGTH_LONG).show()
+                                                e.printStackTrace()
+                                            }
+                                        }
+                                    }
+                                },
+                                enabled = reason.isNotBlank(),
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                            ) {
+                                Text("Kirim Pengajuan")
+                            }
+                        }
                     } else {
                         Button(
-                            onClick = {
-                                viewModel.requestBypass()
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/?text=Halo+SPV,+mohon+bantu+bypass+akses+POS+Suka+Shawarma+saya."))
-                                context.startActivity(intent)
-                            },
+                            onClick = { showReasonInput = true },
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                         ) {
-                            Text("Minta Bypass ke SPV")
+                            Text("Minta Bypass ke Regional Manager")
                         }
                     }
                     
