@@ -15,8 +15,11 @@ import com.sukashawarma.pos.domain.gate.BlockType
 import com.sukashawarma.pos.domain.gate.JakartaTime
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkStatic
 import io.mockk.slot
+import io.mockk.unmockkStatic
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -45,6 +48,19 @@ class PosGateViewModelTest {
 
     @After
     fun tearDown() = Dispatchers.resetMain()
+
+    @Before
+    fun mockAndroidLog() {
+        mockkStatic(android.util.Log::class)
+        every { android.util.Log.e(any(), any()) } returns 0
+        every { android.util.Log.e(any(), any(), any()) } returns 0
+        every { android.util.Log.d(any(), any()) } returns 0
+    }
+
+    @After
+    fun unmockAndroidLog() {
+        unmockkStatic(android.util.Log::class)
+    }
 
     private fun api(
         staffRole: String = "crew",
