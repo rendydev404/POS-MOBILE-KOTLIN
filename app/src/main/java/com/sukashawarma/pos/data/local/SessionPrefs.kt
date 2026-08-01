@@ -10,6 +10,7 @@ object SessionPrefs {
     private const val KEY_OUTLET_NAME = "outlet_name"
     private const val KEY_USERNAME = "username"
     private const val KEY_ROLE = "role"
+    private const val KEY_BYPASSED_DATE = "gate_bypassed_date"
 
     private lateinit var prefs: SharedPreferences
 
@@ -40,4 +41,13 @@ object SessionPrefs {
     fun getOutletName(): String? = if (::prefs.isInitialized) prefs.getString(KEY_OUTLET_NAME, null) else null
     fun getUsername(): String? = if (::prefs.isInitialized) prefs.getString(KEY_USERNAME, null) else null
     fun getRole(): String? = if (::prefs.isInitialized) prefs.getString(KEY_ROLE, null) else null
+
+    fun setBypassedDate(date: String?) {
+        if (::prefs.isInitialized) {
+            prefs.edit().putString(KEY_BYPASSED_DATE, date).apply()
+        }
+    }
+
+    fun getBypassedDate(): String? =
+        if (::prefs.isInitialized) prefs.getString(KEY_BYPASSED_DATE, null) else null
 }
