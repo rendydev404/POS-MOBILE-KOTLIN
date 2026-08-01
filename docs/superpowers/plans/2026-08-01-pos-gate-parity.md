@@ -265,12 +265,51 @@ Biarkan `getStaffById`, `getOutletById`, dan `createBypassRequest` apa adanya.
 grep -rn "getAttendance(\|getBypassRequests(\|getChecklistCategories(\|getDailyChecklistRecords(\|getDailyChecklistTicks(" app/src/main/java app/src/test/java
 ```
 
-Expected: hanya `AttendanceViewModel.kt` yang muncul. File itu dihapus di Task 8, jadi biarkan error kompilasinya untuk sekarang — **jangan** menyentuh `AttendanceViewModel.kt` di task ini.
+Expected: hanya `AttendanceViewModel.kt` yang muncul.
+
+- [ ] **Step 6b: Hapus pemanggil lama agar main source set tetap kompilasi**
+
+Test unit ikut mengompilasi main source set, jadi pemanggil basi ini memblokir test **semua** task berikutnya, bukan hanya task ini. Karena itu penghapusannya dilakukan di sini, bukan di Task 8.
+
+```bash
+git rm app/src/main/java/com/sukashawarma/pos/presentation/attendance/AttendanceViewModel.kt app/src/main/java/com/sukashawarma/pos/presentation/attendance/AttendanceOverlay.kt
+```
+
+Lalu buang jejaknya dari `MainActivity.kt` — empat suntingan, tanpa mengganti apa pun dengan UI baru (overlay baru dipasang di Task 8):
+
+1. Hapus dua baris import:
+   ```kotlin
+   import com.sukashawarma.pos.presentation.attendance.AttendanceViewModel
+   import com.sukashawarma.pos.presentation.attendance.AttendanceOverlay
+   ```
+2. Hapus deklarasi properti:
+   ```kotlin
+   private val attendanceViewModel: AttendanceViewModel by viewModels()
+   ```
+3. Hapus baris di dalam `LaunchedEffect(activeSession)`:
+   ```kotlin
+   attendanceViewModel.setSession(session.outletId, session.username)
+   ```
+4. Hapus pemasangan overlay beserta komentar di atasnya:
+   ```kotlin
+   // Add overlay on top of EVERYTHING if locked
+   AttendanceOverlay(viewModel = attendanceViewModel)
+   ```
+
+Untuk sementara aplikasi berjalan tanpa gate sama sekali. Itu disengaja; Task 8 memasang gate baru.
+
+- [ ] **Step 6c: Jalankan test dan pastikan seluruh suite hijau**
+
+```bash
+./gradlew testDebugUnitTest
+```
+
+Expected: PASS, termasuk `GateDtoTest` dan suite lama (`MenuRepositoryTest`, `MenuRulesTest`, `MenuItemDtoTest`).
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add app/src/main/java/com/sukashawarma/pos/data/remote/dto/SupabaseDtos.kt app/src/main/java/com/sukashawarma/pos/data/remote/SupabaseApi.kt app/src/test/java/com/sukashawarma/pos/data/remote/dto/GateDtoTest.kt
+git add app/src/main/java/com/sukashawarma/pos/data/remote/dto/SupabaseDtos.kt app/src/main/java/com/sukashawarma/pos/data/remote/SupabaseApi.kt app/src/main/java/com/sukashawarma/pos/presentation/MainActivity.kt app/src/test/java/com/sukashawarma/pos/data/remote/dto/GateDtoTest.kt
 git commit -m "feat(gate): tambah inactive_reason dan endpoint gate tanpa parameter dobel"
 ```
 
@@ -2319,29 +2358,24 @@ git commit -m "feat(gate): BlockedOverlay lima tipe blokir menyamai web"
 - Consumes: `PosGateViewModel` (Task 5), `BlockedOverlay` (Task 7), `GlobalEventBus.gateRefreshEvent` (Task 6).
 - Produces: aplikasi yang terkompilasi dan berjalan.
 
-- [ ] **Step 1: Hapus implementasi lama**
+- [ ] **Step 1: Konfirmasi implementasi lama sudah hilang**
+
+Task 1 sudah menghapus `AttendanceViewModel.kt` dan `AttendanceOverlay.kt` beserta seluruh rujukannya di `MainActivity.kt`.
 
 ```bash
-git rm app/src/main/java/com/sukashawarma/pos/presentation/attendance/AttendanceViewModel.kt app/src/main/java/com/sukashawarma/pos/presentation/attendance/AttendanceOverlay.kt
+grep -rn "AttendanceViewModel\|AttendanceOverlay" app/src/main/java
 ```
 
-- [ ] **Step 2: Ganti import di MainActivity**
+Expected: tidak ada hasil. Bila masih ada, hapus sisanya sebelum lanjut.
 
-Ganti dua baris import lama:
+- [ ] **Step 2: Tambahkan import baru di MainActivity**
 
-```kotlin
-import com.sukashawarma.pos.presentation.attendance.AttendanceViewModel
-import com.sukashawarma.pos.presentation.attendance.AttendanceOverlay
-```
-
-menjadi:
+Tambahkan import untuk gate, lifecycle, dan event bus:
 
 ```kotlin
 import com.sukashawarma.pos.presentation.gate.PosGateViewModel
 import com.sukashawarma.pos.presentation.gate.BlockedOverlay
 ```
-
-Dan tambahkan import untuk lifecycle dan event bus:
 
 ```kotlin
 import androidx.compose.runtime.DisposableEffect
@@ -2351,29 +2385,17 @@ import androidx.lifecycle.LifecycleEventObserver
 import com.sukashawarma.pos.data.remote.GlobalEventBus
 ```
 
-- [ ] **Step 3: Ganti deklarasi view model**
+- [ ] **Step 3: Tambahkan deklarasi view model**
 
-Ganti baris 55:
-
-```kotlin
-    private val attendanceViewModel: AttendanceViewModel by viewModels()
-```
-
-menjadi:
+Di antara properti `by viewModels()` lain di `MainActivity` (Task 1 sudah menghapus deklarasi `attendanceViewModel` yang lama), tambahkan:
 
 ```kotlin
     private val gateViewModel: PosGateViewModel by viewModels()
 ```
 
-- [ ] **Step 4: Perbaiki session yang dioper ke gate**
+- [ ] **Step 4: Oper session ke gate**
 
-Di dalam `LaunchedEffect(activeSession)`, ganti baris 87:
-
-```kotlin
-                        attendanceViewModel.setSession(session.outletId, session.username)
-```
-
-menjadi:
+Di dalam `LaunchedEffect(activeSession)`, sebagai baris terakhir blok `activeSession?.let { session -> ... }`, tambahkan — perhatikan `session.staffId` (UUID), **bukan** `session.username`:
 
 ```kotlin
                         gateViewModel.setSession(session.outletId, session.staffId)
@@ -2408,13 +2430,7 @@ Di dalam lambda `onLogoutClick` (baris 107-112), tambahkan satu baris setelah `l
 
 - [ ] **Step 7: Pasang overlay baru**
 
-Ganti baris 149:
-
-```kotlin
-                        AttendanceOverlay(viewModel = attendanceViewModel)
-```
-
-menjadi:
+Di dalam `Box(modifier = Modifier.fillMaxSize())` yang membungkus `POSAdaptiveScaffold`, sebagai anak terakhir (setelah scaffold, supaya overlay menutupi segalanya), tambahkan:
 
 ```kotlin
                         val gateState by gateViewModel.state.collectAsState()
