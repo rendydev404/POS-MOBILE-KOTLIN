@@ -36,8 +36,6 @@ import com.sukashawarma.pos.presentation.shift.ShiftScreen
 import com.sukashawarma.pos.presentation.shift.ShiftViewModel
 import com.sukashawarma.pos.presentation.theme.CreamBackground
 import com.sukashawarma.pos.presentation.theme.SukaShawarmaPOSTheme
-import com.sukashawarma.pos.presentation.attendance.AttendanceViewModel
-import com.sukashawarma.pos.presentation.attendance.AttendanceOverlay
 import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
 import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import com.sukashawarma.pos.presentation.components.POSAdaptiveScaffold
@@ -52,7 +50,6 @@ class MainActivity : ComponentActivity() {
     private val shiftViewModel: ShiftViewModel by viewModels()
     private val settingsViewModel: SettingsViewModel by viewModels()
     private val infoPorsiViewModel: InfoPorsiViewModel by viewModels()
-    private val attendanceViewModel: AttendanceViewModel by viewModels()
     private val printerViewModel: com.sukashawarma.pos.presentation.printer.BluetoothPrinterViewModel by viewModels()
 
     private val requestNotificationPermission = registerForActivityResult(
@@ -84,7 +81,6 @@ class MainActivity : ComponentActivity() {
                         shiftViewModel.setOutlet(session.outletId)
                         reportsViewModel.setOutlet(session.outletId)
                         infoPorsiViewModel.currentOutletId.value = session.outletId
-                        attendanceViewModel.setSession(session.outletId, session.username)
                     }
                 }
 
@@ -144,9 +140,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         }
-                        
-                        // Add overlay on top of EVERYTHING if locked
-                        AttendanceOverlay(viewModel = attendanceViewModel)
+
                     }
                 }
             }
