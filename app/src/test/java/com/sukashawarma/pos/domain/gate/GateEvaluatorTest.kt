@@ -315,11 +315,11 @@ class GateEvaluatorTest {
             input(
                 bypasses = listOf(
                     bypass("rejected", "2026-08-01T02:00:00+00:00"),
-                    bypass("approved", "2026-08-01 09:00:00+00")
+                    bypass("pending", "2026-08-01 09:00:00+00")
                 )
             )
         )
 
-        assertFalse(state.isBlocked)
+        assertEquals(BypassStatus.PENDING, state.bypassStatus)
     }
 }
