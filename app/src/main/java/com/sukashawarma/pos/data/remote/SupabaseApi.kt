@@ -215,29 +215,44 @@ interface SupabaseApi {
     @POST("rest/v1/rpc/get_my_active_messages")
     suspend fun getMyActiveMessages(@Body payload: Map<String, String> = emptyMap()): Response<List<OwnerMessageDto>>
 
+    // --- Gate kasir. Semua filter eksplisit; tidak ada QueryMap agar tidak
+    // ada parameter select/order yang terkirim dua kali. ---
+
     @GET("rest/v1/attendance")
-    suspend fun getAttendance(
-        @QueryMap filters: Map<String, String>,
-        @Query("select") select: String = "*",
-        @Query("order") order: String = "created_at.desc"
+    suspend fun getAttendanceForDay(
+        @Query("outlet_id") outletId: String,      // "eq.<uuid>"
+        @Query("ts_server") from: String,          // "gte.<iso8601>"
+        @Query("ts_server") to: String,            // "lte.<iso8601>"
+        @Query("select") select: String = "outlet_staff_id,type,ts_server",
+        @Query("order") order: String = "ts_server.asc"
     ): Response<List<AttendanceDto>>
 
-    @GET("rest/v1/daily_checklist_records")
-    suspend fun getDailyChecklistRecords(
-        @QueryMap filters: Map<String, String>,
-        @Query("select") select: String = "*"
-    ): Response<List<DailyChecklistRecordDto>>
+    @GET("rest/v1/bypass_requests")
+    suspend fun getBypassRequestsForDay(
+        @Query("outlet_id") outletId: String,      // "eq.<uuid>"
+        @Query("created_at") from: String,         // "gte.<iso8601>"
+        @Query("select") select: String = "id,outlet_id,staff_id,request_type,status,reason,created_at",
+        @Query("order") order: String = "created_at.desc"
+    ): Response<List<BypassRequestDto>>
 
     @GET("rest/v1/checklist_categories")
-    suspend fun getChecklistCategories(
-        @QueryMap filters: Map<String, String>,
-        @Query("select") select: String = "id,checklist_items(id,is_required)",
-        @Query("phase") phase: String = "eq.buka"
+    suspend fun getRequiredOpeningChecklist(
+        @Query("outlet_id") outletId: String,      // "eq.<uuid>"
+        @Query("phase") phase: String = "eq.buka",
+        @Query("select") select: String = "id,checklist_items(id,is_required)"
     ): Response<List<ChecklistCategoryDto>>
 
+    @GET("rest/v1/daily_checklist_records")
+    suspend fun getChecklistRecordForDay(
+        @Query("outlet_id") outletId: String,      // "eq.<uuid>"
+        @Query("date") date: String,               // "eq.YYYY-MM-DD"
+        @Query("select") select: String = "id,outlet_id,staff_id,date",
+        @Query("limit") limit: String = "1"
+    ): Response<List<DailyChecklistRecordDto>>
+
     @GET("rest/v1/daily_checklist_ticks")
-    suspend fun getDailyChecklistTicks(
-        @QueryMap filters: Map<String, String>,
+    suspend fun getTicksForRecord(
+        @Query("record_id") recordId: String,      // "eq.<uuid>"
         @Query("select") select: String = "item_id,record_id"
     ): Response<List<DailyChecklistTickDto>>
 
@@ -253,13 +268,6 @@ interface SupabaseApi {
         @Body payload: CreateCancellationRequestPayload
     ): Response<List<CancellationRequestResponse>>
     
-    @GET("rest/v1/bypass_requests")
-    suspend fun getBypassRequests(
-        @QueryMap filters: Map<String, String>,
-        @Query("select") select: String = "*",
-        @Query("order") order: String = "created_at.desc"
-    ): Response<List<BypassRequestDto>>
-
     // Web POS API Endpoints (https://pos.sukashawarma.com)
     @POST
     suspend fun pullOnlineOrder(

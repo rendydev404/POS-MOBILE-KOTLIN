@@ -8,7 +8,8 @@ data class StaffProfileDto(
     val name: String?,
     val role: String?,
     @SerializedName("outlet_id") val outletId: String?,
-    @SerializedName("is_active") val isActive: Boolean?
+    @SerializedName("is_active") val isActive: Boolean?,
+    @SerializedName("inactive_reason") val inactiveReason: String? = null
 )
 
 data class OutletDto(
@@ -18,7 +19,8 @@ data class OutletDto(
     val address: String?,
     val phone: String?,
     val type: String?,
-    val is_active: Boolean?
+    val is_active: Boolean?,
+    @SerializedName("inactive_reason") val inactiveReason: String? = null
 )
 
 data class CategoryDto(
@@ -322,6 +324,7 @@ data class BypassRequestDto(
     @SerializedName("staff_id") val staffId: String? = null,
     @SerializedName("request_type") val requestType: String? = null,
     val status: String,
+    val reason: String? = null,
     @SerializedName("created_at") val createdAt: String
 )
 
