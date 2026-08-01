@@ -2470,7 +2470,11 @@ Bila ada langkah yang gagal, catat langkah dan gejalanya sebelum melanjutkan.
 
 - [ ] **Step 11: Commit**
 
+Working tree memuat pekerjaan lain yang belum di-commit (order history). **Jangan** memakai `git add -A` atau `git add .` — stage hanya path berikut:
+
 ```bash
-git add -A
+git add app/src/main/java/com/sukashawarma/pos/presentation/MainActivity.kt
 git commit -m "feat(gate): wiring gate baru di MainActivity dan hapus overlay lama"
 ```
+
+Penghapusan dua file di Step 1 sudah ter-stage oleh `git rm`, jadi ikut terbawa commit ini.
