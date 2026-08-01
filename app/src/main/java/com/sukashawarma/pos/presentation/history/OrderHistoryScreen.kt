@@ -8,23 +8,42 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Assignment
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.MonetizationOn
 import androidx.compose.material.icons.filled.Print
+import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import com.sukashawarma.pos.data.remote.dto.OrderDto
+import com.sukashawarma.pos.data.remote.dto.OrderItemDto
+import com.sukashawarma.pos.presentation.reports.FilterDropdown
 import com.sukashawarma.pos.presentation.theme.*
+import kotlinx.coroutines.delay
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneOffset
+import kotlin.math.floor
 
 @Composable
 fun OrderHistoryScreen(
@@ -32,15 +51,42 @@ fun OrderHistoryScreen(
     modifier: Modifier = Modifier
 ) {
     var selectedTab by remember { mutableStateOf(0) }
-    
+
     val currentMonth = LocalDate.now().monthValue
     val currentYear = LocalDate.now().year
     var selectedMonth by remember { mutableStateOf(currentMonth) }
     var selectedYear by remember { mutableStateOf(currentYear) }
 
+    val dateFilter by viewModel.dateFilter.collectAsState()
+    val statusFilter by viewModel.selectedPaymentFilter.collectAsState()
+    val paymentMethodFilter by viewModel.selectedPaymentMethodFilter.collectAsState()
+    val channelFilter by viewModel.selectedChannelFilter.collectAsState()
+    val customStart by viewModel.customStartDate.collectAsState()
+    val customEnd by viewModel.customEndDate.collectAsState()
+
     LaunchedEffect(selectedTab, selectedMonth, selectedYear) {
         if (selectedTab == 1) {
             viewModel.fetchBonusData(selectedMonth, selectedYear)
+        }
+    }
+
+    // Re-fetch whenever any histori filter changes — mirrors web's queryKey deps.
+    LaunchedEffect(selectedTab, dateFilter, statusFilter, paymentMethodFilter, channelFilter, customStart, customEnd) {
+        if (selectedTab == 0) {
+            if (dateFilter != "custom" || (customStart != null && customEnd != null)) {
+                viewModel.fetchOrderHistory()
+            }
+        }
+    }
+
+    // Auto-refresh every 15s, only while viewing today's histori — mirrors web's
+    // refetchInterval: dateFilter === 'today' ? 15000 : false.
+    LaunchedEffect(selectedTab, dateFilter) {
+        if (selectedTab == 0 && dateFilter == "today") {
+            while (true) {
+                delay(15000)
+                viewModel.fetchOrderHistory()
+            }
         }
     }
 
@@ -69,11 +115,19 @@ fun OrderHistoryScreen(
                         fontWeight = FontWeight.Bold,
                         color = TextDarkPrimary
                     )
-                    Text(
-                        text = "Suka Shawarma - Auto-refresh 10s",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextDarkSecondary
-                    )
+                    if (selectedTab == 0 && dateFilter == "today") {
+                        Text(
+                            text = "Suka Shawarma - Auto-refresh setiap 15 detik",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextDarkSecondary
+                        )
+                    } else {
+                        Text(
+                            text = "Suka Shawarma",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextDarkSecondary
+                        )
+                    }
                 }
 
                 Row(
@@ -106,7 +160,7 @@ fun OrderHistoryScreen(
                     }
 
                     IconButton(
-                        onClick = { 
+                        onClick = {
                             if (selectedTab == 0) {
                                 viewModel.fetchOrderHistory()
                             } else {
@@ -155,9 +209,72 @@ fun SummaryCard(title: String, amount: String, titleColor: Color, textColor: Col
     }
 }
 
+// ── Channel helpers (mirrors lib/channels.ts) ──────────────────────────────
+
+private fun normalizeChannelId(id: String?): String? {
+    if (id.isNullOrBlank()) return null
+    val norm = id.lowercase()
+    return if (norm in listOf("tiktok", "tiktok_go")) "tiktokgo" else norm
+}
+
+fun channelLabel(id: String?): String {
+    return when (normalizeChannelId(id)) {
+        "gofood" -> "GoFood"
+        "shopeefood" -> "ShopeeFood"
+        "grabfood" -> "GrabFood"
+        "tiktokgo" -> "TikTok Go"
+        "website" -> "Website Online"
+        else -> id ?: ""
+    }
+}
+
+fun channelColor(id: String?): Color {
+    return when (normalizeChannelId(id)) {
+        "gofood" -> Color(0xFF00AA13)
+        "shopeefood" -> Color(0xFFEE4D2D)
+        "grabfood" -> Color(0xFF00B14F)
+        "tiktokgo" -> Color(0xFF000000)
+        "website" -> Color(0xFF2563EB)
+        else -> Color(0xFF6B7280)
+    }
+}
+
+private val dateFilterOptions = listOf(
+    "today" to "Hari Ini",
+    "yesterday" to "Kemarin",
+    "7d" to "7 Hari Terakhir",
+    "30d" to "30 Hari Terakhir",
+    "all" to "Semua Waktu",
+    "custom" to "Custom Tanggal"
+)
+
+private val paymentMethodOptions = listOf(
+    "all" to "Semua Pembayaran",
+    "cash" to "Tunai (Cash)",
+    "qris" to "QRIS",
+    "card" to "Kartu (Card)"
+)
+
+private val channelFilterOptions = listOf(
+    "all" to "Semua Channel",
+    "offline" to "Offline / Dine-in",
+    "gofood" to "GoFood",
+    "shopeefood" to "ShopeeFood",
+    "grabfood" to "GrabFood",
+    "tiktokgo" to "TikTok Go",
+    "website" to "Website Online"
+)
+
+private fun labelFor(options: List<Pair<String, String>>, value: String): String =
+    options.firstOrNull { it.first == value }?.second ?: value
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FilterBox(text: String) {
+private fun DatePickField(label: String, date: LocalDate?, onDatePicked: (LocalDate) -> Unit) {
+    var showDialog by remember { mutableStateOf(false) }
+
     Surface(
+        modifier = Modifier.clickable { showDialog = true },
         shape = RoundedCornerShape(8.dp),
         color = Color.White,
         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
@@ -165,18 +282,90 @@ fun FilterBox(text: String) {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Text(text, fontSize = 13.sp, color = Color(0xFF374151))
-            Spacer(modifier = Modifier.width(8.dp))
-            Icon(
-                imageVector = Icons.Default.KeyboardArrowDown, 
-                contentDescription = null, 
-                modifier = Modifier.size(16.dp),
-                tint = Color(0xFF6B7280)
-            )
+            Icon(Icons.Default.CalendarMonth, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFF6B7280))
+            Column {
+                Text(label, fontSize = 10.sp, color = Color(0xFF9CA3AF))
+                Text(date?.toString() ?: "Pilih tanggal", fontSize = 13.sp, color = Color(0xFF374151), fontWeight = FontWeight.Medium)
+            }
         }
     }
+
+    if (showDialog) {
+        val initialMillis = date?.atStartOfDay(ZoneOffset.UTC)?.toInstant()?.toEpochMilli()
+        val state = rememberDatePickerState(initialSelectedDateMillis = initialMillis)
+        DatePickerDialog(
+            onDismissRequest = { showDialog = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    state.selectedDateMillis?.let { millis ->
+                        onDatePicked(Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate())
+                    }
+                    showDialog = false
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDialog = false }) { Text("Batal") }
+            }
+        ) {
+            DatePicker(state = state)
+        }
+    }
+}
+
+// ── Order item name marker parsing (mirrors page.tsx:469-554) ─────────────
+
+data class ParsedOrderItem(
+    val raw: OrderItemDto,
+    val name: String,
+    val note: String,
+    val itemId: String,
+    val parentId: String?
+)
+
+private fun parseOrderItemName(item: OrderItemDto, index: Int): ParsedOrderItem {
+    var name = item.menuItemName
+    var note = ""
+    var id = item.id ?: "idx-$index"
+    var parentId: String? = null
+
+    val noteSplit = name.split("|NOTE|")
+    if (noteSplit.size > 1) {
+        note = noteSplit[1]
+        name = noteSplit[0]
+    }
+
+    val parentSplit = name.split("|PARENT|")
+    if (parentSplit.size > 1) {
+        parentId = parentSplit[1]
+        name = parentSplit[0]
+    }
+
+    val idSplit = name.split("|ID|")
+    if (idSplit.size > 1) {
+        id = idSplit[1]
+        name = idSplit[0]
+    }
+
+    return ParsedOrderItem(item, name, note, id, parentId)
+}
+
+private fun groupOrderItems(items: List<OrderItemDto>): List<Pair<ParsedOrderItem, List<ParsedOrderItem>>> {
+    val parsed = items.mapIndexed { index, item -> parseOrderItemName(item, index) }
+    val rootItems = parsed.filter { it.parentId == null }.toMutableList()
+    val validRootIds = rootItems.map { it.itemId }.toSet()
+
+    val childrenMap = mutableMapOf<String, MutableList<ParsedOrderItem>>()
+    parsed.filter { it.parentId != null }.forEach { child ->
+        if (!validRootIds.contains(child.parentId)) {
+            rootItems.add(child)
+        } else {
+            childrenMap.getOrPut(child.parentId!!) { mutableListOf() }.add(child)
+        }
+    }
+
+    return rootItems.map { root -> root to (childrenMap[root.itemId] ?: emptyList()) }
 }
 
 @Composable
@@ -185,21 +374,23 @@ fun OrderHistoryContent(viewModel: OrderHistoryViewModel) {
     val searchQuery by viewModel.searchQuery.collectAsState()
     val selectedFilter by viewModel.selectedPaymentFilter.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val dateFilter by viewModel.dateFilter.collectAsState()
+    val paymentMethodFilter by viewModel.selectedPaymentMethodFilter.collectAsState()
+    val channelFilter by viewModel.selectedChannelFilter.collectAsState()
+    val customStart by viewModel.customStartDate.collectAsState()
+    val customEnd by viewModel.customEndDate.collectAsState()
+
+    var previewImageUrl by remember { mutableStateOf<String?>(null) }
 
     val filteredOrders = ordersHistory.filter { order ->
-        val statusMatches = when(selectedFilter) {
-            "Selesai" -> order.status.equals("completed", true)
-            "Menunggu" -> order.status.equals("pending", true)
-            "Dibatalkan" -> order.status.equals("cancelled", true)
-            else -> true
-        }
-        statusMatches && (searchQuery.isEmpty() || order.orderNumber.toString().contains(searchQuery) || (order.customerName?.contains(searchQuery, ignoreCase = true) == true))
+        searchQuery.isEmpty() || order.orderNumber.toString().contains(searchQuery) || (order.customerName?.contains(searchQuery, ignoreCase = true) == true)
     }
 
-    val totalCash = ordersHistory.filter { it.paymentMethod.equals("CASH", true) }.sumOf { it.totalAmount }
-    val totalQris = ordersHistory.filter { it.paymentMethod.equals("QRIS", true) }.sumOf { it.totalAmount }
-    val totalCard = ordersHistory.filter { it.paymentMethod.equals("CARD", true) }.sumOf { it.totalAmount }
-    val totalRevenue = totalCash + totalQris + totalCard
+    val nonCancelled = ordersHistory.filter { !it.status.equals("cancelled", true) }
+    val totalCash = nonCancelled.filter { it.paymentMethod.equals("cash", true) }.sumOf { it.totalAmount }
+    val totalQris = nonCancelled.filter { it.paymentMethod.equals("qris", true) }.sumOf { it.totalAmount }
+    val totalCard = nonCancelled.filter { it.paymentMethod.equals("card", true) }.sumOf { it.totalAmount }
+    val totalRevenue = nonCancelled.sumOf { it.totalAmount }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
@@ -239,9 +430,34 @@ fun OrderHistoryContent(viewModel: OrderHistoryViewModel) {
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterBox("Hari Ini")
-                FilterBox("Semua Channel")
-                FilterBox("Semua Pembayaran")
+                FilterDropdown(labelFor(dateFilterOptions, dateFilter), dateFilterOptions) { picked ->
+                    viewModel.dateFilter.value = picked
+                    if (picked != "custom") {
+                        viewModel.customStartDate.value = null
+                        viewModel.customEndDate.value = null
+                    }
+                }
+                FilterDropdown(labelFor(channelFilterOptions, channelFilter), channelFilterOptions) { picked ->
+                    viewModel.selectedChannelFilter.value = picked
+                }
+                FilterDropdown(labelFor(paymentMethodOptions, paymentMethodFilter), paymentMethodOptions) { picked ->
+                    viewModel.selectedPaymentMethodFilter.value = picked
+                }
+            }
+        }
+
+        if (dateFilter == "custom") {
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(
+                modifier = Modifier
+                    .background(Color(0xFFF9FAFB), RoundedCornerShape(12.dp))
+                    .padding(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                DatePickField("Mulai Tanggal", customStart) { viewModel.customStartDate.value = it }
+                Text("-", color = Color(0xFF9CA3AF))
+                DatePickField("Sampai Tanggal", customEnd) { viewModel.customEndDate.value = it }
             }
         }
 
@@ -257,124 +473,347 @@ fun OrderHistoryContent(viewModel: OrderHistoryViewModel) {
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(filteredOrders, key = { it.id }) { order ->
-                    var isExpanded by remember { mutableStateOf(false) }
-                    Surface(
+                    OrderRow(
+                        order = order,
+                        onPreviewImage = { previewImageUrl = it },
+                        onMarkCompleted = { viewModel.updateOrderStatus(order.id, "completed") }
+                    )
+                }
+            }
+        }
+    }
+
+    if (previewImageUrl != null) {
+        Dialog(onDismissRequest = { previewImageUrl = null }) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { previewImageUrl = null },
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current).data(previewImageUrl).crossfade(true).build(),
+                        contentDescription = "Bukti Pembayaran",
+                        contentScale = ContentScale.Fit,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { isExpanded = !isExpanded },
-                        shape = RoundedCornerShape(10.dp),
-                        color = Color.White,
-                        border = androidx.compose.foundation.BorderStroke(1.dp, CreamBorder)
+                            .heightIn(min = 200.dp, max = 500.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = { previewImageUrl = null },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Black)
                     ) {
-                        Column(modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Tutup")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OrderRow(
+    order: OrderDto,
+    onPreviewImage: (String) -> Unit,
+    onMarkCompleted: () -> Unit
+) {
+    var isExpanded by remember { mutableStateOf(false) }
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { isExpanded = !isExpanded },
+        shape = RoundedCornerShape(10.dp),
+        color = Color.White,
+        border = androidx.compose.foundation.BorderStroke(1.dp, CreamBorder)
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("#${order.orderNumber}", fontWeight = FontWeight.Bold, color = Color(0xFF6B7280), modifier = Modifier.width(40.dp))
+
+                Column(modifier = Modifier.weight(2.2f)) {
+                    val statusText = when (order.status.lowercase()) {
+                        "completed" -> "Selesai"
+                        "pending" -> "Menunggu"
+                        "cancelled" -> "Dibatalkan"
+                        else -> order.status
+                    }
+                    val statusColor = when (order.status.lowercase()) {
+                        "completed" -> Color(0xFF10B981)
+                        "pending" -> ShawarmaOrange
+                        "cancelled" -> Color(0xFFEF4444)
+                        else -> Color.Gray
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(statusText, color = statusColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        if (order.channel != null) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(shape = RoundedCornerShape(8.dp), color = channelColor(order.channel).copy(alpha = 0.12f)) {
+                                Text(
+                                    channelLabel(order.channel),
+                                    color = channelColor(order.channel),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                    Text(order.customerName ?: "Pelanggan Walk-in", fontWeight = FontWeight.Bold)
+
+                    if (order.status.equals("cancelled", true) && order.cancellationUserName != null) {
+                        Text(
+                            "Dibatalkan oleh: ${order.cancellationUserName}",
+                            color = Color(0xFFEF4444),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    } else if (!order.status.equals("cancelled", true) && order.cancellationStatus == "pending_approval") {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(shape = RoundedCornerShape(4.dp), color = Color(0xFFFEF9C3), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A))) {
+                                Text(
+                                    "MENUNGGU PERSETUJUAN BATAL",
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFA16207),
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                )
+                            }
+                            if (order.cancellationUserName != null) {
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("(Oleh: ${order.cancellationUserName})", fontSize = 9.sp, color = Color(0xFFA16207))
+                            }
+                        }
+                    }
+                }
+
+                Column(modifier = Modifier.weight(2f)) {
+                    Text(order.createdAt.take(10), color = Color(0xFF6B7280), fontSize = 12.sp)
+                    Text(order.createdAt.takeLast(8).take(5), color = Color(0xFF9CA3AF), fontSize = 12.sp)
+                }
+
+                Column(modifier = Modifier.weight(1.3f)) {
+                    Text("${order.orderItems?.size ?: 0} item", color = Color(0xFF6B7280), fontSize = 13.sp)
+                }
+
+                Column(modifier = Modifier.weight(1.5f)) {
+                    if (order.cashierName != null) {
+                        Text("Kasir", color = Color(0xFF9CA3AF), fontSize = 12.sp)
+                        Text(order.cashierName, color = Color(0xFF374151), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    }
+                }
+
+                Row(modifier = Modifier.weight(2.5f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
+                    Text(
+                        text = "Rp ${String.format("%,.0f", order.totalAmount)}",
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF111827)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    val badgeColor = when (order.paymentMethod?.uppercase()) {
+                        "CASH" -> Color(0xFF10B981)
+                        "QRIS" -> Color(0xFF3B82F6)
+                        else -> Color(0xFF8B5CF6)
+                    }
+                    Surface(shape = RoundedCornerShape(16.dp), color = badgeColor.copy(alpha = 0.1f)) {
+                        Text(
+                            order.paymentMethod?.uppercase() ?: "N/A",
+                            color = badgeColor,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(
+                        if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = null,
+                        tint = Color(0xFF9CA3AF),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            if (isExpanded && order.orderItems != null && order.orderItems.isNotEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFFF9FAFB))
+                        .padding(16.dp)
+                ) {
+                    groupOrderItems(order.orderItems).forEach { (root, children) ->
+                        Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                             Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text("#${order.orderNumber}", fontWeight = FontWeight.Bold, color = Color(0xFF6B7280), modifier = Modifier.width(40.dp))
-                                
-                                Column(modifier = Modifier.weight(2f)) {
-                                    val statusText = when(order.status.lowercase()) {
-                                        "completed" -> "Selesai"
-                                        "pending" -> "Menunggu"
-                                        "cancelled" -> "Dibatalkan"
-                                        else -> order.status
-                                    }
-                                    val statusColor = when(order.status.lowercase()) {
-                                        "completed" -> Color(0xFF10B981)
-                                        "pending" -> ShawarmaOrange
-                                        "cancelled" -> Color(0xFFEF4444)
-                                        else -> Color.Gray
-                                    }
-                                    Text(statusText, color = statusColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                    Text(order.customerName ?: "Pelanggan Walk-in", fontWeight = FontWeight.Bold)
+                                Row {
+                                    Text("${root.raw.quantity}x", fontWeight = FontWeight.Bold, color = Color(0xFF374151), modifier = Modifier.width(30.dp))
+                                    Text(root.name, color = Color(0xFF4B5563), fontWeight = FontWeight.Medium)
                                 }
-                                
-                                Column(modifier = Modifier.weight(2f)) {
-                                    Text(order.createdAt.take(10), color = Color(0xFF6B7280), fontSize = 12.sp)
-                                    Text(order.createdAt.takeLast(8).take(5), color = Color(0xFF9CA3AF), fontSize = 12.sp)
-                                }
-                                
-                                Column(modifier = Modifier.weight(1.5f)) {
-                                    Text("${order.orderItems?.size ?: 0} item", color = Color(0xFF6B7280), fontSize = 13.sp)
-                                }
-                                
-                                Column(modifier = Modifier.weight(1.5f)) {
-                                    Text("Kasir", color = Color(0xFF9CA3AF), fontSize = 12.sp)
-                                    Text("N/A", color = Color(0xFF374151), fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                                }
-
-                                Row(modifier = Modifier.weight(2.5f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
+                                Text("Rp ${String.format("%,.0f", root.raw.subtotal)}", color = Color(0xFF374151), fontWeight = FontWeight.Medium)
+                            }
+                            if (root.note.isNotBlank()) {
+                                Surface(
+                                    modifier = Modifier.padding(start = 30.dp, top = 4.dp, bottom = 2.dp),
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = Color(0xFFFFFBEB),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A))
+                                ) {
                                     Text(
-                                        text = "Rp ${String.format("%,.0f", order.totalAmount)}",
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color(0xFF111827)
-                                    )
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    val badgeColor = when(order.paymentMethod?.uppercase()) {
-                                        "CASH" -> Color(0xFF10B981)
-                                        "QRIS" -> Color(0xFF3B82F6)
-                                        else -> Color(0xFF8B5CF6)
-                                    }
-                                    Surface(shape = RoundedCornerShape(16.dp), color = badgeColor.copy(alpha = 0.1f)) {
-                                        Text(
-                                            order.paymentMethod?.uppercase() ?: "N/A", 
-                                            color = badgeColor, 
-                                            fontSize = 10.sp, 
-                                            fontWeight = FontWeight.Bold, 
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Icon(
-                                        if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, 
-                                        contentDescription = null, 
-                                        tint = Color(0xFF9CA3AF), 
-                                        modifier = Modifier.size(20.dp)
+                                        "\"${root.note}\"",
+                                        color = Color(0xFFB45309),
+                                        fontSize = 11.sp,
+                                        fontStyle = FontStyle.Italic,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                     )
                                 }
                             }
-                            
-                            if (isExpanded && order.orderItems != null && order.orderItems.isNotEmpty()) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(Color(0xFFF9FAFB))
-                                        .padding(16.dp)
-                                ) {
-                                    order.orderItems.forEach { item ->
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                            horizontalArrangement = Arrangement.SpaceBetween
-                                        ) {
-                                            Row {
-                                                Text("${item.quantity}x", fontWeight = FontWeight.Bold, color = Color(0xFF374151), modifier = Modifier.width(30.dp))
-                                                Text(item.menuItemName, color = Color(0xFF4B5563))
-                                            }
-                                            Text("Rp ${String.format("%,.0f", item.subtotal)}", color = Color(0xFF374151), fontWeight = FontWeight.Medium)
-                                        }
-                                    }
-                                    Spacer(modifier = Modifier.height(8.dp))
+
+                            children.forEach { child ->
+                                Column(modifier = Modifier.padding(start = 30.dp, top = 4.dp)) {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.End
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.Top
                                     ) {
-                                        Button(
-                                            onClick = { /* Print Receipt */ },
-                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5)),
-                                            shape = RoundedCornerShape(8.dp),
-                                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text("${child.raw.quantity}x", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF6B7280))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Surface(shape = RoundedCornerShape(4.dp), color = Color(0xFFFEF3C7)) {
+                                                Text("EXTRA", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color(0xFFB45309), modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                                            }
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(child.name, color = Color(0xFF4B5563), fontSize = 13.sp)
+                                        }
+                                        Text("Rp ${String.format("%,.0f", child.raw.subtotal)}", color = Color(0xFF6B7280), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                    }
+                                    if (child.note.isNotBlank()) {
+                                        Surface(
+                                            modifier = Modifier.padding(start = 26.dp, top = 3.dp),
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = Color(0xFFFFFBEB),
+                                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A))
                                         ) {
-                                            Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(16.dp))
-                                            Spacer(Modifier.width(8.dp))
-                                            Text("Cetak Struk", fontSize = 12.sp)
+                                            Text(
+                                                "\"${child.note}\"",
+                                                color = Color(0xFFB45309),
+                                                fontSize = 10.sp,
+                                                fontStyle = FontStyle.Italic,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                            )
                                         }
                                     }
                                 }
                             }
+                        }
+                    }
+
+                    if (!order.notes.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Surface(shape = RoundedCornerShape(12.dp), color = Color(0xFFFFFBEB), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A))) {
+                            Text(
+                                buildString {
+                                    append("Catatan: ")
+                                    append(order.notes)
+                                },
+                                color = Color(0xFF92400E),
+                                fontSize = 13.sp,
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+                    }
+
+                    val cancelReason = order.cancellationReason ?: order.voidReason
+                    if (order.status.equals("cancelled", true) && !cancelReason.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Surface(shape = RoundedCornerShape(12.dp), color = Color(0xFFFEF2F2), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFECACA))) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text("Alasan Batal: $cancelReason", color = Color(0xFF991B1B), fontSize = 13.sp)
+                                if (order.cancellationUserName != null) {
+                                    Text("Diajukan oleh: ${order.cancellationUserName}", color = Color(0xFFB91C1C), fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    } else if (!order.status.equals("cancelled", true) && order.cancellationStatus == "pending_approval") {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Surface(shape = RoundedCornerShape(12.dp), color = Color(0xFFFEFCE8), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A))) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text("Permintaan Batal (Menunggu Persetujuan)", color = Color(0xFF854D0E), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                if (!cancelReason.isNullOrBlank()) {
+                                    Text("Alasan: $cancelReason", color = Color(0xFF854D0E), fontSize = 12.sp)
+                                }
+                                if (order.cancellationUserName != null) {
+                                    Text("Diajukan oleh: ${order.cancellationUserName}", color = Color(0xFFA16207), fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
+
+                    if (order.paymentMethod.equals("qris", true) && !order.paymentProofUrl.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Surface(shape = RoundedCornerShape(12.dp), color = Color(0xFFEFF6FF), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBFDBFE))) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.QrCode, contentDescription = null, tint = Color(0xFF1D4ED8), modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Bukti Transfer QRIS", color = Color(0xFF1D4ED8), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                }
+                                Button(
+                                    onClick = { onPreviewImage(order.paymentProofUrl) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6)),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Text("Lihat Foto", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (order.status.equals("pending", true)) {
+                            Button(
+                                onClick = onMarkCompleted,
+                                colors = ButtonDefaults.buttonColors(containerColor = ShawarmaOrange),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                            ) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Tandai Selesai", fontSize = 12.sp)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.weight(1f))
+
+                        Button(
+                            onClick = { /* Print Receipt */ },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5)),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                        ) {
+                            Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Cetak Struk", fontSize = 12.sp)
                         }
                     }
                 }
@@ -419,10 +858,10 @@ fun BonusCrewContent(
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("Pilih Bulan & Tahun", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(12.dp))
-                    
+
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
-                            onClick = { 
+                            onClick = {
                                 var newMonth = selectedMonth - 1
                                 var newYear = selectedYear
                                 if (newMonth < 1) { newMonth = 12; newYear-- }
@@ -431,17 +870,17 @@ fun BonusCrewContent(
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = CreamBorder)
                         ) { Text("<", color = TextDarkPrimary) }
-                        
+
                         Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                             Text(
-                                "$selectedMonth / $selectedYear", 
+                                "$selectedMonth / $selectedYear",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
                         }
-                        
+
                         Button(
-                            onClick = { 
+                            onClick = {
                                 var newMonth = selectedMonth + 1
                                 var newYear = selectedYear
                                 if (newMonth > 12) { newMonth = 1; newYear++ }
@@ -519,123 +958,199 @@ fun BonusCrewContent(
             // Bonus Simulation Card
             if (dailyBreakdown.isNotEmpty()) {
                 val lastDay = dailyBreakdown.last()
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    color = CreamBackground,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, CreamBorder)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Simulasi Bonus", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                            Text("Jumlah Crew (aktif):", color = TextDarkSecondary)
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Button(
-                                    onClick = { if (displayCrewCount > 1) viewModel.simulatedCrewCount.value = displayCrewCount - 1 },
-                                    colors = ButtonDefaults.buttonColors(containerColor = CreamBorder),
-                                    modifier = Modifier.size(36.dp),
-                                    contentPadding = PaddingValues(0.dp)
-                                ) { Text("-", color = TextDarkPrimary) }
-                                Text("$displayCrewCount", modifier = Modifier.padding(horizontal = 12.dp), fontWeight = FontWeight.Bold)
-                                Button(
-                                    onClick = { viewModel.simulatedCrewCount.value = displayCrewCount + 1 },
-                                    colors = ButtonDefaults.buttonColors(containerColor = CreamBorder),
-                                    modifier = Modifier.size(36.dp),
-                                    contentPadding = PaddingValues(0.dp)
-                                ) { Text("+", color = TextDarkPrimary) }
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Target Harian:", color = TextDarkSecondary)
-                            Text("Rp ${String.format("%,.0f", lastDay.targetAmount)}", fontWeight = FontWeight.Medium)
-                        }
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Bonus Per Porsi:", color = TextDarkSecondary)
-                            Text("Rp ${String.format("%,.0f", lastDay.perItemBonus)}", fontWeight = FontWeight.Medium)
-                        }
-                    }
-                }
+                BonusSimulationCard(
+                    targetAmount = lastDay.targetAmount,
+                    perItemBonus = lastDay.perItemBonus,
+                    crewCount = displayCrewCount,
+                    onCrewCountChange = { viewModel.simulatedCrewCount.value = it }
+                )
             }
         }
 
-        // Right Column: Daily Breakdown List
+        // Right Column: Daily Breakdown Table
         Surface(
             modifier = Modifier.weight(0.65f).fillMaxHeight(),
             shape = RoundedCornerShape(10.dp),
             color = CreamBackground,
             border = androidx.compose.foundation.BorderStroke(1.dp, CreamBorder)
         ) {
-            if (isLoading) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = ShawarmaOrange)
+            Column(modifier = Modifier.fillMaxSize()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Rincian Penjualan per Hari", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("Lihat rekam jejak pencapaian target harian outletmu", style = MaterialTheme.typography.bodySmall, color = TextDarkMuted)
                 }
-            } else if (dailyBreakdown.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Belum ada data untuk bulan ini", color = TextDarkMuted)
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize().padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    item {
-                        Text("Rincian Penjualan per Hari", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text("Lihat rekam jejak pencapaian target harian outletmu", style = MaterialTheme.typography.bodySmall, color = TextDarkMuted)
-                        Spacer(modifier = Modifier.height(8.dp))
+
+                if (isLoading) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = ShawarmaOrange)
                     }
-                    
-                    items(dailyBreakdown.reversed()) { day ->
-                        val dateStr = day.date ?: ""
-                        val isToday = if (dateStr.isNotEmpty()) java.time.LocalDate.parse(dateStr.split("T")[0]) == java.time.LocalDate.now() else false
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (isToday) ShawarmaOrange.copy(alpha = 0.1f) else Color.White,
-                            border = androidx.compose.foundation.BorderStroke(1.dp, if (isToday) ShawarmaOrange.copy(alpha = 0.5f) else CreamBorder)
-                        ) {
+                } else if (dailyBreakdown.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("Belum ada data untuk bulan ini", color = TextDarkMuted)
+                    }
+                } else {
+                    // Table header
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFFF3F4F6))
+                            .padding(horizontal = 16.dp, vertical = 10.dp)
+                    ) {
+                        Text("Tanggal", modifier = Modifier.weight(1.2f), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextDarkMuted)
+                        Text("Total Penjualan", modifier = Modifier.weight(1.3f), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextDarkMuted)
+                        Text("Target Hari Ini", modifier = Modifier.weight(1.3f), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextDarkMuted)
+                        Text("Bonus", modifier = Modifier.weight(1.2f), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextDarkMuted)
+                        Text("Status", modifier = Modifier.weight(0.8f), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextDarkMuted, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    }
+
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        items(dailyBreakdown.reversed()) { day ->
+                            val dateStr = day.date ?: ""
+                            val isToday = if (dateStr.isNotEmpty()) java.time.LocalDate.parse(dateStr.split("T")[0]) == java.time.LocalDate.now() else false
+
                             Row(
-                                modifier = Modifier.fillMaxWidth().padding(12.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(if (isToday) ShawarmaOrange.copy(alpha = 0.08f) else Color.White)
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text((day.date ?: "").split("T")[0], fontWeight = FontWeight.Bold, color = if (isToday) ShawarmaOrange else TextDarkPrimary)
-                                        if (isToday) {
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Surface(color = ShawarmaOrange.copy(alpha = 0.2f), shape = RoundedCornerShape(4.dp)) {
-                                                Text("HARI INI", fontSize = androidx.compose.ui.unit.TextUnit(10f, androidx.compose.ui.unit.TextUnitType.Sp), color = ShawarmaOrange, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp), fontWeight = FontWeight.Bold)
-                                            }
+                                Row(modifier = Modifier.weight(1.2f), verticalAlignment = Alignment.CenterVertically) {
+                                    Text((day.date ?: "").split("T")[0], fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (isToday) ShawarmaOrange else TextDarkPrimary)
+                                    if (isToday) {
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Surface(color = ShawarmaOrange.copy(alpha = 0.2f), shape = RoundedCornerShape(4.dp)) {
+                                            Text("HARI INI", fontSize = 8.sp, color = ShawarmaOrange, modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp), fontWeight = FontWeight.Bold)
                                         }
                                     }
-                                    Text("Penjualan: Rp ${String.format("%,.0f", day.dailySales)}", style = MaterialTheme.typography.bodySmall)
-                                    Text("Target: Rp ${String.format("%,.0f", day.targetAmount)}", style = MaterialTheme.typography.bodySmall, color = TextDarkSecondary)
                                 }
-                                Column(horizontalAlignment = Alignment.End) {
-                                    Text(
-                                        if (day.isReached) "+ Rp ${String.format("%,.0f", day.bonusAmount)}" else "-",
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (day.isReached) StatusCompleted else TextDarkMuted
-                                    )
+                                Text("Rp ${String.format("%,.0f", day.dailySales)}", modifier = Modifier.weight(1.3f), fontSize = 12.sp, color = TextDarkPrimary, fontWeight = FontWeight.Medium)
+                                Text("Rp ${String.format("%,.0f", day.targetAmount)}", modifier = Modifier.weight(1.3f), fontSize = 12.sp, color = TextDarkSecondary)
+                                Text(
+                                    if (day.isReached) "+ Rp ${String.format("%,.0f", day.bonusAmount)}" else "-",
+                                    modifier = Modifier.weight(1.2f),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (day.isReached) StatusCompleted else TextDarkMuted
+                                )
+                                Box(modifier = Modifier.weight(0.8f), contentAlignment = Alignment.Center) {
                                     if (day.isReached) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(Icons.Default.Assignment, contentDescription = null, tint = StatusCompleted, modifier = Modifier.size(12.dp))
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text("${day.additionalItems} porsi xtra", style = MaterialTheme.typography.bodySmall, color = StatusCompleted)
-                                        }
+                                        Icon(Icons.Default.CheckCircle, contentDescription = "Tercapai", tint = StatusCompleted, modifier = Modifier.size(18.dp))
                                     } else {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(Icons.Default.Print, contentDescription = null, tint = Color.Red, modifier = Modifier.size(12.dp))
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text("Tidak Capai", style = MaterialTheme.typography.bodySmall, color = Color.Red)
-                                        }
+                                        Icon(Icons.Default.Cancel, contentDescription = "Tidak Tercapai", tint = Color(0xFFEF4444), modifier = Modifier.size(18.dp))
                                     }
                                 }
                             }
+                            Divider(color = CreamBorder, thickness = 0.5.dp)
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun BonusSimulationCard(
+    targetAmount: Double,
+    perItemBonus: Double,
+    crewCount: Int,
+    onCrewCountChange: (Int) -> Unit
+) {
+    var isTargetReached by remember { mutableStateOf(true) }
+    var additionalItems by remember { mutableStateOf(0f) }
+    val maxItems = 50
+
+    val additionalItemsInt = additionalItems.toInt()
+    val totalBonus = if (isTargetReached) additionalItemsInt * perItemBonus else 0.0
+    val bonusPerPerson = if (crewCount > 0) floor(totalBonus / crewCount) else 0.0
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(10.dp),
+        color = CreamBackground,
+        border = androidx.compose.foundation.BorderStroke(1.dp, CreamBorder)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Simulasi Bonus Tambahan", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("Hitung bonus ekstra per item terjual di atas target", style = MaterialTheme.typography.bodySmall, color = TextDarkMuted)
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                Text("Jumlah Crew Hadir:", color = TextDarkSecondary)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Button(
+                        onClick = { if (crewCount > 1) onCrewCountChange(crewCount - 1) },
+                        colors = ButtonDefaults.buttonColors(containerColor = CreamBorder),
+                        modifier = Modifier.size(36.dp),
+                        contentPadding = PaddingValues(0.dp)
+                    ) { Text("-", color = TextDarkPrimary) }
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 12.dp)) {
+                        Icon(Icons.Default.Groups, contentDescription = null, tint = Color(0xFF3B82F6), modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("$crewCount", fontWeight = FontWeight.Bold)
+                    }
+                    Button(
+                        onClick = { onCrewCountChange(crewCount + 1) },
+                        colors = ButtonDefaults.buttonColors(containerColor = CreamBorder),
+                        modifier = Modifier.size(36.dp),
+                        contentPadding = PaddingValues(0.dp)
+                    ) { Text("+", color = TextDarkPrimary) }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                Text("Target Harian Tercapai?", color = TextDarkSecondary, fontWeight = FontWeight.Medium)
+                Switch(checked = isTargetReached, onCheckedChange = { isTargetReached = it })
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                Text("Item Tambahan Terjual", color = TextDarkSecondary, fontSize = 13.sp)
+                Surface(shape = RoundedCornerShape(6.dp), color = Color(0xFFDBEAFE)) {
+                    Text("$additionalItemsInt Item", color = Color(0xFF1D4ED8), fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
+                }
+            }
+            Slider(
+                value = additionalItems,
+                onValueChange = { additionalItems = it },
+                valueRange = 0f..maxItems.toFloat(),
+                steps = maxItems - 1,
+                enabled = isTargetReached
+            )
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("0 Item", fontSize = 11.sp, color = TextDarkMuted)
+                Surface(shape = RoundedCornerShape(6.dp), color = Color(0xFFFFFBEB)) {
+                    Text("Target Rp ${String.format("%,.0f", targetAmount)}", fontSize = 11.sp, color = Color(0xFFB45309), fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                }
+                Text("$maxItems Item", fontSize = 11.sp, color = TextDarkMuted)
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp),
+                color = Color.White,
+                border = androidx.compose.foundation.BorderStroke(1.dp, CreamBorder)
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Text("Perkiraan Bonus", color = TextDarkMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Rp ${String.format("%,.0f", bonusPerPerson)}",
+                        color = if (isTargetReached) TextDarkPrimary else TextDarkMuted,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        if (isTargetReached) "Bonus Rp ${String.format("%,.0f", perItemBonus)} / item ekstra ($additionalItemsInt item) dibagi $crewCount orang"
+                        else "Target harian belum tercapai",
+                        color = TextDarkMuted,
+                        fontSize = 11.sp
+                    )
                 }
             }
         }

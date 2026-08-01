@@ -145,7 +145,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     val existing = orderDao.getOrderById(dto.id)
                     val newEntity = dtoToEntity(dto)
                     if (existing != null) {
-                        orderDao.insertOrder(newEntity.copy(itemsJson = existing.itemsJson))
+                        orderDao.insertOrder(newEntity) // Always use the updated data from server
                     } else {
                         orderDao.insertOrder(newEntity)
                     }
@@ -370,7 +370,12 @@ $magicLink
         val items = (dto.orderItems ?: emptyList()).map { item ->
             val nameUpper = item.menuItemName.uppercase()
             val isChild = nameUpper.startsWith("EXTRA ") || nameUpper.startsWith("? EXTRA") || nameUpper.startsWith(" EXTRA")
+            
+            val finalId = item.id ?: java.util.UUID.randomUUID().toString()
+            android.util.Log.d("OrderSyncDebug", "dtoToEntity item: name=${item.menuItemName}, original_id=${item.id}, final_id=$finalId")
+            
             OrderItem(
+                id = finalId,
                 menuItemId = item.menuItemId,
                 name = item.menuItemName,
                 quantity = item.quantity,

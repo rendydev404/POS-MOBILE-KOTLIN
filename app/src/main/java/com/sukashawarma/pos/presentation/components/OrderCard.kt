@@ -21,6 +21,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -58,7 +60,7 @@ data class ParsedOrderItem(
     val id: String,
     val name: String,
     val note: String,
-    val parentId: String?,
+    var parentId: String?,
     val quantity: Int
 )
 
@@ -394,7 +396,7 @@ fun OrderCard(
                     var name = oi.name
                     var note = oi.note
                     var id = oi.id
-                    var parentId: String? = if (oi.isChild) "placeholder" else null
+                    var parentId: String? = null
 
                     val noteSplit = name.split("|NOTE|")
                     if (noteSplit.size > 1) {
@@ -417,22 +419,58 @@ fun OrderCard(
                     ParsedOrderItem(id, name, note, parentId, oi.quantity)
                 }
 
-                val rootItems = parsedItems.filter { it.parentId.isNullOrBlank() }.toMutableList()
-                val validRootIds = rootItems.map { it.id }.toSet()
-
+                val rootItems = mutableListOf<ParsedOrderItem>()
                 val childrenMap = mutableMapOf<String, MutableList<ParsedOrderItem>>()
-                parsedItems.filter { !it.parentId.isNullOrBlank() }.forEach { i ->
-                    if (!validRootIds.contains(i.parentId)) {
-                        rootItems.add(i) // Orphan child
-                    } else {
+                var lastRootId: String? = null
+
+                parsedItems.forEach { i ->
+                    val nameLower = i.name.lowercase()
+                    val isImplicitExtra = i.parentId.isNullOrBlank() && 
+                        (nameLower.startsWith("extra ") || nameLower.startsWith("toping ") || nameLower.startsWith("? extra") || nameLower.startsWith(" extra"))
+                    
+                    if (!i.parentId.isNullOrBlank()) {
+                        // Explicit parent
                         childrenMap.getOrPut(i.parentId!!) { mutableListOf() }.add(i)
+                    } else if (isImplicitExtra && lastRootId != null) {
+                        // Implicit parent fallback for legacy/malformed orders
+                        i.parentId = lastRootId
+                        childrenMap.getOrPut(lastRootId!!) { mutableListOf() }.add(i)
+                    } else {
+                        // Root item
+                        rootItems.add(i)
+                        lastRootId = i.id
                     }
                 }
 
+                // Verify explicit parents exist, otherwise hoist to root
+                val validRootIds = rootItems.map { it.id }.toSet()
+                val orphanParentIds = childrenMap.keys.filter { !validRootIds.contains(it) }
+                orphanParentIds.forEach { orphanParentId ->
+                    childrenMap.remove(orphanParentId)?.let { rootItems.addAll(it) }
+                }
+
                 for (oi in rootItems) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
+                    val children = childrenMap[oi.id] ?: emptyList()
+                    val hasChildren = oi.note.isNotBlank() || children.isNotEmpty()
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .drawBehind {
+                                if (hasChildren) {
+                                    val topY = 24.dp.toPx()
+                                    val bottomY = size.height - 12.dp.toPx()
+                                    drawLine(
+                                        color = Color(0xFFE2E8F0), // slate-200
+                                        start = androidx.compose.ui.geometry.Offset(11.dp.toPx(), topY),
+                                        end = androidx.compose.ui.geometry.Offset(11.dp.toPx(), bottomY),
+                                        strokeWidth = 2.dp.toPx()
+                                    )
+                                }
+                            }
+                    ) {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
                             verticalAlignment = Alignment.Top
                         ) {
                             Text(
@@ -456,15 +494,15 @@ fun OrderCard(
                                         modifier = Modifier.padding(top = 6.dp),
                                         verticalAlignment = Alignment.Top
                                     ) {
-                                        Surface(color = Color(0xFFCBD5E1), modifier = Modifier.padding(top = 8.dp, end = 8.dp).size(width = 12.dp, height = 2.dp)) {}
+                                        Surface(color = Color(0xFFE2E8F0), modifier = Modifier.padding(top = 8.dp, end = 8.dp).size(width = 12.dp, height = 2.dp)) {}
                                         Surface(
                                             shape = RoundedCornerShape(6.dp),
-                                            color = Color(0xFFFEF2F2), // red-50
-                                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFCA5A5)) // red-300
+                                            color = Color(0xFFF1F5F9), // slate-100
+                                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)) // slate-200
                                         ) {
                                             Text(
                                                 text = oi.note,
-                                                color = Color(0xFF991B1B), // red-800
+                                                color = Color(0xFF475569), // slate-600
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.SemiBold,
                                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -473,29 +511,31 @@ fun OrderCard(
                                     }
                                 }
 
-                                childrenMap[oi.id]?.let { children ->
-                                    for (child in children) {
+                                childrenMap[oi.id]?.let { childList ->
+                                    for (child in childList) {
                                         Row(
                                             modifier = Modifier.padding(top = 6.dp),
                                             verticalAlignment = Alignment.Top
                                         ) {
-                                            Surface(color = Color(0xFFCBD5E1), modifier = Modifier.padding(top = 8.dp, end = 8.dp).size(width = 12.dp, height = 2.dp)) {}
+                                            Surface(color = Color(0xFFE2E8F0), modifier = Modifier.padding(top = 8.dp, end = 8.dp).size(width = 12.dp, height = 2.dp)) {}
+                                            
                                             Text(
                                                 text = "${child.quantity}x",
-                                                color = TextSlate,
+                                                color = Color(0xFF94A3B8), // slate-400
                                                 fontSize = 12.sp,
                                                 fontWeight = FontWeight.Bold,
-                                                modifier = Modifier.width(24.dp).padding(top = 2.dp)
+                                                modifier = Modifier.width(20.dp).padding(top = 1.dp)
                                             )
-                                            Column {
+                                            
+                                            Column(modifier = Modifier.weight(1f)) {
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                                     Surface(
-                                                        shape = RoundedCornerShape(4.dp),
-                                                        color = Color(0xFFF1F5F9)
+                                                        shape = RoundedCornerShape(2.dp),
+                                                        color = Color(0xFFF1F5F9) // slate-100
                                                     ) {
                                                         Text(
                                                             text = "EXTRA",
-                                                            color = TextSlate,
+                                                            color = Color(0xFF64748B), // slate-500
                                                             fontSize = 9.sp,
                                                             fontWeight = FontWeight.Bold,
                                                             modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
@@ -504,10 +544,27 @@ fun OrderCard(
                                                     Spacer(modifier = Modifier.width(6.dp))
                                                     Text(
                                                         text = child.name,
-                                                        color = TextSlateDark.copy(alpha = 0.8f),
+                                                        color = Color(0xFF334155), // slate-700
                                                         fontSize = 13.sp,
-                                                        fontWeight = FontWeight.Medium
+                                                        fontWeight = FontWeight.SemiBold
                                                     )
+                                                }
+
+                                                if (child.note.isNotBlank()) {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(6.dp),
+                                                        color = Color(0xFFF8FAFC), // slate-50
+                                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)), // slate-200
+                                                        modifier = Modifier.padding(top = 4.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = child.note,
+                                                            color = Color(0xFF475569), // slate-600
+                                                            fontSize = 11.sp,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }

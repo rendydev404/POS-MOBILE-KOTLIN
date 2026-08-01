@@ -101,7 +101,12 @@ data class OrderDto(
     @SerializedName("cancellation_user_name") val cancellationUserName: String?,
     @SerializedName("created_at") val createdAt: String,
     val channel: String?,
-    @SerializedName("order_items") val orderItems: List<OrderItemDto>?
+    @SerializedName("order_items") val orderItems: List<OrderItemDto>?,
+    val notes: String? = null,
+    @SerializedName("payment_proof_url") val paymentProofUrl: String? = null,
+    @SerializedName("cashier_name") val cashierName: String? = null,
+    @SerializedName("cancellation_reason") val cancellationReason: String? = null,
+    @SerializedName("void_reason") val voidReason: String? = null
 )
 
 data class OrderItemDto(

@@ -267,11 +267,9 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
                 paint.textSize = 16f
                 paint.isFakeBoldText = false
                 canvas.drawText("Omzet Kotor: Rp ${String.format("%,.0f", data.totalRevenue)}", 50f, 100f, paint)
-                canvas.drawText("Total Potongan: Rp ${String.format("%,.0f", data.totalDeductions)}", 50f, 130f, paint)
-                canvas.drawText("Pendapatan Bersih: Rp ${String.format("%,.0f", data.netRevenue)}", 50f, 160f, paint)
-                canvas.drawText("Pesanan Sukses: ${data.totalOrders}", 50f, 190f, paint)
+                canvas.drawText("Pesanan Sukses: ${data.totalOrders}", 50f, 130f, paint)
                 
-                var y = 230f
+                var y = 170f
                 paint.isFakeBoldText = true
                 canvas.drawText("Distribusi Pembayaran", 50f, y, paint)
                 paint.isFakeBoldText = false

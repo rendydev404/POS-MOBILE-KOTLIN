@@ -118,7 +118,12 @@ fun InfoPorsiScreen(
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Column {
                                         Text(info.menuName, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = textColor)
-                                        Text(" porsi", style = MaterialTheme.typography.bodySmall, color = textColor, fontSize = 11.sp)
+                                        Text(
+                                            text = if (info.portions == 0) "HABIS (0 porsi)" else "Sisa ${info.portions} porsi",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = textColor,
+                                            fontSize = 11.sp
+                                        )
                                     }
                                 }
                             }
