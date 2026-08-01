@@ -26,11 +26,11 @@ object JakartaTime {
 
     /** True bila [timestamp] jatuh pada [day] menurut Asia/Jakarta. */
     fun isOnDay(timestamp: String?, day: LocalDate): Boolean {
-        val instant = parseInstant(timestamp) ?: return false
+        val instant = instantOrNull(timestamp) ?: return false
         return instant.atZone(ZONE).toLocalDate() == day
     }
 
-    private fun parseInstant(raw: String?): Instant? {
+    fun instantOrNull(raw: String?): Instant? {
         if (raw.isNullOrBlank()) return null
         // PostgREST bisa mengembalikan "2026-08-01 03:00:00+00" — normalkan
         // pemisah tanggal/jam dan offset dua digit menjadi bentuk ISO penuh.

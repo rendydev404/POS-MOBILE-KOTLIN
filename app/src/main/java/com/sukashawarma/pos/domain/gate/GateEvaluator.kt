@@ -1,5 +1,7 @@
 package com.sukashawarma.pos.domain.gate
 
+import java.time.Instant
+
 /**
  * Evaluasi gate kasir. Fungsi murni — tidak menyentuh jaringan, Android, atau
  * jam sistem. Urutan cabang mengikuti `checkStatus()` lalu `checkKasirGate()`
@@ -56,7 +58,7 @@ object GateEvaluator {
         // Status terakhir tiap staf hari ini, diproses kronologis.
         val todayAttendance = input.attendances
             .filter { JakartaTime.isOnDay(it.tsServer, input.today) }
-            .sortedBy { it.tsServer }
+            .sortedBy { JakartaTime.instantOrNull(it.tsServer) ?: Instant.EPOCH }
 
         val lastTypePerStaff = LinkedHashMap<String, String>()
         for (att in todayAttendance) {
@@ -101,7 +103,7 @@ object GateEvaluator {
     private fun bypassStatusToday(input: GateInput): BypassStatus? {
         val todayBypasses = input.bypasses
             .filter { JakartaTime.isOnDay(it.createdAt, input.today) }
-            .sortedByDescending { it.createdAt }
+            .sortedByDescending { JakartaTime.instantOrNull(it.createdAt) ?: Instant.EPOCH }
 
         return when (todayBypasses.firstOrNull()?.status) {
             "pending" -> BypassStatus.PENDING

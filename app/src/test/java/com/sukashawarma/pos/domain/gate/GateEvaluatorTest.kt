@@ -293,4 +293,33 @@ class GateEvaluatorTest {
 
         assertFalse(state.isBlocked)
     }
+
+    @Test
+    fun `mixed timestamp formats still order chronologically`() {
+        val state = GateEvaluator.evaluate(
+            input(
+                attendances = listOf(
+                    attendance("staff-1", "in", "2026-08-01T05:00:00+00:00"),
+                    attendance("staff-1", "out", "2026-08-01 10:00:00+00")
+                )
+            )
+        )
+
+        assertTrue(state.isBlocked)
+        assertEquals(BlockType.CLOSED, state.type)
+    }
+
+    @Test
+    fun `mixed format bypass picks the latest status`() {
+        val state = GateEvaluator.evaluate(
+            input(
+                bypasses = listOf(
+                    bypass("rejected", "2026-08-01T02:00:00+00:00"),
+                    bypass("approved", "2026-08-01 09:00:00+00")
+                )
+            )
+        )
+
+        assertFalse(state.isBlocked)
+    }
 }
