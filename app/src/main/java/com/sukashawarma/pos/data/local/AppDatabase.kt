@@ -101,7 +101,10 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "pos_sukashawarma.db"
                 ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
-                 .fallbackToDestructiveMigration()
+                 // TIDAK ADA fallbackToDestructiveMigration di sini, dan jangan pernah
+                 // ditambahkan: local_orders + sync_queue menyimpan penjualan yang belum
+                 // naik ke server. Lebih baik aplikasi gagal terbuka dan kita perbaiki
+                 // migrasinya daripada omzet satu hari hilang tanpa jejak.
                  .build()
                 INSTANCE = instance
                 instance

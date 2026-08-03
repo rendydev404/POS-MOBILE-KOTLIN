@@ -94,4 +94,27 @@ class MigrationTest {
         cursor.close()
         db.close()
     }
+
+    @Test(expected = IllegalStateException::class)
+    fun databaseTanpaMigrasiHarusGagalBukanMenghapusData() {
+        // Database versi 4 dibuka sebagai versi 5 TANPA mendaftarkan MIGRATION_4_5.
+        // Perilaku yang benar: melempar IllegalStateException.
+        // Perilaku yang SALAH (fallbackToDestructiveMigration): menghapus semua tabel diam-diam.
+        var db = helper.createDatabase(dbName, 4)
+        db.execSQL(
+            """
+            INSERT INTO local_orders
+                (id, outletId, orderNumber, customerName, status, source, paymentMethod,
+                 itemsJson, subtotal, discountAmount, totalAmount, amountReceived,
+                 changeAmount, kitchenReceiptPrinted, createdAt, isPendingSync, channel)
+            VALUES
+                ('order-penting', 'outlet-a', 12, 'Budi', 'PREPARING', 'POS', 'CASH',
+                 '[]', 25000.0, 0.0, 25000.0, 25000.0, 0.0, 0, 1000, 1, NULL)
+            """.trimIndent()
+        )
+        db.close()
+
+        // Tanpa migrasi apa pun: harus melempar, bukan menghapus.
+        helper.runMigrationsAndValidate(dbName, 5, true)
+    }
 }
