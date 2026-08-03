@@ -39,12 +39,29 @@ interface OrderDao {
     @Query("DELETE FROM local_orders WHERE id = :orderId")
     suspend fun deleteOrder(orderId: String)
 
-    @Query("SELECT * FROM local_orders WHERE outletId = :outletId AND isPendingSync = 1 ORDER BY createdAt ASC")
-    suspend fun getPendingSyncOrders(outletId: String): List<LocalOrderEntity>
+    @Query(
+        "SELECT * FROM local_orders WHERE outletId = :outletId AND syncState != 'SYNCED' " +
+            "ORDER BY createdAt ASC"
+    )
+    suspend fun getUnsyncedOrders(outletId: String): List<LocalOrderEntity>
 
-    @Query("SELECT COUNT(*) FROM local_orders WHERE outletId = :outletId AND isPendingSync = 1")
+    @Query(
+        "SELECT COUNT(*) FROM local_orders WHERE outletId = :outletId AND syncState = 'PENDING'"
+    )
     fun getPendingSyncCountFlow(outletId: String): Flow<Int>
 
-    @Query("UPDATE local_orders SET orderNumber = :serverOrderNumber, isPendingSync = 0 WHERE id = :orderId")
+    @Query("UPDATE local_orders SET syncState = :syncState WHERE id = :orderId")
+    suspend fun setSyncState(orderId: String, syncState: String)
+
+    @Query("UPDATE local_orders SET dirtyFields = :dirtyFields WHERE id = :orderId")
+    suspend fun setDirtyFields(orderId: String, dirtyFields: String)
+
+    @Query("SELECT dirtyFields FROM local_orders WHERE id = :orderId")
+    suspend fun getDirtyFields(orderId: String): String?
+
+    @Query(
+        "UPDATE local_orders SET orderNumber = :serverOrderNumber, syncState = 'SYNCED', " +
+            "dirtyFields = '' WHERE id = :orderId"
+    )
     suspend fun markSynced(orderId: String, serverOrderNumber: Int)
 }

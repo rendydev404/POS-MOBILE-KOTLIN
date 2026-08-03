@@ -6,7 +6,6 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.sukashawarma.pos.data.local.entity.LocalKioskSettingEntity
 import com.sukashawarma.pos.data.local.entity.LocalMenuItemEntity
-import com.sukashawarma.pos.data.local.entity.SyncQueueEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -28,16 +27,4 @@ interface KioskSettingDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(settings: List<LocalKioskSettingEntity>)
-}
-
-@Dao
-interface SyncQueueDao {
-    @Query("SELECT * FROM sync_queue ORDER BY queueId ASC")
-    suspend fun getAllQueueItems(): List<SyncQueueEntity>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertQueue(item: SyncQueueEntity)
-
-    @Query("DELETE FROM sync_queue WHERE queueId = :queueId")
-    suspend fun deleteQueue(queueId: Long)
 }

@@ -22,7 +22,7 @@ import com.sukashawarma.pos.data.local.entity.SyncQueueEntity
         SyncQueueEntity::class,
         LocalKioskSettingEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -94,13 +94,86 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v6: local_orders.isPendingSync (boolean) -> syncState (enum string) + dirtyFields,
+         * dan sync_queue mendapat kolom yang dibutuhkan SyncEngine.
+         *
+         * local_orders dibuat ulang karena SQLite di minSdk 26 tidak punya DROP COLUMN.
+         * Datanya DISALIN, bukan dibuang — tabel ini menyimpan penjualan yang belum naik.
+         */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE local_orders_baru (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        outletId TEXT NOT NULL,
+                        orderNumber INTEGER NOT NULL,
+                        customerName TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        source TEXT NOT NULL,
+                        paymentMethod TEXT NOT NULL,
+                        itemsJson TEXT NOT NULL,
+                        subtotal REAL NOT NULL,
+                        discountAmount REAL NOT NULL,
+                        totalAmount REAL NOT NULL,
+                        amountReceived REAL NOT NULL,
+                        changeAmount REAL NOT NULL,
+                        kitchenReceiptPrinted INTEGER NOT NULL,
+                        customerReceiptPrinted INTEGER NOT NULL,
+                        cancellationStatus TEXT,
+                        cancellationUserName TEXT,
+                        createdAt INTEGER NOT NULL,
+                        syncState TEXT NOT NULL DEFAULT 'SYNCED',
+                        dirtyFields TEXT NOT NULL DEFAULT '',
+                        channel TEXT
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO local_orders_baru (
+                        id, outletId, orderNumber, customerName, status, source, paymentMethod,
+                        itemsJson, subtotal, discountAmount, totalAmount, amountReceived,
+                        changeAmount, kitchenReceiptPrinted, customerReceiptPrinted,
+                        cancellationStatus, cancellationUserName, createdAt,
+                        syncState, dirtyFields, channel
+                    )
+                    SELECT
+                        id, outletId, orderNumber, customerName, status, source, paymentMethod,
+                        itemsJson, subtotal, discountAmount, totalAmount, amountReceived,
+                        changeAmount, kitchenReceiptPrinted, customerReceiptPrinted,
+                        cancellationStatus, cancellationUserName, createdAt,
+                        CASE WHEN isPendingSync = 1 THEN 'PENDING' ELSE 'SYNCED' END,
+                        '', channel
+                    FROM local_orders
+                    """.trimIndent()
+                )
+                db.execSQL("DROP TABLE local_orders")
+                db.execSQL("ALTER TABLE local_orders_baru RENAME TO local_orders")
+
+                db.execSQL("ALTER TABLE sync_queue ADD COLUMN entityId TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE sync_queue ADD COLUMN idempotencyKey TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE sync_queue ADD COLUMN status TEXT NOT NULL DEFAULT 'PENDING'")
+                db.execSQL("ALTER TABLE sync_queue ADD COLUMN attemptCount INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE sync_queue ADD COLUMN nextAttemptAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE sync_queue ADD COLUMN lastError TEXT")
+                // Baris outbox lama (kalau ada) belum punya kunci; beri kunci unik dari queueId
+                // supaya unique index di bawah tidak menolaknya.
+                db.execSQL("UPDATE sync_queue SET idempotencyKey = 'legacy-' || queueId")
+                db.execSQL(
+                    "CREATE UNIQUE INDEX index_sync_queue_idempotencyKey ON sync_queue (idempotencyKey)"
+                )
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "pos_sukashawarma.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                  // TIDAK ADA fallbackToDestructiveMigration di sini, dan jangan pernah
                  // ditambahkan: local_orders + sync_queue menyimpan penjualan yang belum
                  // naik ke server. Lebih baik aplikasi gagal terbuka dan kita perbaiki

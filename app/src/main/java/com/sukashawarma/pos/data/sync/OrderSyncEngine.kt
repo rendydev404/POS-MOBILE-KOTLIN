@@ -25,7 +25,7 @@ class OrderSyncEngine(
     /** Returns how many offline orders were successfully pushed to the server. */
     suspend fun syncPendingOrders(outletId: String): Int {
         if (outletId.isBlank()) return 0
-        val pending = orderDao.getPendingSyncOrders(outletId)
+        val pending = orderDao.getUnsyncedOrders(outletId)
         var syncedCount = 0
 
         for (entity in pending) {
@@ -48,7 +48,7 @@ class OrderSyncEngine(
 
                 val orderRes = api.createOrder(payload)
                 if (!orderRes.isSuccessful || orderRes.body().isNullOrEmpty()) {
-                    continue // leave isPendingSync = true, retry next pass
+                    continue // leave syncState != SYNCED, retry next pass
                 }
                 val serverOrderNumber = orderRes.body()!!.first().orderNumber
 

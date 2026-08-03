@@ -679,7 +679,8 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                 cancellationStatus = null,
                 cancellationUserName = null,
                 createdAt = order.createdAt,
-                isPendingSync = pendingSync,
+                syncState = if (pendingSync) com.sukashawarma.pos.data.local.entity.SyncState.PENDING.name else com.sukashawarma.pos.data.local.entity.SyncState.SYNCED.name,
+                dirtyFields = "",
                 channel = order.channel
             )
             orderDao.insertOrder(entity)

@@ -1,6 +1,7 @@
 package com.sukashawarma.pos.data.local.entity
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 @Entity(tableName = "local_menu_items")
@@ -23,11 +24,44 @@ data class LocalMenuItemEntity(
     val packageItemsJson: String?
 )
 
-@Entity(tableName = "sync_queue")
+/**
+ * Outbox: satu baris per mutasi kasir yang belum sampai ke server.
+ *
+ * Ditulis dalam transaksi Room yang SAMA dengan perubahan tabel datanya,
+ * sehingga tidak mungkin UI berubah tanpa antrian sync ikut terisi.
+ */
+@Entity(
+    tableName = "sync_queue",
+    indices = [Index(value = ["idempotencyKey"], unique = true)]
+)
 data class SyncQueueEntity(
     @PrimaryKey(autoGenerate = true) val queueId: Long = 0,
-    val actionType: String, // CREATE_ORDER, UPDATE_ORDER_STATUS, CREATE_PETTY_CASH
+
+    /** CREATE_ORDER, UPDATE_ORDER_STATUS, MARK_RECEIPT_PRINTED, REQUEST_CANCELLATION, UPLOAD_PAYMENT_PROOF */
+    val actionType: String,
+
+    /** id baris data yang diubah (mis. orders.id). Dipakai untuk menjaga urutan per-entitas. */
+    val entityId: String,
+
+    /**
+     * Kunci anti-kirim-ganda. Untuk mutasi yang idempoten secara alami
+     * (create order, set status) berbentuk "$actionType:$entityId" sehingga
+     * mutasi berulang menimpa baris antrian lama alih-alih menumpuk.
+     */
+    val idempotencyKey: String,
+
     val payloadJson: String,
+
+    /** Nama [SyncState]: PENDING (menunggu/berulang) atau FAILED (ditolak server). */
+    val status: String = SyncState.PENDING.name,
+
+    val attemptCount: Int = 0,
+
+    /** Epoch millis paling awal boleh dicoba lagi (backoff). 0 = boleh sekarang. */
+    val nextAttemptAt: Long = 0,
+
+    val lastError: String? = null,
+
     val createdAt: Long = System.currentTimeMillis()
 )
 

@@ -361,7 +361,7 @@ $magicLink
             cancellationStatus = entity.cancellationStatus,
             cancellationUserName = entity.cancellationUserName,
             createdAt = entity.createdAt,
-            isOffline = entity.isPendingSync,
+            isOffline = entity.syncState != com.sukashawarma.pos.data.local.entity.SyncState.SYNCED.name,
             channel = entity.channel
         )
     }
@@ -403,7 +403,8 @@ $magicLink
             cancellationStatus = dto.cancellationStatus,
             cancellationUserName = dto.cancellationUserName,
             createdAt = parseIsoTimestamp(dto.createdAt),
-            isPendingSync = false,
+            syncState = com.sukashawarma.pos.data.local.entity.SyncState.SYNCED.name,
+            dirtyFields = "",
             channel = dto.channel
         )
     }
