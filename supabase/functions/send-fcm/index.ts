@@ -1,6 +1,32 @@
 import { createClient } from '@supabase/supabase-js'
-import { initializeApp, cert, getApps, getApp } from 'firebase-admin/app'
-import { getMessaging } from 'firebase-admin/messaging'
+import { SignJWT, importPKCS8 } from 'jose'
+
+async function getAccessToken(clientEmail: string, privateKey: string) {
+  const privateKeyObj = await importPKCS8(privateKey, 'RS256')
+  const jwt = await new SignJWT({
+    iss: clientEmail,
+    scope: 'https://www.googleapis.com/auth/firebase.messaging',
+    aud: 'https://oauth2.googleapis.com/token',
+  })
+    .setProtectedHeader({ alg: 'RS256', typ: 'JWT' })
+    .setIssuedAt()
+    .setExpirationTime('1h')
+    .sign(privateKeyObj)
+
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
+  })
+  
+  const data = await response.json()
+  if (!response.ok) {
+    throw new Error(`Error fetching access token: ${data.error_description || JSON.stringify(data)}`)
+  }
+  return data.access_token
+}
 
 Deno.serve(async (req) => {
   try {
@@ -52,7 +78,6 @@ Deno.serve(async (req) => {
 
     const tokenStrings = tokens.map((t: any) => t.token)
 
-    // Initialize Firebase Admin (only once per instance)
     const serviceAccountStr = Deno.env.get('FIREBASE_SERVICE_ACCOUNT')
     if (!serviceAccountStr) {
       return new Response(
@@ -60,34 +85,44 @@ Deno.serve(async (req) => {
         { status: 500, headers: { 'Content-Type': 'application/json' } }
       )
     }
-
+    
     const serviceAccount = JSON.parse(serviceAccountStr)
-    const app = getApps().length === 0 ? initializeApp({
-      credential: cert(serviceAccount)
-    }) : getApp()
+    const projectId = serviceAccount.project_id
 
-    const messaging = getMessaging(app)
+    const accessToken = await getAccessToken(serviceAccount.client_email, serviceAccount.private_key)
+    
+    // Construct FCM payload using stringified record values for the 'data' payload
+    // Note: FCM 'data' payload only accepts string values
+    const stringifiedRecord = Object.fromEntries(
+      Object.entries(record).map(([k, v]) => [k, String(v)])
+    )
 
-    const title = record.title || 'New Update'
-    const body = record.body || 'You have a new notification.'
+    // Send requests to Firebase HTTP v1 API
+    const sendPromises = tokenStrings.map(async (token: string) => {
+      const messagePayload = {
+        message: {
+          token,
+          data: stringifiedRecord
+        }
+      }
 
-    const message = {
-      notification: {
-        title: title,
-        body: body,
-      },
-      data: {
-        recordId: String(record.id || ''),
-        action: 'record_updated'
-      },
-      tokens: tokenStrings
-    }
-
-    const response = await messaging.sendMulticast(message)
-    console.log('Successfully sent messages:', response.successCount)
-
+      const res = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(messagePayload)
+      })
+      
+      const data = await res.json()
+      return { token, status: res.status, data }
+    })
+    
+    const results = await Promise.all(sendPromises)
+    
     return new Response(
-      JSON.stringify({ success: true, successCount: response.successCount }),
+      JSON.stringify({ success: true, results }),
       { status: 200, headers: { 'Content-Type': 'application/json' } }
     )
 
