@@ -1,5 +1,13 @@
 -- Migration file for FCM Push Notifications triggers
 
+-- IMPORTANT: Database Administrator Configuration
+-- Before these triggers will succeed, you must configure the following custom settings in Postgres:
+-- 
+-- ALTER DATABASE postgres SET app.settings.fcm_webhook_url = 'https://[PROJECT_REF].supabase.co/functions/v1/send-fcm';
+-- ALTER DATABASE postgres SET app.settings.fcm_webhook_secret = '[SERVICE_ROLE_KEY]';
+-- 
+-- (Replace [PROJECT_REF] and [SERVICE_ROLE_KEY] with your actual project details).
+
 -- Ensure the pg_net extension is enabled
 CREATE EXTENSION IF NOT EXISTS pg_net;
 
@@ -8,10 +16,10 @@ CREATE OR REPLACE FUNCTION public.handle_new_order_notification()
 RETURNS TRIGGER AS $$
 BEGIN
   -- We use pg_net.http_post to call the edge function asynchronously
-  -- Replace [PROJECT_REF] and [SERVICE_ROLE_KEY] with your actual project ref and service role key
+  -- URL and Secret are retrieved dynamically from Postgres custom settings
   PERFORM net.http_post(
-      url:='https://[PROJECT_REF].supabase.co/functions/v1/send-fcm',
-      headers:='{"Content-Type": "application/json", "Authorization": "Bearer [SERVICE_ROLE_KEY]"}'::jsonb,
+      url:=current_setting('app.settings.fcm_webhook_url', true),
+      headers:=json_build_object('Content-Type', 'application/json', 'Authorization', 'Bearer ' || current_setting('app.settings.fcm_webhook_secret', true))::jsonb,
       body:=json_build_object(
           'type', 'new_order',
           'record', row_to_json(NEW)
@@ -35,10 +43,10 @@ CREATE OR REPLACE FUNCTION public.handle_new_owner_message_notification()
 RETURNS TRIGGER AS $$
 BEGIN
   -- We use pg_net.http_post to call the edge function asynchronously
-  -- Replace [PROJECT_REF] and [SERVICE_ROLE_KEY] with your actual project ref and service role key
+  -- URL and Secret are retrieved dynamically from Postgres custom settings
   PERFORM net.http_post(
-      url:='https://[PROJECT_REF].supabase.co/functions/v1/send-fcm',
-      headers:='{"Content-Type": "application/json", "Authorization": "Bearer [SERVICE_ROLE_KEY]"}'::jsonb,
+      url:=current_setting('app.settings.fcm_webhook_url', true),
+      headers:=json_build_object('Content-Type', 'application/json', 'Authorization', 'Bearer ' || current_setting('app.settings.fcm_webhook_secret', true))::jsonb,
       body:=json_build_object(
           'type', 'owner_message',
           'record', row_to_json(NEW)
