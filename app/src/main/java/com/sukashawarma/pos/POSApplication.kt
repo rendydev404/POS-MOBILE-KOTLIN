@@ -6,6 +6,7 @@ import com.sukashawarma.pos.data.local.AuthPrefs
 import com.sukashawarma.pos.data.local.PrinterPrefs
 import com.sukashawarma.pos.data.local.SessionPrefs
 import com.sukashawarma.pos.data.notification.NotificationChannels
+import com.sukashawarma.pos.data.remote.NetworkMonitor
 
 class POSApplication : Application() {
     val database: AppDatabase by lazy {
@@ -26,6 +27,7 @@ class POSApplication : Application() {
         PrinterPrefs.init(this)
         AuthPrefs.init(this)
         SessionPrefs.init(this)
+        NetworkMonitor.init(this)
         NotificationChannels.createChannels(this)
     }
 }
