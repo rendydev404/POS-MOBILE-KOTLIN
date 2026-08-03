@@ -1,7 +1,16 @@
 import { createClient } from '@supabase/supabase-js'
 import { SignJWT, importPKCS8 } from 'jose'
 
-async function getAccessToken(clientEmail: string, privateKey: string) {
+let cachedToken: string | null = null
+let tokenExpiry: number = 0
+
+async function getValidAccessToken(clientEmail: string, privateKey: string) {
+  const now = Date.now()
+  // Refresh token if it expires in less than 5 minutes
+  if (cachedToken && tokenExpiry > now + 5 * 60 * 1000) {
+    return cachedToken
+  }
+
   const privateKeyObj = await importPKCS8(privateKey, 'RS256')
   const jwt = await new SignJWT({
     iss: clientEmail,
@@ -25,7 +34,11 @@ async function getAccessToken(clientEmail: string, privateKey: string) {
   if (!response.ok) {
     throw new Error(`Error fetching access token: ${data.error_description || JSON.stringify(data)}`)
   }
-  return data.access_token
+  
+  cachedToken = data.access_token
+  // expires_in is in seconds
+  tokenExpiry = now + (data.expires_in * 1000)
+  return cachedToken
 }
 
 Deno.serve(async (req) => {
@@ -89,37 +102,52 @@ Deno.serve(async (req) => {
     const serviceAccount = JSON.parse(serviceAccountStr)
     const projectId = serviceAccount.project_id
 
-    const accessToken = await getAccessToken(serviceAccount.client_email, serviceAccount.private_key)
+    const accessToken = await getValidAccessToken(serviceAccount.client_email, serviceAccount.private_key)
     
-    // Construct FCM payload using stringified record values for the 'data' payload
-    // Note: FCM 'data' payload only accepts string values
-    const stringifiedRecord = Object.fromEntries(
-      Object.entries(record).map(([k, v]) => [k, String(v)])
-    )
+    // Ensure title, body, and type exist in the data payload for the Android app
+    const dataPayload: Record<string, string> = {
+      title: String(record.title || 'System Notification'),
+      body: String(record.body || 'You have a new update.'),
+      type: String(record.type || 'DEFAULT'),
+    }
 
-    // Send requests to Firebase HTTP v1 API
-    const sendPromises = tokenStrings.map(async (token: string) => {
-      const messagePayload = {
-        message: {
-          token,
-          data: stringifiedRecord
-        }
+    // Merge in all other fields from record, ensuring they are strings
+    for (const [k, v] of Object.entries(record)) {
+      if (v !== null && v !== undefined) {
+        dataPayload[k] = String(v)
       }
+    }
 
-      const res = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(messagePayload)
+    const results = []
+    const CHUNK_SIZE = 25
+
+    // Send requests to Firebase HTTP v1 API in chunks
+    for (let i = 0; i < tokenStrings.length; i += CHUNK_SIZE) {
+      const chunk = tokenStrings.slice(i, i + CHUNK_SIZE)
+      const chunkPromises = chunk.map(async (token: string) => {
+        const messagePayload = {
+          message: {
+            token,
+            data: dataPayload
+          }
+        }
+
+        const res = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(messagePayload)
+        })
+        
+        const data = await res.json()
+        return { token, status: res.status, data }
       })
       
-      const data = await res.json()
-      return { token, status: res.status, data }
-    })
-    
-    const results = await Promise.all(sendPromises)
+      const chunkResults = await Promise.all(chunkPromises)
+      results.push(...chunkResults)
+    }
     
     return new Response(
       JSON.stringify({ success: true, results }),
