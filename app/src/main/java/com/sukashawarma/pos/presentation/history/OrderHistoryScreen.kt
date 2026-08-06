@@ -568,6 +568,21 @@ private fun OrderRow(
                                 )
                             }
                         }
+                        if (order.isSyncedFromOffline == true) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(shape = RoundedCornerShape(8.dp), color = Color(0xFF10B981).copy(alpha = 0.12f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)) {
+                                    Icon(Icons.Default.Refresh, contentDescription = "Sync", tint = Color(0xFF10B981), modifier = Modifier.size(10.dp))
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                    Text(
+                                        "SYNC",
+                                        color = Color(0xFF10B981),
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
                     }
                     Text(order.customerName ?: "Pelanggan Walk-in", fontWeight = FontWeight.Bold)
 

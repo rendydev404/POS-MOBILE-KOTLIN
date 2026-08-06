@@ -30,8 +30,25 @@ object SupabaseClient {
         chain.proceed(requestBuilder.build())
     }
 
+    // 401 = access token kedaluwarsa. Semua pemanggil REST lewat sini, jadi satu
+    // authenticator cukup: refresh sekali, ulangi request. Tanpa ini kegagalan
+    // ditelan diam-diam oleh `isSuccessful` di tiap ViewModel.
+    private val tokenAuthenticator = okhttp3.Authenticator { _, response ->
+        val path = response.request.url.encodedPath
+        // Endpoint refresh-nya sendiri jangan ikut diretry — nanti berputar.
+        if (path.contains("auth/v1/token") || response.request.header(RETRY_HEADER) != null) {
+            return@Authenticator null
+        }
+        val refreshed = kotlinx.coroutines.runBlocking { AuthSessionManager.refresh() }
+        if (!refreshed) return@Authenticator null
+        response.request.newBuilder().header(RETRY_HEADER, "1").build()
+    }
+
+    private const val RETRY_HEADER = "X-Token-Retry"
+
     val okHttpClient = OkHttpClient.Builder()
         .addInterceptor(authInterceptor)
+        .authenticator(tokenAuthenticator)
         .addInterceptor(HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.BODY
         })

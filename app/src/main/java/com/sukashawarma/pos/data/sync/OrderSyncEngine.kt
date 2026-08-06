@@ -9,6 +9,9 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import java.time.Instant
 import java.time.format.DateTimeFormatter
+import java.io.File
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.asRequestBody
 
 /**
  * Fase 3: drains `local_orders` rows saved while offline (isPendingSync = true) to
@@ -33,6 +36,7 @@ class OrderSyncEngine(
                 val createdAtIso = DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(entity.createdAt))
                 val payload = CreateOrderPayload(
                     id = entity.id,
+                    orderNumber = entity.orderNumber,
                     outletId = entity.outletId,
                     customerName = entity.customerName,
                     status = entity.status.lowercase(),
@@ -69,6 +73,28 @@ class OrderSyncEngine(
                 }
 
                 orderDao.markSynced(entity.id, serverOrderNumber)
+                
+                // Upload local payment proof if it exists
+                entity.localPaymentProofPath?.let { path ->
+                    try {
+                        val file = File(path)
+                        if (file.exists()) {
+                            val fileName = "${entity.outletId}_${serverOrderNumber}_${java.time.LocalDate.now()}.jpg"
+                            val objectPath = "payment_proofs/$fileName"
+                            val body = file.asRequestBody("image/jpeg".toMediaTypeOrNull())
+
+                            val uploadRes = api.uploadPaymentProof(objectPath = objectPath, contentType = "image/jpeg", file = body)
+                            if (uploadRes.isSuccessful) {
+                                val publicUrl = "${com.sukashawarma.pos.data.remote.SupabaseClient.BASE_URL}storage/v1/object/public/$objectPath"
+                                api.updateOrderStatus(orderIdFilter = "eq.${entity.id}", patch = mapOf("payment_proof_url" to publicUrl))
+                                file.delete() // clean up local file
+                            }
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+
                 syncedCount++
             } catch (e: Exception) {
                 e.printStackTrace()

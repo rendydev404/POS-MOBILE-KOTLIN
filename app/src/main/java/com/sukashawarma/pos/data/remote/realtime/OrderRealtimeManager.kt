@@ -29,8 +29,14 @@ class OrderRealtimeManager(
 ) {
     private var webSocket: WebSocket? = null
     private var heartbeatJob: Job? = null
+    private var reconnectJob: Job? = null
     private val refCounter = AtomicInteger(1)
     private val topic get() = "realtime:public:orders"
+    private var currentOutletId: String = ""
+
+    @Volatile private var lastFrameAt = 0L
+    /** Token yang sedang dipakai channel — dipakai untuk tahu kapan perlu dikirim ulang. */
+    @Volatile private var channelToken: String? = null
 
     var onChange: ((table: String, eventType: String, record: JSONObject) -> Unit)? = null
     var onConnectionState: ((connected: Boolean) -> Unit)? = null
@@ -38,6 +44,8 @@ class OrderRealtimeManager(
     fun connect(outletId: String) {
         disconnect()
         if (outletId.isBlank()) return
+        currentOutletId = outletId
+        lastFrameAt = System.currentTimeMillis()
 
         val anonKey = BuildConfig.SUPABASE_ANON_KEY
         val wsUrl = com.sukashawarma.pos.data.remote.SupabaseClient.BASE_URL
@@ -52,16 +60,18 @@ class OrderRealtimeManager(
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
+                lastFrameAt = System.currentTimeMillis()
                 handleMessage(text)
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: OkResponse?) {
                 onConnectionState?.invoke(false)
-                scheduleReconnect(outletId)
+                scheduleReconnect()
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 onConnectionState?.invoke(false)
+                scheduleReconnect()
             }
         })
     }
@@ -77,7 +87,6 @@ class OrderRealtimeManager(
                             put("event", "*")
                             put("schema", "public")
                             put("table", "orders")
-                            put("filter", "outlet_id=eq.$outletId")
                         })
                         put(JSONObject().apply {
                             put("event", "*")
@@ -94,11 +103,16 @@ class OrderRealtimeManager(
                             put("event", "*")
                             put("schema", "public")
                             put("table", "bypass_requests")
-                            put("filter", "outlet_id=eq.$outletId")
+                        })
+                        put(JSONObject().apply {
+                            put("event", "*")
+                            put("schema", "public")
+                            put("table", "cancellation_requests")
                         })
                     })
                 })
-                put("access_token", SessionTokenHolder.accessToken ?: BuildConfig.SUPABASE_ANON_KEY)
+                channelToken = SessionTokenHolder.accessToken
+                put("access_token", channelToken ?: BuildConfig.SUPABASE_ANON_KEY)
             })
             put("ref", refCounter.getAndIncrement().toString())
         }
@@ -110,6 +124,28 @@ class OrderRealtimeManager(
         heartbeatJob = scope.launch {
             while (isActive) {
                 delay(25_000)
+                // Di jaringan seluler socket bisa "menggantung": terbuka tapi tidak
+                // ada frame masuk lagi. Tanpa cek ini realtime mati diam-diam.
+                if (System.currentTimeMillis() - lastFrameAt > 70_000) {
+                    onConnectionState?.invoke(false)
+                    scheduleReconnect()
+                    return@launch
+                }
+                // Supabase menutup channel begitu JWT-nya kedaluwarsa (~1 jam) tanpa
+                // menutup socket-nya, jadi realtime mati diam-diam. Segarkan token
+                // lebih dulu, lalu kirim yang baru ke channel.
+                com.sukashawarma.pos.data.remote.AuthSessionManager.ensureAuthenticated()
+                val token = SessionTokenHolder.accessToken
+                if (token != null && token != channelToken) {
+                    channelToken = token
+                    ws.send(JSONObject().apply {
+                        put("topic", topic)
+                        put("event", "access_token")
+                        put("payload", JSONObject().put("access_token", token))
+                        put("ref", refCounter.getAndIncrement().toString())
+                    }.toString())
+                }
+
                 val hb = JSONObject().apply {
                     put("topic", "phoenix")
                     put("event", "heartbeat")
@@ -121,16 +157,30 @@ class OrderRealtimeManager(
         }
     }
 
-    private fun scheduleReconnect(outletId: String) {
-        scope.launch {
+    /** Sambung ulang sekarang juga — dipakai saat jaringan kembali online. */
+    fun reconnectNow() {
+        if (currentOutletId.isNotBlank()) connect(currentOutletId)
+    }
+
+    private fun scheduleReconnect() {
+        if (reconnectJob?.isActive == true) return
+        reconnectJob = scope.launch {
             delay(5_000)
-            connect(outletId)
+            if (currentOutletId.isNotBlank()) connect(currentOutletId)
         }
     }
 
     private fun handleMessage(text: String) {
         try {
             val json = JSONObject(text)
+            // JWT kedaluwarsa / RLS menolak -> channel ditutup server tanpa onFailure.
+            when (json.optString("event")) {
+                "phx_error", "phx_close" -> {
+                    onConnectionState?.invoke(false)
+                    scheduleReconnect()
+                    return
+                }
+            }
             if (json.optString("event") != "postgres_changes") return
             val payload = json.optJSONObject("payload") ?: return
             val data = payload.optJSONObject("data") ?: return
@@ -145,6 +195,7 @@ class OrderRealtimeManager(
 
     fun disconnect() {
         heartbeatJob?.cancel()
+        reconnectJob?.cancel()
         webSocket?.close(1000, "bye")
         webSocket = null
     }

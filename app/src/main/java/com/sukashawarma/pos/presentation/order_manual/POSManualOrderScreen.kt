@@ -6,6 +6,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.ui.res.painterResource
+import com.sukashawarma.pos.R
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -1235,7 +1237,7 @@ private fun QrisModal(
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(shape = RoundedCornerShape(24.dp), color = Color.White) {
-            Column(modifier = Modifier.width(380.dp)) {
+            Column(modifier = Modifier.width(480.dp)) {
                 Box(modifier = Modifier.fillMaxWidth().height(4.dp).background(TwBlue500))
 
                 Column(
@@ -1262,10 +1264,14 @@ private fun QrisModal(
                         shape = RoundedCornerShape(16.dp),
                         shadowElevation = 2.dp
                     ) {
-                        AsyncImage(
-                            model = "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=shawarma-kasir://pay?amount=${totalAmount.toLong()}",
+                        Image(
+                            painter = painterResource(id = R.drawable.qris_static),
                             contentDescription = "QRIS",
-                            modifier = Modifier.padding(12.dp).size(180.dp)
+                            modifier = Modifier
+                                .padding(12.dp)
+                                .fillMaxWidth()
+                                .aspectRatio(1f),
+                            contentScale = ContentScale.Crop
                         )
                     }
                     Spacer(modifier = Modifier.height(16.dp))

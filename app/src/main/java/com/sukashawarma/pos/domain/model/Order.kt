@@ -52,5 +52,6 @@ data class Order(
     val cancellationUserName: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val isOffline: Boolean = false,
+    val isSyncedFromOffline: Boolean = false,
     val channel: String? = null
 )

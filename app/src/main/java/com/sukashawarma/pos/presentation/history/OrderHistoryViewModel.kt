@@ -3,8 +3,12 @@ package com.sukashawarma.pos.presentation.history
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.sukashawarma.pos.POSApplication
+import com.sukashawarma.pos.data.local.entity.LocalOrderEntity
+import com.sukashawarma.pos.data.remote.NetworkMonitor
 import com.sukashawarma.pos.data.remote.SupabaseClient
 import com.sukashawarma.pos.data.remote.dto.OrderDto
+import com.sukashawarma.pos.data.remote.dto.OrderItemDto
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -12,6 +16,8 @@ import java.time.LocalTime
 import java.time.ZoneId
 
 class OrderHistoryViewModel(application: Application) : AndroidViewModel(application) {
+    private val database = (application as POSApplication).database
+    private val orderDao = database.orderDao()
     private val api = SupabaseClient.api
 
     val currentOutletId = MutableStateFlow("")
@@ -33,6 +39,15 @@ class OrderHistoryViewModel(application: Application) : AndroidViewModel(applica
     val selectedChannelFilter = MutableStateFlow("all")
 
     val isLoading = MutableStateFlow(false)
+
+    init {
+        viewModelScope.launch {
+            // Status pembatalan berubah di server -> riwayat ikut berubah tanpa refresh manual.
+            com.sukashawarma.pos.data.remote.GlobalEventBus.orderSyncEvent.collect {
+                fetchOrderHistory()
+            }
+        }
+    }
 
     fun setOutlet(outletId: String) {
         currentOutletId.value = outletId
@@ -117,9 +132,39 @@ class OrderHistoryViewModel(application: Application) : AndroidViewModel(applica
                     filters["created_at"] = "lte.$endIso"
                 }
 
-                val response = api.getOrders(filters)
-                if (response.isSuccessful && response.body() != null) {
-                    ordersHistory.value = response.body()!!
+                val startMillis = if (startIso != null) java.time.Instant.parse(startIso).toEpochMilli() else 0L
+                val endMillis = if (endIso != null) java.time.Instant.parse(endIso).toEpochMilli() else Long.MAX_VALUE
+
+                if (NetworkMonitor.isOnline.value) {
+                    val response = api.getOrders(filters)
+                    if (response.isSuccessful && response.body() != null) {
+                        val dtos = response.body()!!
+                        val offlineSyncedIds = orderDao.getSyncedFromOfflineIds(currentOutletId.value).toSet()
+                        ordersHistory.value = dtos.map { 
+                            if (offlineSyncedIds.contains(it.id)) it.copy(isSyncedFromOffline = true) else it 
+                        }
+                    }
+                } else {
+                    val entities = orderDao.getOrdersByDateRange(startMillis, endMillis)
+                    val dtos = entities.map { it.toOrderDto() }.filter { dto ->
+                        var match = true
+                        if (statusFilter != "Semua") {
+                            val targetStatus = when (statusFilter) {
+                                "Selesai" -> "completed"
+                                "Menunggu" -> "pending"
+                                "Dibatalkan" -> "cancelled"
+                                else -> ""
+                            }
+                            if (dto.status != targetStatus) match = false
+                        }
+                        if (paymentMethod != "all" && dto.paymentMethod != paymentMethod) match = false
+                        if (channel != "all") {
+                            if (channel == "offline" && dto.channel != null) match = false
+                            if (channel != "offline" && dto.channel != channel) match = false
+                        }
+                        match
+                    }
+                    ordersHistory.value = dtos
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -194,5 +239,50 @@ class OrderHistoryViewModel(application: Application) : AndroidViewModel(applica
                 isLoading.value = false
             }
         }
+    }
+
+    private fun LocalOrderEntity.toOrderDto(): OrderDto {
+        val itemsType = object : com.google.gson.reflect.TypeToken<List<com.sukashawarma.pos.domain.model.OrderItem>>() {}.type
+        val itemsList: List<com.sukashawarma.pos.domain.model.OrderItem> = com.google.gson.Gson().fromJson(itemsJson, itemsType) ?: emptyList()
+        val orderItems = itemsList.map { 
+            OrderItemDto(
+                id = it.id,
+                orderId = id,
+                menuItemId = it.menuItemId,
+                menuItemName = it.name,
+                quantity = it.quantity,
+                unitPrice = it.unitPrice,
+                subtotal = it.subtotal
+            )
+        }
+        
+        val dtString = java.time.format.DateTimeFormatter.ISO_INSTANT.format(java.time.Instant.ofEpochMilli(createdAt))
+        return OrderDto(
+            id = id,
+            outletId = outletId,
+            orderNumber = orderNumber,
+            customerName = customerName,
+            status = status.lowercase(),
+            source = source.lowercase(),
+            paymentMethod = paymentMethod.lowercase(),
+            discountAmount = discountAmount,
+            promoSubsidy = 0.0,
+            totalAmount = totalAmount,
+            amountReceived = amountReceived,
+            changeAmount = changeAmount,
+            kitchenReceiptPrinted = kitchenReceiptPrinted,
+            customerReceiptPrinted = customerReceiptPrinted,
+            cancellationStatus = cancellationStatus,
+            cancellationUserName = cancellationUserName,
+            createdAt = dtString,
+            channel = channel,
+            orderItems = orderItems,
+            notes = null,
+            paymentProofUrl = localPaymentProofPath,
+            cashierName = null,
+            cancellationReason = null,
+            voidReason = null,
+            isSyncedFromOffline = isSyncedFromOffline
+        )
     }
 }

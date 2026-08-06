@@ -3,8 +3,12 @@ package com.sukashawarma.pos.presentation.reports
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.sukashawarma.pos.POSApplication
+import com.sukashawarma.pos.data.local.entity.LocalOrderEntity
+import com.sukashawarma.pos.data.remote.NetworkMonitor
 import com.sukashawarma.pos.data.remote.SupabaseClient
 import com.sukashawarma.pos.data.remote.dto.OrderDto
+import com.sukashawarma.pos.data.remote.dto.OrderItemDto
 import com.sukashawarma.pos.data.remote.dto.ShiftDto
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -12,6 +16,7 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
 enum class DateRange(val label: String) {
@@ -46,6 +51,8 @@ data class AnalyticsData(
 )
 
 class ReportsViewModel(application: Application) : AndroidViewModel(application) {
+    private val database = (application as POSApplication).database
+    private val orderDao = database.orderDao()
     private val api = SupabaseClient.api
 
     private val _currentOutletId = MutableStateFlow("")
@@ -64,6 +71,15 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            // Pembatalan yang disetujui owner mengubah angka laporan — ikut realtime.
+            com.sukashawarma.pos.data.remote.GlobalEventBus.orderSyncEvent.collect {
+                loadRealReportData()
+            }
+        }
+    }
 
     fun setOutlet(outletId: String) {
         _currentOutletId.value = outletId
@@ -161,11 +177,34 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
                     }
                 }
 
-                val ordersRes = api.getOrders(filters)
-                val shiftsRes = api.getShifts(shiftFilters)
+                val startMillis = pStart.toInstant(ZoneOffset.ofHours(7)).toEpochMilli()
+                val endMillis = if (useDateFilter) pEnd.toInstant(ZoneOffset.ofHours(7)).toEpochMilli() else Long.MAX_VALUE
 
-                val orders = ordersRes.body() ?: emptyList()
-                val shifts = shiftsRes.body() ?: emptyList()
+                val orders = if (NetworkMonitor.isOnline.value) {
+                    val dtos = api.getOrders(filters).body() ?: emptyList()
+                    val offlineSyncedIds = orderDao.getSyncedFromOfflineIds(outletId).toSet()
+                    dtos.map { if (offlineSyncedIds.contains(it.id)) it.copy(isSyncedFromOffline = true) else it }
+                } else {
+                    orderDao.getOrdersByDateRange(startMillis, endMillis)
+                        .map { it.toOrderDto() }
+                        .filter { dto ->
+                            var match = true
+                            if (statusFilter.value != "all" && dto.status != statusFilter.value) match = false
+                            if (paymentFilter.value != "all" && dto.paymentMethod != paymentFilter.value) match = false
+                            if (channelFilter.value != "all") {
+                                when (channelFilter.value) {
+                                    "offline" -> if (dto.channel != null) match = false
+                                    "food_apps" -> if (dto.channel !in listOf("gofood", "grabfood", "shopeefood", "tiktokgo", "tiktok", "tiktok_go")) match = false
+                                    "tiktokgo", "tiktok" -> if (dto.channel !in listOf("tiktokgo", "tiktok", "tiktok_go")) match = false
+                                    else -> if (dto.channel != channelFilter.value) match = false
+                                }
+                            }
+                            match
+                        }
+                }
+
+                val shiftsRes = if (NetworkMonitor.isOnline.value) api.getShifts(shiftFilters) else null
+                val shifts = shiftsRes?.body() ?: emptyList()
 
                 val completedOrders = orders.filter { it.status == "completed" }
                 val totalRevenue = completedOrders.sumOf { it.totalAmount }
@@ -292,5 +331,50 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
                 android.widget.Toast.makeText(context, "Gagal export PDF", android.widget.Toast.LENGTH_SHORT).show()
             }
         }
+    }
+
+    private fun LocalOrderEntity.toOrderDto(): OrderDto {
+        val itemsType = object : com.google.gson.reflect.TypeToken<List<com.sukashawarma.pos.domain.model.OrderItem>>() {}.type
+        val itemsList: List<com.sukashawarma.pos.domain.model.OrderItem> = com.google.gson.Gson().fromJson(itemsJson, itemsType) ?: emptyList()
+        val orderItems = itemsList.map { 
+            OrderItemDto(
+                id = it.id,
+                orderId = id,
+                menuItemId = it.menuItemId,
+                menuItemName = it.name,
+                quantity = it.quantity,
+                unitPrice = it.unitPrice,
+                subtotal = it.subtotal
+            )
+        }
+        
+        val dtString = java.time.format.DateTimeFormatter.ISO_INSTANT.format(java.time.Instant.ofEpochMilli(createdAt))
+        return OrderDto(
+            id = id,
+            outletId = outletId,
+            orderNumber = orderNumber,
+            customerName = customerName,
+            status = status.lowercase(),
+            source = source.lowercase(),
+            paymentMethod = paymentMethod.lowercase(),
+            discountAmount = discountAmount,
+            promoSubsidy = 0.0,
+            totalAmount = totalAmount,
+            amountReceived = amountReceived,
+            changeAmount = changeAmount,
+            kitchenReceiptPrinted = kitchenReceiptPrinted,
+            customerReceiptPrinted = customerReceiptPrinted,
+            cancellationStatus = cancellationStatus,
+            cancellationUserName = cancellationUserName,
+            createdAt = dtString,
+            channel = channel,
+            orderItems = orderItems,
+            notes = null,
+            paymentProofUrl = localPaymentProofPath,
+            cashierName = null,
+            cancellationReason = null,
+            voidReason = null,
+            isSyncedFromOffline = isSyncedFromOffline
+        )
     }
 }

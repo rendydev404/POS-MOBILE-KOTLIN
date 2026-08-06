@@ -29,50 +29,65 @@ async function getValidAccessToken(clientEmail: string, privateKey: string) {
     },
     body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
   })
-  
+
   const data = await response.json()
   if (!response.ok) {
     throw new Error(`Error fetching access token: ${data.error_description || JSON.stringify(data)}`)
   }
-  
+
   cachedToken = data.access_token
   // expires_in is in seconds
   tokenExpiry = now + (data.expires_in * 1000)
   return cachedToken
 }
 
+/** Data-only: app yang membangun notifikasinya sendiri (custom sound + dedup pakai id). */
+function buildDataPayload(type: string, record: Record<string, any>): Record<string, string> {
+  if (type === 'owner_message') {
+    return {
+      type,
+      id: String(record.id ?? ''),
+      title: String(record.title ?? 'Pesan dari Owner'),
+      body: String(record.body ?? 'Ada pesan baru untuk Anda.'),
+    }
+  }
+  return {
+    type: 'new_order',
+    id: String(record.id ?? ''),
+    title: 'Pesanan Baru Masuk',
+    body: record.order_number
+      ? `Order #${record.order_number} menunggu diproses.`
+      : 'Ada pesanan baru menunggu diproses.',
+  }
+}
+
 Deno.serve(async (req) => {
   try {
     const payload = await req.json()
-    const record = payload.record
+    const record = payload.record ?? {}
+    // Trigger mengirim `type` di level body, bukan di dalam record.
+    const type = String(payload.type ?? 'new_order')
 
-    if (!record || !record.outlet_id) {
-      return new Response(
-        JSON.stringify({ error: 'No outlet_id found in record' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
-      )
+    // Order yang dibuat kasir sendiri tidak perlu push balik ke kasir itu.
+    if (type === 'new_order' && String(record.source ?? '').toLowerCase() === 'pos') {
+      return new Response(JSON.stringify({ skipped: 'pos-sourced order' }), { status: 200 })
     }
 
-    const outletId = record.outlet_id
-
-    // Initialize Supabase Client
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')
-
-    if (!supabaseUrl || !supabaseAnonKey) {
+    // Service role: perlu untuk baca semua fcm_tokens dan menghapus token mati.
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    if (!supabaseUrl || !serviceKey) {
       return new Response(
         JSON.stringify({ error: 'Supabase credentials not configured' }),
         { status: 500, headers: { 'Content-Type': 'application/json' } }
       )
     }
+    const supabase = createClient(supabaseUrl, serviceKey)
 
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
-
-    // Fetch tokens
-    const { data: tokens, error } = await supabase
-      .from('fcm_tokens')
-      .select('token')
-      .eq('outlet_id', outletId)
+    // owner_messages tidak punya outlet_id (broadcast ke semua outlet) — jangan difilter.
+    let query = supabase.from('fcm_tokens').select('token')
+    if (record.outlet_id) query = query.eq('outlet_id', record.outlet_id)
+    const { data: tokens, error } = await query
 
     if (error) {
       console.error('Error fetching tokens:', error)
@@ -84,7 +99,7 @@ Deno.serve(async (req) => {
 
     if (!tokens || tokens.length === 0) {
       return new Response(
-        JSON.stringify({ message: 'No tokens found for outlet' }),
+        JSON.stringify({ message: 'No tokens found' }),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       )
     }
@@ -98,38 +113,27 @@ Deno.serve(async (req) => {
         { status: 500, headers: { 'Content-Type': 'application/json' } }
       )
     }
-    
+
     const serviceAccount = JSON.parse(serviceAccountStr)
     const projectId = serviceAccount.project_id
-
     const accessToken = await getValidAccessToken(serviceAccount.client_email, serviceAccount.private_key)
-    
-    // Ensure title, body, and type exist in the data payload for the Android app
-    const dataPayload: Record<string, string> = {
-      title: String(record.title || 'System Notification'),
-      body: String(record.body || 'You have a new update.'),
-      type: String(record.type || 'DEFAULT'),
-    }
 
-    // Merge in all other fields from record, ensuring they are strings
-    for (const [k, v] of Object.entries(record)) {
-      if (v !== null && v !== undefined) {
-        dataPayload[k] = String(v)
-      }
-    }
+    const dataPayload = buildDataPayload(type, record)
 
     const results = []
+    const deadTokens: string[] = []
     const CHUNK_SIZE = 25
 
-    // Send requests to Firebase HTTP v1 API in chunks
     for (let i = 0; i < tokenStrings.length; i += CHUNK_SIZE) {
       const chunk = tokenStrings.slice(i, i + CHUNK_SIZE)
       const chunkPromises = chunk.map(async (token: string) => {
         const messagePayload = {
           message: {
             token,
-            data: dataPayload
-          }
+            data: dataPayload,
+            // Data-only butuh HIGH priority agar app tetap dibangunkan saat Doze/background.
+            android: { priority: 'HIGH' },
+          },
         }
 
         const res = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
@@ -138,19 +142,24 @@ Deno.serve(async (req) => {
             'Authorization': `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(messagePayload)
+          body: JSON.stringify(messagePayload),
         })
-        
+
         const data = await res.json()
+        // UNREGISTERED / SENDER_ID_MISMATCH = token mati, buang agar tabel tidak menumpuk.
+        if (res.status === 404 || res.status === 403) deadTokens.push(token)
         return { token, status: res.status, data }
       })
-      
-      const chunkResults = await Promise.all(chunkPromises)
-      results.push(...chunkResults)
+
+      results.push(...await Promise.all(chunkPromises))
     }
-    
+
+    if (deadTokens.length > 0) {
+      await supabase.from('fcm_tokens').delete().in('token', deadTokens)
+    }
+
     return new Response(
-      JSON.stringify({ success: true, results }),
+      JSON.stringify({ success: true, sent: results.length, pruned: deadTokens.length, results }),
       { status: 200, headers: { 'Content-Type': 'application/json' } }
     )
 

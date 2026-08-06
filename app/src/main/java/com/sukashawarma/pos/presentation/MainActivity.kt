@@ -39,6 +39,9 @@ import com.sukashawarma.pos.presentation.theme.SukaShawarmaPOSTheme
 import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
 import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import com.sukashawarma.pos.presentation.components.POSAdaptiveScaffold
+import com.sukashawarma.pos.presentation.components.OfflineIndicator
+import com.sukashawarma.pos.data.remote.NetworkMonitor
+import androidx.compose.ui.Alignment
 
 class MainActivity : ComponentActivity() {
     private val loginViewModel: LoginViewModel by viewModels()
@@ -141,6 +144,11 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
+                        val isOnline by NetworkMonitor.isOnline.collectAsState()
+                        OfflineIndicator(
+                            isOffline = !isOnline,
+                            modifier = Modifier.align(Alignment.TopCenter)
+                        )
                     }
                 }
             }

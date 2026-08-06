@@ -24,6 +24,10 @@ object JakartaTime {
 
     fun endOfDayIso(day: LocalDate): String = "${dateString(day)}T23:59:59+07:00"
 
+    fun startOfDayMillis(day: LocalDate): Long = day.atStartOfDay(ZONE).toInstant().toEpochMilli()
+
+    fun endOfDayMillis(day: LocalDate): Long = day.plusDays(1).atStartOfDay(ZONE).toInstant().toEpochMilli() - 1
+
     /** True bila [timestamp] jatuh pada [day] menurut Asia/Jakarta. */
     fun isOnDay(timestamp: String?, day: LocalDate): Boolean {
         val instant = instantOrNull(timestamp) ?: return false

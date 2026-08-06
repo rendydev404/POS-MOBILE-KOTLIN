@@ -273,6 +273,20 @@ fun OrderCard(
                                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                                 )
                             }
+                        } else if (order.isSyncedFromOffline) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(
+                                color = Color(0xFFD1FAE5), // emerald-100
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Text(
+                                    "SYNC",
+                                    color = Color(0xFF065F46), // emerald-800
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -583,13 +597,31 @@ fun OrderCard(
                     .padding(horizontal = 16.dp)
                     .padding(bottom = 16.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    if (order.status == OrderStatus.PENDING) {
-                        if (order.paymentMethod == PaymentMethod.QRIS) {
-                            // Tunggu QRIS
+                if (order.cancellationStatus == "pending_approval") {
+                    // Menunggu Persetujuan Batal
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().height(44.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFFFEFCE8), // yellow-50
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFEF08A)) // yellow-200
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxSize(),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color(0xFFCA8A04), strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Menunggu Persetujuan Batal", color = Color(0xFFCA8A04), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                } else if (order.status == OrderStatus.PENDING || order.status == OrderStatus.PREPARING) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (order.source == OrderSource.KIOSK && order.paymentMethod == PaymentMethod.QRIS && order.amountReceived < order.totalAmount) {
+                            // KIOSK QRIS Belum Lunas -> Disable actions
                             Surface(
                                 modifier = Modifier.fillMaxWidth().height(44.dp),
                                 shape = RoundedCornerShape(12.dp),
@@ -606,62 +638,34 @@ fun OrderCard(
                                     Text("Tunggu QRIS", color = TextBlue, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
-                        } else if (order.cancellationStatus == "pending_approval") {
-                            // Menunggu Persetujuan Batal
-                            Surface(
-                                modifier = Modifier.fillMaxWidth().height(44.dp),
-                                shape = RoundedCornerShape(12.dp),
-                                color = Color(0xFFFEFCE8), // yellow-50
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFEF08A)) // yellow-200
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxSize(),
-                                    horizontalArrangement = Arrangement.Center,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color(0xFFCA8A04), strokeWidth = 2.dp)
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Menunggu Persetujuan Batal", color = Color(0xFFCA8A04), fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
                         } else {
-                            // Normal PENDING actions
                             Button(
                                 onClick = { showCancelDialog = true },
                                 modifier = Modifier.weight(1f).height(48.dp),
                                 shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFEE2E2)) // red-100
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFEE2E2)), // red-100
+                                contentPadding = PaddingValues(horizontal = 4.dp)
                             ) {
-                                Icon(Icons.Outlined.Cancel, contentDescription = null, tint = TextRed, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Batal", color = TextRed, fontWeight = FontWeight.Bold)
+                                Icon(Icons.Outlined.Cancel, contentDescription = null, tint = TextRed, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Batal", color = TextRed, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
-                            Button(
-                                onClick = { onStatusChange(order, OrderStatus.PREPARING) },
-                                modifier = Modifier.weight(2f).height(48.dp),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = TextBlue)
-                            ) {
-                                Icon(Icons.Default.RestaurantMenu, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Mulai Masak", color = Color.White, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    } else if (order.status == OrderStatus.PREPARING) {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            
                             Button(
                                 onClick = { onStatusChange(order, OrderStatus.COMPLETED) },
                                 modifier = Modifier.weight(1f).height(48.dp),
                                 shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = TextEmerald)
+                                colors = ButtonDefaults.buttonColors(containerColor = TextEmerald),
+                                contentPadding = PaddingValues(horizontal = 4.dp)
                             ) {
-                                Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Selesai", color = Color.White, fontWeight = FontWeight.Bold)
+                                Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Selesai", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
+                            
                             OutlinedButton(
-                                onClick = { showReprintDialog = true },
-                                modifier = Modifier.width(56.dp).height(48.dp),
+                                onClick = { onPrintCustomer(order) },
+                                modifier = Modifier.width(48.dp).height(48.dp),
                                 shape = RoundedCornerShape(12.dp),
                                 border = androidx.compose.foundation.BorderStroke(1.dp, DefaultBorder),
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = TextSlateDark),

@@ -582,8 +582,12 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
             val amountReceived = if (selectedPayment == PaymentMethod.CASH) cashAmount() else totals.total
 
             val online = isNetworkAvailable()
-            val maxOffline = orderDao.getMaxOfflineOrderNumber(outletId) ?: 9000
-            val maxServer = orderDao.getMaxServerOrderNumber(outletId) ?: 0
+            val today = com.sukashawarma.pos.domain.gate.JakartaTime.today()
+            val startOfDay = com.sukashawarma.pos.domain.gate.JakartaTime.startOfDayMillis(today)
+            val endOfDay = com.sukashawarma.pos.domain.gate.JakartaTime.endOfDayMillis(today)
+            val maxToday = orderDao.getMaxOrderNumberToday(outletId, startOfDay, endOfDay) ?: 0
+            
+            val maxServer = maxToday // We don't have separate maxServer anymore, just continue from maxToday
 
             val orderItems = cartLines.value.map { line ->
                 OrderItem(
@@ -606,7 +610,7 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                 activePromos = activePromos.value,
                 isOnline = online,
                 lastServerOrderNumber = maxServer,
-                lastOfflineOrderNumber = maxOffline,
+                lastOfflineOrderNumber = maxToday,
                 channel = activeChannel,
                 source = if (isWalkInLike) OrderSource.POS else OrderSource.ONLINE,
                 additionalDiscount = totals.promoSubsidyAmount
@@ -615,11 +619,14 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
             var pendingSync = !online
             var serverOrderNumber = order.orderNumber
 
+            var localPaymentProofPath: String? = null
+
             if (online) {
                 try {
                     val createdAtIso = DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(order.createdAt))
                     val payload = CreateOrderPayload(
                         id = order.id,
+                        orderNumber = order.orderNumber,
                         outletId = order.outletId,
                         customerName = order.customerName,
                         status = order.status.name.lowercase(),
@@ -660,6 +667,25 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                 }
             }
 
+            if (pendingSync) {
+                // Save QRIS proof locally for later upload
+                qrisProofBitmap.value?.let { bitmap ->
+                    try {
+                        val fileName = "${order.outletId}_${serverOrderNumber}_${LocalDate.now()}_offline.jpg"
+                        val context = getApplication<Application>().applicationContext
+                        val file = java.io.File(context.cacheDir, fileName)
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            java.io.FileOutputStream(file).use { out ->
+                                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, out)
+                            }
+                        }
+                        localPaymentProofPath = file.absolutePath
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
+
             val entity = LocalOrderEntity(
                 id = order.id,
                 outletId = order.outletId,
@@ -681,7 +707,9 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                 createdAt = order.createdAt,
                 syncState = if (pendingSync) com.sukashawarma.pos.data.local.entity.SyncState.PENDING.name else com.sukashawarma.pos.data.local.entity.SyncState.SYNCED.name,
                 dirtyFields = "",
-                channel = order.channel
+                channel = order.channel,
+                isSyncedFromOffline = false,
+                localPaymentProofPath = localPaymentProofPath
             )
             orderDao.insertOrder(entity)
 
@@ -697,7 +725,7 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
 
             if (pendingSync) {
                 orderErrorMessage.value = "Order tersimpan lokal (offline) dengan nomor sementara #$serverOrderNumber. " +
-                    "Auto-sync ke server belum aktif di versi ini — sinkronkan manual saat online."
+                    "Akan di-sinkronkan otomatis saat koneksi internet tersedia."
             }
 
             // Reset cart for the next order, keep the active mode (page.tsx resets

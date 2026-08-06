@@ -262,14 +262,16 @@ fun DashboardScreen(
                                 order = order,
                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
                                 onCancelOrder = { o, reason -> 
-                                    viewModel.requestCancellation(o, reason) { waUrl ->
-                                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(waUrl))
-                                        try {
-                                            context.startActivity(intent)
-                                        } catch (e: Exception) {
-                                            e.printStackTrace()
+                                    viewModel.requestCancellation(
+                                        order = o, 
+                                        reason = reason, 
+                                        onSuccess = {
+                                            android.widget.Toast.makeText(context, "Permintaan pembatalan berhasil dikirim ke Area Manager.", android.widget.Toast.LENGTH_SHORT).show()
+                                        },
+                                        onError = { errorMsg ->
+                                            android.widget.Toast.makeText(context, errorMsg, android.widget.Toast.LENGTH_SHORT).show()
                                         }
-                                    } 
+                                    )
                                 },
                                 onPrintKitchen = { o -> 
                                     viewModel.printReceipt(context, o, isKitchen = true) {
@@ -305,14 +307,16 @@ fun DashboardScreen(
                                 order = order,
                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
                                 onCancelOrder = { o, reason -> 
-                                    viewModel.requestCancellation(o, reason) { waUrl ->
-                                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(waUrl))
-                                        try {
-                                            context.startActivity(intent)
-                                        } catch (e: Exception) {
-                                            e.printStackTrace()
+                                    viewModel.requestCancellation(
+                                        order = o, 
+                                        reason = reason, 
+                                        onSuccess = {
+                                            android.widget.Toast.makeText(context, "Permintaan pembatalan berhasil dikirim ke Area Manager.", android.widget.Toast.LENGTH_SHORT).show()
+                                        },
+                                        onError = { errorMsg ->
+                                            android.widget.Toast.makeText(context, errorMsg, android.widget.Toast.LENGTH_SHORT).show()
                                         }
-                                    } 
+                                    )
                                 },
                                 onPrintKitchen = { o -> 
                                     viewModel.printReceipt(context, o, isKitchen = true) {
@@ -348,14 +352,16 @@ fun DashboardScreen(
                                 order = order,
                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
                                 onCancelOrder = { o, reason -> 
-                                    viewModel.requestCancellation(o, reason) { waUrl ->
-                                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(waUrl))
-                                        try {
-                                            context.startActivity(intent)
-                                        } catch (e: Exception) {
-                                            e.printStackTrace()
+                                    viewModel.requestCancellation(
+                                        order = o, 
+                                        reason = reason, 
+                                        onSuccess = {
+                                            android.widget.Toast.makeText(context, "Permintaan pembatalan berhasil dikirim ke Area Manager.", android.widget.Toast.LENGTH_SHORT).show()
+                                        },
+                                        onError = { errorMsg ->
+                                            android.widget.Toast.makeText(context, errorMsg, android.widget.Toast.LENGTH_SHORT).show()
                                         }
-                                    } 
+                                    )
                                 },
                                 onPrintKitchen = { o -> 
                                     viewModel.printReceipt(context, o, isKitchen = true) {

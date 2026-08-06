@@ -106,7 +106,8 @@ data class OrderDto(
     @SerializedName("payment_proof_url") val paymentProofUrl: String? = null,
     @SerializedName("cashier_name") val cashierName: String? = null,
     @SerializedName("cancellation_reason") val cancellationReason: String? = null,
-    @SerializedName("void_reason") val voidReason: String? = null
+    @SerializedName("void_reason") val voidReason: String? = null,
+    val isSyncedFromOffline: Boolean? = false
 )
 
 data class OrderItemDto(
@@ -154,6 +155,7 @@ data class PettyCashExpenseDto(
 // There is no `subtotal` column on `orders` (only on `order_items`).
 data class CreateOrderPayload(
     val id: String,
+    @SerializedName("order_number") val orderNumber: Int? = null,
     @SerializedName("outlet_id") val outletId: String,
     @SerializedName("customer_name") val customerName: String,
     val status: String,

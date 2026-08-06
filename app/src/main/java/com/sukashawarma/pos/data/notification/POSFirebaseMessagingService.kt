@@ -53,10 +53,21 @@ class POSFirebaseMessagingService : FirebaseMessagingService() {
             title = "PESAN DARI OWNER: $title"
         }
 
-        showSystemNotification(title, body)
+        // Id record, bukan timestamp: kalau POSRealtimeService sudah menampilkan
+        // notifikasi yang sama, keduanya menimpa satu sama lain, bukan menumpuk.
+        val notificationId = message.data["id"]?.takeIf { it.isNotBlank() }?.hashCode()
+            ?: System.currentTimeMillis().toInt()
+        showSystemNotification(notificationId, title, body)
+
+        // Layar yang sedang terbuka ikut menyegarkan diri saat push masuk.
+        if (isOwnerMessage) {
+            com.sukashawarma.pos.data.remote.GlobalEventBus.ownerMessageRefreshEvent.tryEmit(Unit)
+        } else {
+            com.sukashawarma.pos.data.remote.GlobalEventBus.orderSyncEvent.tryEmit(Unit)
+        }
     }
 
-    private fun showSystemNotification(title: CharSequence, body: String) {
+    private fun showSystemNotification(id: Int, title: CharSequence, body: String) {
         val intent = android.content.Intent(this, com.sukashawarma.pos.presentation.MainActivity::class.java).apply {
             flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK
         }
@@ -80,7 +91,7 @@ class POSFirebaseMessagingService : FirebaseMessagingService() {
             return
         }
         val manager = getSystemService(NotificationManager::class.java)
-        manager?.notify(System.currentTimeMillis().toInt(), notification)
-        android.util.Log.d("POS_DEBUG", "FCM Notification Manager notify called")
+        manager?.notify(id, notification)
+        android.util.Log.d("POS_DEBUG", "FCM Notification Manager notify called with id $id")
     }
 }

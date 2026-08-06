@@ -38,7 +38,7 @@ class CreateOrderUseCase(
         val orderNumber = if (isOnline) {
             lastServerOrderNumber + 1
         } else {
-            if (lastOfflineOrderNumber < 9001) 9001 else lastOfflineOrderNumber + 1
+            lastOfflineOrderNumber + 1
         }
 
         return Order(

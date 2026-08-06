@@ -30,6 +30,7 @@ class MenuRealtimeManager(
     private var heartbeatJob: Job? = null
     private val refCounter = AtomicInteger(1)
     private val topic = "realtime:public:menu"
+    @Volatile private var channelToken: String? = null
 
     var onChange: ((table: String, eventType: String, record: JSONObject) -> Unit)? = null
 
@@ -76,7 +77,8 @@ class MenuRealtimeManager(
                         }
                     )
                 })
-                put("access_token", SessionTokenHolder.accessToken ?: BuildConfig.SUPABASE_ANON_KEY)
+                channelToken = SessionTokenHolder.accessToken
+                put("access_token", channelToken ?: BuildConfig.SUPABASE_ANON_KEY)
             })
             put("ref", refCounter.getAndIncrement().toString())
         }
@@ -88,6 +90,20 @@ class MenuRealtimeManager(
         heartbeatJob = scope.launch {
             while (isActive) {
                 delay(25_000)
+                // Sama seperti OrderRealtimeManager: JWT kedaluwarsa membuat channel
+                // ditutup server tanpa menutup socket-nya.
+                com.sukashawarma.pos.data.remote.AuthSessionManager.ensureAuthenticated()
+                val token = SessionTokenHolder.accessToken
+                if (token != null && token != channelToken) {
+                    channelToken = token
+                    ws.send(JSONObject().apply {
+                        put("topic", topic)
+                        put("event", "access_token")
+                        put("payload", JSONObject().put("access_token", token))
+                        put("ref", refCounter.getAndIncrement().toString())
+                    }.toString())
+                }
+
                 val hb = JSONObject().apply {
                     put("topic", "phoenix")
                     put("event", "heartbeat")

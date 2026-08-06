@@ -117,4 +117,58 @@ class MigrationTest {
         // Tanpa migrasi apa pun: harus melempar, bukan menghapus.
         helper.runMigrationsAndValidate(dbName, 5, true)
     }
+
+    @Test
+    fun migrate5To6_orderPendingJadiSyncStatePendingDanOutboxDapatKolomBaru() {
+        var db = helper.createDatabase(dbName, 5)
+        db.execSQL(
+            """
+            INSERT INTO local_orders
+                (id, outletId, orderNumber, customerName, status, source, paymentMethod,
+                 itemsJson, subtotal, discountAmount, totalAmount, amountReceived,
+                 changeAmount, kitchenReceiptPrinted, customerReceiptPrinted,
+                 cancellationStatus, cancellationUserName, createdAt, isPendingSync, channel)
+            VALUES
+                ('order-offline', 'outlet-a', 9001, 'Budi', 'PREPARING', 'POS', 'CASH',
+                 '[]', 25000.0, 0.0, 25000.0, 25000.0, 0.0, 0, 0, NULL, NULL, 1000, 1, NULL),
+                ('order-sudah-sync', 'outlet-a', 12, 'Sari', 'COMPLETED', 'POS', 'QRIS',
+                 '[]', 30000.0, 0.0, 30000.0, 30000.0, 0.0, 1, 1, NULL, NULL, 2000, 0, NULL)
+            """.trimIndent()
+        )
+        db.execSQL(
+            "INSERT INTO sync_queue (queueId, actionType, payloadJson, createdAt) " +
+                "VALUES (7, 'CREATE_ORDER', '{\"a\":1}', 500)"
+        )
+        db.close()
+
+        db = helper.runMigrationsAndValidate(
+            dbName, 6, true,
+            AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3,
+            AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6
+        )
+
+        val orders = db.query("SELECT id, syncState, dirtyFields FROM local_orders ORDER BY id")
+        orders.moveToFirst()
+        assert(orders.getString(0) == "order-offline")
+        assert(orders.getString(1) == "PENDING") { "isPendingSync=1 harus jadi syncState PENDING" }
+        assert(orders.getString(2) == "") { "dirtyFields harus kosong untuk baris lama" }
+        orders.moveToNext()
+        assert(orders.getString(0) == "order-sudah-sync")
+        assert(orders.getString(1) == "SYNCED") { "isPendingSync=0 harus jadi syncState SYNCED" }
+        orders.close()
+
+        val queue = db.query(
+            "SELECT idempotencyKey, entityId, status, attemptCount, nextAttemptAt, lastError " +
+                "FROM sync_queue WHERE queueId = 7"
+        )
+        queue.moveToFirst()
+        assert(queue.getString(0) == "legacy-7") { "baris outbox lama harus dapat idempotencyKey" }
+        assert(queue.getString(1) == "") { "entityId default kosong" }
+        assert(queue.getString(2) == "PENDING")
+        assert(queue.getInt(3) == 0)
+        assert(queue.getLong(4) == 0L)
+        assert(queue.isNull(5))
+        queue.close()
+        db.close()
+    }
 }

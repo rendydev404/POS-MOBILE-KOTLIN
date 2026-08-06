@@ -19,6 +19,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 class POSRealtimeService : Service() {
 
@@ -40,15 +41,32 @@ class POSRealtimeService : Service() {
         
         realtimeManager.onConnectionState = { connected ->
             GlobalEventBus.isRealtimeConnected.value = connected
+            if (connected) {
+                // Event yang terjadi selama socket putus tidak dikirim ulang oleh
+                // Supabase, jadi tarik ulang state begitu tersambung lagi.
+                GlobalEventBus.orderSyncEvent.tryEmit(Unit)
+                GlobalEventBus.ownerMessageRefreshEvent.tryEmit(Unit)
+                GlobalEventBus.targetRefreshEvent.tryEmit(Unit)
+            }
         }
-        
+
+        serviceScope.launch {
+            com.sukashawarma.pos.data.remote.NetworkMonitor.isOnline.collect { online ->
+                if (online) realtimeManager.reconnectNow()
+            }
+        }
+
         onlineSyncManager.connect()
         
         realtimeManager.onChange = { table, eventType, record ->
             if (table == "orders") {
-                val recordOutletId = record.optString("outlet_id")
+                // Fallback to currentOutletId if it's missing in the payload (common in UPDATE events without FULL replica identity)
+                val recordOutletId = record.optString("outlet_id", currentOutletId)
                 val recordSource = record.optString("source", "pos")
-                if (recordOutletId == currentOutletId) {
+                
+                // Because we filter by outlet_id=eq.$outletId at the Supabase channel level,
+                // any event received here is inherently for our outlet.
+                if (recordOutletId == currentOutletId || recordOutletId.isEmpty()) {
                     GlobalEventBus.orderSyncEvent.tryEmit(Unit)
                     
                     if (eventType == "INSERT" && recordSource.lowercase() != "pos") {
@@ -82,6 +100,8 @@ class POSRealtimeService : Service() {
                 GlobalEventBus.targetRefreshEvent.tryEmit(Unit)
             } else if (table == "bypass_requests") {
                 GlobalEventBus.bypassRequestEvent.tryEmit(Unit)
+            } else if (table == "cancellation_requests") {
+                GlobalEventBus.orderSyncEvent.tryEmit(Unit)
             }
         }
     }

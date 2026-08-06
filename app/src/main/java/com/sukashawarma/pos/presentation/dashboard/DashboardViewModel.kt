@@ -12,6 +12,7 @@ import com.sukashawarma.pos.data.remote.dto.OrderDto
 import com.sukashawarma.pos.data.remote.dto.PrintLayoutDto
 import com.sukashawarma.pos.data.remote.realtime.OrderRealtimeManager
 import com.sukashawarma.pos.data.sync.OrderSyncEngine
+import com.sukashawarma.pos.data.remote.NetworkMonitor
 import com.sukashawarma.pos.domain.model.*
 import com.sukashawarma.pos.domain.usecase.PrintReceiptUseCase
 import com.google.gson.Gson
@@ -87,7 +88,26 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 syncOrdersFromServer(currentOutletId.value)
             }
         }
-        startPeriodicSyncLoop()
+        viewModelScope.launch {
+            NetworkMonitor.isOnline.collect { isOnline ->
+                if (isOnline) {
+                    val outletId = currentOutletId.value
+                    if (outletId.isNotBlank()) {
+                        trySyncPendingOrders(outletId)
+                    }
+                }
+            }
+        }
+        viewModelScope.launch {
+            pendingSyncCount.collect { count ->
+                if (count > 0 && NetworkMonitor.isOnline.value) {
+                    val outletId = currentOutletId.value
+                    if (outletId.isNotBlank()) {
+                        trySyncPendingOrders(outletId)
+                    }
+                }
+            }
+        }
     }
 
     // showLocalNotification removed, handled by POSRealtimeService in background
@@ -115,18 +135,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    /** Retries the offline sync queue every 30s while an outlet session is active. */
-    private fun startPeriodicSyncLoop() {
-        viewModelScope.launch {
-            while (isActive) {
-                delay(30_000)
-                val outletId = currentOutletId.value
-                if (outletId.isNotBlank()) {
-                    trySyncPendingOrders(outletId)
-                }
-            }
-        }
-    }
+    /** Periodic sync loop removed in favor of NetworkMonitor trigger */
 
     override fun onCleared() {
         super.onCleared()
@@ -143,8 +152,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 val dtos = res.body()!!
                 dtos.forEach { dto -> 
                     val existing = orderDao.getOrderById(dto.id)
-                    val newEntity = dtoToEntity(dto)
+                    var newEntity = dtoToEntity(dto)
                     if (existing != null) {
+                        newEntity = newEntity.copy(isSyncedFromOffline = existing.isSyncedFromOffline)
                         orderDao.insertOrder(newEntity) // Always use the updated data from server
                     } else {
                         orderDao.insertOrder(newEntity)
@@ -278,7 +288,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    fun requestCancellation(order: Order, reason: String, onWaUrlReady: (String) -> Unit) {
+    fun requestCancellation(order: Order, reason: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
         viewModelScope.launch {
             val staffName = currentCashierName.value
             orderDao.updateCancellationStatus(order.id, "pending_approval", staffName)
@@ -306,35 +316,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
                 val res = api.createCancellationRequest(payload)
                 if (res.isSuccessful && res.body()?.isNotEmpty() == true) {
-                    val token = res.body()!!.first().token
-                    val magicLink = "https://app.sukashawarma.com/cancellations/approve?token=$token"
-                    
-                    val currencyFormat = java.text.NumberFormat.getCurrencyInstance(java.util.Locale("id", "ID")).apply {
-                        maximumFractionDigits = 0
-                    }
-                    val formattedPrice = currencyFormat.format(order.totalAmount).replace("Rp", "Rp ")
-                    
-                    val message = """
-*PERMINTAAN PEMBATALAN PESANAN*
-
-Outlet: ${currentOutletName.value}
-No Order: ${order.orderNumber}
-Pelanggan: ${order.customerName}
-Total: $formattedPrice
-Alasan: $reason
-Diajukan Oleh: $staffName
-
-Silakan klik link berikut untuk *MENYETUJUI* atau *MENOLAK* pembatalan ini (link hanya berlaku 1 kali):
-
-$magicLink
-                    """.trimIndent()
-
-                    val encodedMessage = android.net.Uri.encode(message)
-                    val phone = "6285218446637"
-                    val waUrl = "whatsapp://send?phone=$phone&text=$encodedMessage"
-                    onWaUrlReady(waUrl)
+                    onSuccess()
+                } else {
+                    onError("Gagal mengirim permintaan pembatalan.")
                 }
-            } catch (e: Exception) { e.printStackTrace() }
+            } catch (e: Exception) { 
+                e.printStackTrace()
+                onError("Terjadi kesalahan jaringan.")
+            }
         }
     }
 
@@ -362,6 +351,7 @@ $magicLink
             cancellationUserName = entity.cancellationUserName,
             createdAt = entity.createdAt,
             isOffline = entity.syncState != com.sukashawarma.pos.data.local.entity.SyncState.SYNCED.name,
+            isSyncedFromOffline = entity.isSyncedFromOffline,
             channel = entity.channel
         )
     }
@@ -405,6 +395,7 @@ $magicLink
             createdAt = parseIsoTimestamp(dto.createdAt),
             syncState = com.sukashawarma.pos.data.local.entity.SyncState.SYNCED.name,
             dirtyFields = "",
+            isSyncedFromOffline = false,
             channel = dto.channel
         )
     }

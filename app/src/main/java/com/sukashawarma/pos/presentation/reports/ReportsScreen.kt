@@ -596,7 +596,15 @@ fun TransactionHistoryTable(orders: List<OrderDto>, searchQuery: String, onSearc
                     } else {
                         items(filteredOrders) { order ->
                             Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text("#${order.orderNumber}", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF111827), modifier = Modifier.weight(0.5f))
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(0.5f)) {
+                                    Text("#${order.orderNumber}", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF111827))
+                                    if (order.isSyncedFromOffline == true) {
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Surface(shape = RoundedCornerShape(4.dp), color = Color(0xFF10B981).copy(alpha = 0.12f)) {
+                                            Text("SYNC", color = Color(0xFF10B981), fontSize = 8.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
+                                        }
+                                    }
+                                }
                                 val dateStr = try {
                                     val cleanDate = if(order.createdAt.contains("+")) order.createdAt.substringBefore("+") else order.createdAt.substringBefore("Z")
                                     LocalDateTime.parse(cleanDate).format(DateTimeFormatter.ofPattern("dd MMM yyyy, HH:mm"))

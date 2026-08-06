@@ -44,5 +44,7 @@ data class LocalOrderEntity(
      * aturan "data transaksi kasir lokal menang".
      */
     val dirtyFields: String = "",
-    val channel: String? = null
+    val channel: String? = null,
+    val isSyncedFromOffline: Boolean = false,
+    val localPaymentProofPath: String? = null
 )

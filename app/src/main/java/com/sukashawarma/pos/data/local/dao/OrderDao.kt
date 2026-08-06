@@ -30,11 +30,8 @@ interface OrderDao {
     @Query("UPDATE local_orders SET cancellationStatus = :status, cancellationUserName = :userName WHERE id = :orderId")
     suspend fun updateCancellationStatus(orderId: String, status: String?, userName: String?)
 
-    @Query("SELECT MAX(orderNumber) FROM local_orders WHERE outletId = :outletId AND orderNumber >= 9001")
-    suspend fun getMaxOfflineOrderNumber(outletId: String): Int?
-
-    @Query("SELECT MAX(orderNumber) FROM local_orders WHERE outletId = :outletId AND orderNumber < 9001")
-    suspend fun getMaxServerOrderNumber(outletId: String): Int?
+    @Query("SELECT MAX(orderNumber) FROM local_orders WHERE outletId = :outletId AND createdAt >= :startOfDayMillis AND createdAt <= :endOfDayMillis")
+    suspend fun getMaxOrderNumberToday(outletId: String, startOfDayMillis: Long, endOfDayMillis: Long): Int?
 
     @Query("DELETE FROM local_orders WHERE id = :orderId")
     suspend fun deleteOrder(orderId: String)
@@ -61,7 +58,13 @@ interface OrderDao {
 
     @Query(
         "UPDATE local_orders SET orderNumber = :serverOrderNumber, syncState = 'SYNCED', " +
-            "dirtyFields = '' WHERE id = :orderId"
+            "dirtyFields = '', isSyncedFromOffline = 1 WHERE id = :orderId"
     )
     suspend fun markSynced(orderId: String, serverOrderNumber: Int)
+
+    @Query("SELECT * FROM local_orders WHERE createdAt >= :startMillis AND createdAt <= :endMillis ORDER BY createdAt DESC")
+    suspend fun getOrdersByDateRange(startMillis: Long, endMillis: Long): List<LocalOrderEntity>
+
+    @Query("SELECT id FROM local_orders WHERE outletId = :outletId AND isSyncedFromOffline = 1")
+    suspend fun getSyncedFromOfflineIds(outletId: String): List<String>
 }
