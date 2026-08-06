@@ -53,5 +53,6 @@ data class Order(
     val createdAt: Long = System.currentTimeMillis(),
     val isOffline: Boolean = false,
     val isSyncedFromOffline: Boolean = false,
-    val channel: String? = null
+    val channel: String? = null,
+    val notes: String? = null
 )

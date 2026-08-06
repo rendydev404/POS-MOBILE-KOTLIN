@@ -62,8 +62,19 @@ interface OrderDao {
     )
     suspend fun markSynced(orderId: String, serverOrderNumber: Int)
 
-    @Query("SELECT * FROM local_orders WHERE createdAt >= :startMillis AND createdAt <= :endMillis ORDER BY createdAt DESC")
-    suspend fun getOrdersByDateRange(startMillis: Long, endMillis: Long): List<LocalOrderEntity>
+    /**
+     * Tanpa filter outletId, omzet offline ikut menjumlahkan pesanan outlet lain
+     * yang kebetulan masih tersisa di cache Room setelah pindah outlet.
+     */
+    @Query(
+        "SELECT * FROM local_orders WHERE outletId = :outletId " +
+            "AND createdAt >= :startMillis AND createdAt <= :endMillis ORDER BY createdAt DESC"
+    )
+    suspend fun getOrdersByDateRange(
+        outletId: String,
+        startMillis: Long,
+        endMillis: Long
+    ): List<LocalOrderEntity>
 
     @Query("SELECT id FROM local_orders WHERE outletId = :outletId AND isSyncedFromOffline = 1")
     suspend fun getSyncedFromOfflineIds(outletId: String): List<String>

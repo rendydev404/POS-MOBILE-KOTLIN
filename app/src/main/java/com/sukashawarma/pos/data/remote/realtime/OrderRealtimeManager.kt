@@ -183,7 +183,7 @@ class OrderRealtimeManager(
             }
             if (json.optString("event") != "postgres_changes") return
             val payload = json.optJSONObject("payload") ?: return
-            val data = payload.optJSONObject("data") ?: return
+            val data = payload.optJSONObject("data") ?: payload
             val eventType = data.optString("type") // INSERT | UPDATE | DELETE
             val record = data.optJSONObject("record") ?: data.optJSONObject("old_record") ?: JSONObject()
             val table = data.optString("table")

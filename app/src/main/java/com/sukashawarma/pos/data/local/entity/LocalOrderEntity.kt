@@ -46,5 +46,6 @@ data class LocalOrderEntity(
     val dirtyFields: String = "",
     val channel: String? = null,
     val isSyncedFromOffline: Boolean = false,
-    val localPaymentProofPath: String? = null
+    val localPaymentProofPath: String? = null,
+    val notes: String? = null
 )

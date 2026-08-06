@@ -72,6 +72,9 @@ fun ReportsScreen(
                 }
             }
         } else {
+            if (analytics.isFromLocalCache) {
+                item { OfflineDataBanner() }
+            }
             item { KPICards(analytics) }
             item {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -184,39 +187,74 @@ fun FilterDropdown(selected: String, options: List<Pair<String, String>>, onSele
         onExpandedChange = { expanded = !expanded }
     ) {
         Surface(
-            modifier = Modifier.menuAnchor().clickable { expanded = true }.height(36.dp),
-            shape = RoundedCornerShape(20.dp),
+            modifier = Modifier.menuAnchor().clickable { expanded = true }.height(40.dp),
+            shape = RoundedCornerShape(12.dp),
             color = Color.White,
-            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB)),
+            shadowElevation = 2.dp
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(selected, fontSize = 12.sp, color = Color(0xFF374151), fontWeight = FontWeight.Medium)
-                Spacer(modifier = Modifier.width(6.dp))
+                Text(selected, fontSize = 13.sp, color = Color(0xFF374151), fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.width(12.dp))
                 Icon(
-                    imageVector = Icons.Default.KeyboardArrowDown, 
+                    imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, 
                     contentDescription = null, 
-                    modifier = Modifier.size(16.dp),
+                    modifier = Modifier.size(18.dp),
                     tint = Color(0xFF6B7280)
                 )
             }
         }
         ExposedDropdownMenu(
             expanded = expanded,
-            onDismissRequest = { expanded = false }
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.background(Color.White)
         ) {
             options.forEach { option ->
+                val isSelected = selected == option.first
                 DropdownMenuItem(
-                    text = { Text(option.first, fontSize = 12.sp) },
+                    text = { 
+                        Text(
+                            text = option.first, 
+                            fontSize = 13.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            color = if (isSelected) ShawarmaOrange else Color(0xFF374151)
+                        ) 
+                    },
                     onClick = {
                         onSelect(option.second)
                         expanded = false
-                    }
+                    },
+                    modifier = Modifier.background(if (isSelected) ShawarmaOrangeLight else Color.Transparent)
                 )
             }
+        }
+    }
+}
+
+/** Ditampilkan saat angka berasal dari cache Room, bukan dari agregasi server. */
+@Composable
+fun OfflineDataBanner() {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = Color(0xFFFEF3C7)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Icon(Icons.Default.CloudOff, contentDescription = null, tint = Color(0xFF92400E), modifier = Modifier.size(18.dp))
+            Text(
+                "Data offline — dihitung dari penyimpanan lokal dan mungkin belum lengkap.",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF92400E)
+            )
         }
     }
 }
@@ -224,7 +262,7 @@ fun FilterDropdown(selected: String, options: List<Pair<String, String>>, onSele
 @Composable
 fun KPICards(data: AnalyticsData) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        KPICard(Modifier.weight(1f), "Omzet Kotor", formatRupiah(data.totalRevenue), "*Sebelum potongan", Color(0xFFF59E0B), Icons.Default.MonetizationOn)
+        KPICard(Modifier.weight(1f), "Omzet Kotor", formatRupiah(data.grossRevenue), "Pesanan selesai, sebelum potongan", Color(0xFFF59E0B), Icons.Default.MonetizationOn)
         KPICardLight(Modifier.weight(1f), "Pesanan Sukses", "${data.totalOrders}", "Transaksi berhasil diproses", Color(0xFF3B82F6), Icons.Default.ShoppingBag)
         KPICardLight(Modifier.weight(1f), "Rata-rata / Order", formatRupiah(data.avgOrderValue), "Rata-rata belanja per pesanan", Color(0xFFA855F7), Icons.Default.ShowChart)
         KPICardLight(Modifier.weight(1f), "Jam Tersibuk", data.peakHour?.let { "${it.toString().padStart(2, '0')}:00" } ?: "—", "Jam dengan pesanan terbanyak", Color(0xFF6366F1), Icons.Default.AccessTime)

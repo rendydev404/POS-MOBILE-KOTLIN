@@ -31,16 +31,14 @@ sealed class LedgerItem {
     }
 
     companion object {
-        fun parseDate(dateStr: String?): Long {
-            if (dateStr == null) return 0L
-            return try {
-                val format = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())
-                format.timeZone = TimeZone.getTimeZone("UTC")
-                format.parse(dateStr)?.time ?: 0L
-            } catch (e: Exception) {
-                0L
-            }
-        }
+        /**
+         * Pola SimpleDateFormat yang lama diam-diam mengembalikan 0L untuk timestamp
+         * ber-offset ("...+07:00") maupun berpecahan detik, sehingga transaksi bisa
+         * lolos filter `>= startMillis` dan salah masuk perhitungan kas shift.
+         * [JakartaTime.instantOrNull] menerima semua bentuk yang dikirim PostgREST.
+         */
+        fun parseDate(dateStr: String?): Long =
+            com.sukashawarma.pos.domain.gate.JakartaTime.instantOrNull(dateStr)?.toEpochMilli() ?: 0L
     }
 }
 
@@ -117,13 +115,14 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
                             LedgerItem.parseDate(it.createdAt) >= startMillis 
                         } ?: emptyList()
 
-                        // Fetch Cash Orders
+                        // Fetch Cash Orders (both ready and completed are considered paid)
                         val ordersRes = api.getOrders(mapOf(
                             "outlet_id" to "eq.$outletId",
-                            "status" to "eq.completed"
+                            "status" to "in.(completed,ready)",
+                            "payment_method" to "eq.cash"
                         ))
                         val cashOrders = ordersRes.body()?.filter { 
-                            LedgerItem.parseDate(it.createdAt) >= startMillis && it.paymentMethod == "cash"
+                            LedgerItem.parseDate(it.createdAt) >= startMillis
                         } ?: emptyList()
 
                         // Build Ledger
@@ -154,11 +153,8 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
                             .sumOf { it.amount }
                         expensesTotal.value = expensesSum
 
-                        // Fetch actual petty cash balance via RPC (more reliable)
-                        val balanceRes = api.getPettyCashBalance(OutletIdPayload(outletId))
-                        if (balanceRes.isSuccessful) {
-                            pettyCashBalance.value = balanceRes.body() ?: 0.0
-                        }
+                        // Calculate actual petty cash balance locally to ensure voided expenses are ignored
+                        pettyCashBalance.value = initialPettyCash.value + approvedTopupsTotal.value - expensesTotal.value
                     } else {
                         // Shift is closed
                         ledgerItems.value = emptyList()

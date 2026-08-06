@@ -30,10 +30,14 @@ class POSRealtimeService : Service() {
     
     private var currentOutletId: String = ""
 
+    private lateinit var orderDao: com.sukashawarma.pos.data.local.dao.OrderDao
+
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
         startForeground(FOREGROUND_NOTIFICATION_ID, createForegroundNotification())
+        
+        orderDao = (application as com.sukashawarma.pos.POSApplication).database.orderDao()
         
         alertPlayer = OrderAlertPlayer(this)
         realtimeManager = OrderRealtimeManager(SupabaseClient.okHttpClient, serviceScope)
@@ -67,6 +71,39 @@ class POSRealtimeService : Service() {
                 // Because we filter by outlet_id=eq.$outletId at the Supabase channel level,
                 // any event received here is inherently for our outlet.
                 if (recordOutletId == currentOutletId || recordOutletId.isEmpty()) {
+                    // ANTI-DELAY: update local db immediately from realtime payload!
+                    val orderId = record.optString("id")
+                    val status = record.optString("status")
+                    val cancellationStatus: String? = if (record.isNull("cancellation_status")) null else record.optString("cancellation_status")
+                    val cancellationUserName: String? = if (record.isNull("cancellation_user_name")) null else record.optString("cancellation_user_name")
+                    
+                    serviceScope.launch {
+                        if (orderId.isNotBlank()) {
+                            val existing = orderDao.getOrderById(orderId)
+                            val isCurrentlyCancelled = existing?.status == com.sukashawarma.pos.domain.model.OrderStatus.CANCELLED.name
+                            
+                            val isIncomingCancelled = cancellationStatus == "approved" || status.equals("cancelled", ignoreCase = true)
+                            
+                            val finalStatus = if (isIncomingCancelled || isCurrentlyCancelled) {
+                                com.sukashawarma.pos.domain.model.OrderStatus.CANCELLED.name
+                            } else {
+                                status.uppercase()
+                            }
+                            
+                            orderDao.updateOrderStatus(orderId, finalStatus)
+                            
+                            if (isCurrentlyCancelled && !isIncomingCancelled) {
+                                // Do not downgrade cancellation_status if the incoming event is a stale order record
+                            } else {
+                                if (isIncomingCancelled) {
+                                    orderDao.updateCancellationStatus(orderId, "approved", cancellationUserName)
+                                } else if (!record.isNull("cancellation_status")) {
+                                    orderDao.updateCancellationStatus(orderId, cancellationStatus, cancellationUserName)
+                                }
+                            }
+                        }
+                    }
+
                     GlobalEventBus.orderSyncEvent.tryEmit(Unit)
                     
                     if (eventType == "INSERT" && recordSource.lowercase() != "pos") {
@@ -101,6 +138,15 @@ class POSRealtimeService : Service() {
             } else if (table == "bypass_requests") {
                 GlobalEventBus.bypassRequestEvent.tryEmit(Unit)
             } else if (table == "cancellation_requests") {
+                val orderId = record.optString("order_id")
+                val status = record.optString("status")
+                
+                serviceScope.launch {
+                    if (orderId.isNotBlank() && status == "approved") {
+                        orderDao.updateOrderStatus(orderId, com.sukashawarma.pos.domain.model.OrderStatus.CANCELLED.name)
+                        orderDao.updateCancellationStatus(orderId, "approved", null)
+                    }
+                }
                 GlobalEventBus.orderSyncEvent.tryEmit(Unit)
             }
         }

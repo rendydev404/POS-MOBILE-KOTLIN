@@ -122,7 +122,11 @@ class MainActivity : ComponentActivity() {
                                             windowSizeClass = windowSizeClass.widthSizeClass,
                                             onNewOrderClick = { currentTab = POSTab.ORDER_MANUAL }
                                         )
-                                        POSTab.ORDER_MANUAL -> POSManualOrderScreen(viewModel = posManualOrderViewModel, printerViewModel = printerViewModel)
+                                        POSTab.ORDER_MANUAL -> POSManualOrderScreen(
+                                            viewModel = posManualOrderViewModel, 
+                                            printerViewModel = printerViewModel,
+                                            onBackClick = { currentTab = POSTab.DASHBOARD }
+                                        )
                                         POSTab.INFO_PORSI -> InfoPorsiScreen(viewModel = infoPorsiViewModel)
                                         POSTab.MENU_MANAGEMENT -> MenuManagementScreen(viewModel = menuManagementViewModel)
                                         POSTab.SHIFT_PETTY_CASH -> ShiftScreen(

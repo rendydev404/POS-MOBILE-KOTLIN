@@ -9,32 +9,32 @@ import com.sukashawarma.pos.data.remote.NetworkMonitor
 import com.sukashawarma.pos.data.remote.SupabaseClient
 import com.sukashawarma.pos.data.remote.dto.OrderDto
 import com.sukashawarma.pos.data.remote.dto.OrderItemDto
+import com.sukashawarma.pos.data.remote.dto.RevenueSummaryPayload
 import com.sukashawarma.pos.data.remote.dto.ShiftDto
+import com.sukashawarma.pos.domain.usecase.ReportDateRangeResolver
+import com.sukashawarma.pos.domain.usecase.ReportRange
+import com.sukashawarma.pos.domain.usecase.ResolvedDateRange
+import com.sukashawarma.pos.domain.usecase.RevenueCalculator
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.ZoneId
-import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
 
-enum class DateRange(val label: String) {
-    TODAY("Hari Ini"),
-    YESTERDAY("Kemarin"),
-    LAST_7_DAYS("7 Hari Terakhir"),
-    LAST_30_DAYS("30 Hari Terakhir"),
-    ALL_TIME("Semua Waktu"),
-    CUSTOM("Kustom Tanggal")
-}
+/** Rentang tanggal laporan. Definisinya tinggal satu, di [ReportRange]. */
+typealias DateRange = ReportRange
 
 data class PaymentStats(val count: Int, val revenue: Double)
 data class ItemStats(val qty: Int, val revenue: Double)
 
+/**
+ * Angka yang ditampilkan halaman Laporan.
+ *
+ * [grossRevenue] adalah omzet KOTOR (jumlah `order_items.subtotal`) dari pesanan
+ * berstatus `completed` saja. Tidak ada angka bersih di sini — memang tidak
+ * ditampilkan di UI.
+ */
 data class AnalyticsData(
-    val totalRevenue: Double = 0.0,
-    val totalDeductions: Double = 0.0,
-    val netRevenue: Double = 0.0,
+    val grossRevenue: Double = 0.0,
     val totalOrders: Int = 0,
     val totalItemsSold: Int = 0,
     val pendingCount: Int = 0,
@@ -47,7 +47,9 @@ data class AnalyticsData(
     val totalCashVariance: Double = 0.0,
     val peakHour: Int? = null,
     val orders: List<OrderDto> = emptyList(),
-    val shifts: List<ShiftDto> = emptyList()
+    val shifts: List<ShiftDto> = emptyList(),
+    /** True bila angka di atas dihitung dari cache lokal, bukan dari server. */
+    val isFromLocalCache: Boolean = false
 )
 
 class ReportsViewModel(application: Application) : AndroidViewModel(application) {
@@ -63,6 +65,12 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
 
     val channelFilter = MutableStateFlow("all")
     val paymentFilter = MutableStateFlow("all")
+
+    /**
+     * Filter status hanya menyaring tabel transaksi di bawah, BUKAN angka omzet.
+     * Omzet menurut definisinya selalu pesanan `completed`; dulu filter ini ikut
+     * masuk ke query omzet sehingga memilih "pending" membuat omzet jadi Rp 0.
+     */
     val statusFilter = MutableStateFlow("all")
     val searchQuery = MutableStateFlow("")
 
@@ -103,10 +111,26 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
         statusFilter.value = status
         loadRealReportData()
     }
-    
+
     fun updateSearchQuery(query: String) {
         searchQuery.value = query
     }
+
+    private fun resolveRange(): ResolvedDateRange = ReportDateRangeResolver.resolve(
+        range = selectedRange.value,
+        customStart = customStartDate.value.toLocalDateOrNull(),
+        customEnd = customEndDate.value.toLocalDateOrNull()
+    )
+
+    /** Daftar kanal yang cocok dengan [channelFilter], atau null bila semua kanal. */
+    private fun channelsOrNull(): List<String>? = when (channelFilter.value) {
+        "all", "offline" -> null
+        "food_apps" -> FOOD_APP_CHANNELS
+        "tiktokgo", "tiktok" -> TIKTOK_CHANNELS
+        else -> listOf(channelFilter.value)
+    }
+
+    private fun includeNullChannel(): Boolean = channelFilter.value == "offline"
 
     fun loadRealReportData() {
         val outletId = _currentOutletId.value
@@ -115,172 +139,12 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val filters = mutableMapOf<String, String>("outlet_id" to "eq.$outletId")
-                val shiftFilters = mutableMapOf<String, String>("outlet_id" to "eq.$outletId", "status" to "eq.closed")
-
-                val now = LocalDateTime.now(ZoneId.of("Asia/Jakarta"))
-                var pStart: LocalDateTime = now
-                var pEnd: LocalDateTime = now
-                var useDateFilter = true
-
-                when (selectedRange.value) {
-                    DateRange.TODAY -> {
-                        pStart = now.toLocalDate().atStartOfDay()
-                    }
-                    DateRange.YESTERDAY -> {
-                        pStart = now.minusDays(1).toLocalDate().atStartOfDay()
-                        pEnd = now.toLocalDate().atStartOfDay()
-                    }
-                    DateRange.LAST_7_DAYS -> {
-                        pStart = now.minusDays(7).toLocalDate().atStartOfDay()
-                    }
-                    DateRange.LAST_30_DAYS -> {
-                        pStart = now.minusDays(30).toLocalDate().atStartOfDay()
-                    }
-                    DateRange.ALL_TIME -> {
-                        useDateFilter = false
-                    }
-                    DateRange.CUSTOM -> {
-                        try {
-                            pStart = LocalDate.parse(customStartDate.value).atStartOfDay()
-                            pEnd = LocalDate.parse(customEndDate.value).atTime(23, 59, 59)
-                        } catch(e: Exception) {
-                            useDateFilter = false
-                        }
-                    }
-                }
-
-                if (useDateFilter) {
-                    val startIso = pStart.format(DateTimeFormatter.ISO_DATE_TIME)
-                    if (selectedRange.value == DateRange.TODAY || selectedRange.value == DateRange.LAST_7_DAYS || selectedRange.value == DateRange.LAST_30_DAYS) {
-                        filters["created_at"] = "gte.$startIso"
-                        shiftFilters["end_time"] = "gte.$startIso"
-                    } else {
-                        val endIso = pEnd.format(DateTimeFormatter.ISO_DATE_TIME)
-                        filters["and"] = "(created_at.gte.$startIso,created_at.lte.$endIso)"
-                        shiftFilters["and"] = "(end_time.gte.$startIso,end_time.lte.$endIso)"
-                    }
-                }
-
-                if (statusFilter.value != "all") {
-                    filters["status"] = "eq.${statusFilter.value}"
-                }
-                if (paymentFilter.value != "all") {
-                    filters["payment_method"] = "eq.${paymentFilter.value}"
-                }
-                if (channelFilter.value != "all") {
-                    when (channelFilter.value) {
-                        "offline" -> filters["channel"] = "is.null"
-                        "food_apps" -> filters["channel"] = "in.(gofood,grabfood,shopeefood,tiktokgo,tiktok,tiktok_go)"
-                        "tiktokgo", "tiktok" -> filters["channel"] = "in.(tiktokgo,tiktok,tiktok_go)"
-                        else -> filters["channel"] = "eq.${channelFilter.value}"
-                    }
-                }
-
-                val startMillis = pStart.toInstant(ZoneOffset.ofHours(7)).toEpochMilli()
-                val endMillis = if (useDateFilter) pEnd.toInstant(ZoneOffset.ofHours(7)).toEpochMilli() else Long.MAX_VALUE
-
-                val orders = if (NetworkMonitor.isOnline.value) {
-                    val dtos = api.getOrders(filters).body() ?: emptyList()
-                    val offlineSyncedIds = orderDao.getSyncedFromOfflineIds(outletId).toSet()
-                    dtos.map { if (offlineSyncedIds.contains(it.id)) it.copy(isSyncedFromOffline = true) else it }
+                val range = resolveRange()
+                if (NetworkMonitor.isOnline.value) {
+                    loadFromServer(outletId, range)
                 } else {
-                    orderDao.getOrdersByDateRange(startMillis, endMillis)
-                        .map { it.toOrderDto() }
-                        .filter { dto ->
-                            var match = true
-                            if (statusFilter.value != "all" && dto.status != statusFilter.value) match = false
-                            if (paymentFilter.value != "all" && dto.paymentMethod != paymentFilter.value) match = false
-                            if (channelFilter.value != "all") {
-                                when (channelFilter.value) {
-                                    "offline" -> if (dto.channel != null) match = false
-                                    "food_apps" -> if (dto.channel !in listOf("gofood", "grabfood", "shopeefood", "tiktokgo", "tiktok", "tiktok_go")) match = false
-                                    "tiktokgo", "tiktok" -> if (dto.channel !in listOf("tiktokgo", "tiktok", "tiktok_go")) match = false
-                                    else -> if (dto.channel != channelFilter.value) match = false
-                                }
-                            }
-                            match
-                        }
+                    loadFromLocalCache(outletId, range)
                 }
-
-                val shiftsRes = if (NetworkMonitor.isOnline.value) api.getShifts(shiftFilters) else null
-                val shifts = shiftsRes?.body() ?: emptyList()
-
-                val completedOrders = orders.filter { it.status == "completed" }
-                val totalRevenue = completedOrders.sumOf { it.totalAmount }
-
-                val totalDeductions = completedOrders.sumOf { o ->
-                    val disc = o.discountAmount ?: 0.0
-                    val promo = o.promoSubsidy ?: 0.0
-                    if (disc > 0 || promo > 0) {
-                        disc + promo
-                    } else {
-                        val itemSubtotal = o.orderItems?.sumOf { it.subtotal } ?: 0.0
-                        if (itemSubtotal > o.totalAmount) itemSubtotal - o.totalAmount else 0.0
-                    }
-                }
-
-                val netRevenue = maxOf(0.0, totalRevenue - totalDeductions)
-                val totalOrders = completedOrders.size
-                val pendingCount = orders.count { it.status == "pending" }
-                val canceledCount = orders.count { it.status == "cancelled" }
-                val avgOrderValue = if (totalOrders > 0) totalRevenue / totalOrders else 0.0
-
-                val paymentBreakdown = mutableMapOf<String, PaymentStats>()
-                val hourly = MutableList(24) { 0 }
-                val itemMap = mutableMapOf<String, ItemStats>()
-                val dailyMap = mutableMapOf<String, Double>()
-
-                completedOrders.forEach { o ->
-                    val pm = o.paymentMethod ?: "unknown"
-                    val currentStats = paymentBreakdown[pm] ?: PaymentStats(0, 0.0)
-                    paymentBreakdown[pm] = PaymentStats(currentStats.count + 1, currentStats.revenue + o.totalAmount)
-
-                    try {
-                        // Supposedly created_at is like 2023-11-20T10:00:00.000+00:00 or Z
-                        val cleanDate = if(o.createdAt.contains("+")) o.createdAt.substringBefore("+") else o.createdAt.substringBefore("Z")
-                        val d = LocalDateTime.parse(cleanDate)
-                        val h = d.hour
-                        hourly[h] += 1
-
-                        val dateKey = d.toLocalDate().toString()
-                        dailyMap[dateKey] = (dailyMap[dateKey] ?: 0.0) + o.totalAmount
-                    } catch (e: Exception) {}
-
-                    o.orderItems?.forEach { oi ->
-                        val name = oi.menuItemName
-                        val curr = itemMap[name] ?: ItemStats(0, 0.0)
-                        itemMap[name] = ItemStats(curr.qty + oi.quantity, curr.revenue + oi.subtotal)
-                    }
-                }
-
-                val bestSellers = itemMap.toList().sortedByDescending { it.second.qty }.take(10)
-                val totalItemsSold = itemMap.values.sumOf { it.qty }
-
-                val maxHourly = hourly.maxOrNull() ?: 0
-                val peakHour = if (maxHourly > 0) hourly.indexOf(maxHourly) else null
-
-                val dailyEntries = dailyMap.toList().sortedBy { it.first }
-                val totalCashVariance = shifts.sumOf { it.variance ?: 0.0 }
-
-                _analyticsData.value = AnalyticsData(
-                    totalRevenue = totalRevenue,
-                    totalDeductions = totalDeductions,
-                    netRevenue = netRevenue,
-                    totalOrders = totalOrders,
-                    totalItemsSold = totalItemsSold,
-                    pendingCount = pendingCount,
-                    canceledCount = canceledCount,
-                    paymentBreakdown = paymentBreakdown,
-                    hourly = hourly,
-                    dailyEntries = dailyEntries,
-                    bestSellers = bestSellers,
-                    avgOrderValue = avgOrderValue,
-                    totalCashVariance = totalCashVariance,
-                    peakHour = peakHour,
-                    orders = orders,
-                    shifts = shifts
-                )
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {
@@ -288,6 +152,167 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
             }
         }
     }
+
+    /**
+     * Omzet diambil dari RPC `pos_revenue_summary_guarded` yang mengagregasi di
+     * database. Daftar transaksi tetap ditarik terpisah dan boleh terpotong limit —
+     * itu memang hanya tabel, tidak dipakai untuk menghitung angka apa pun.
+     */
+    private suspend fun loadFromServer(outletId: String, range: ResolvedDateRange) {
+        val summaryRes = api.getRevenueSummary(
+            RevenueSummaryPayload(
+                outletId = outletId,
+                start = range.startIso,
+                end = range.endIso,
+                paymentMethod = paymentFilter.value.takeIf { it != "all" },
+                channels = channelsOrNull(),
+                includeNullChannel = includeNullChannel()
+            )
+        )
+        val summary = summaryRes.body()
+        if (summary == null) {
+            // RPC gagal (mis. migrasi belum diterapkan) — jangan tampilkan Rp 0 palsu.
+            loadFromLocalCache(outletId, range)
+            return
+        }
+
+        val orders = fetchOrderList(outletId, range)
+        val shifts = fetchShifts(outletId, range)
+
+        val hourly = MutableList(24) { 0 }
+        summary.byHour.forEach { if (it.hour in 0..23) hourly[it.hour] = it.count }
+        val maxHourly = hourly.maxOrNull() ?: 0
+
+        _analyticsData.value = AnalyticsData(
+            grossRevenue = summary.gross,
+            totalOrders = summary.orderCount,
+            totalItemsSold = summary.itemsSold,
+            pendingCount = summary.pendingCount,
+            canceledCount = summary.cancelledCount,
+            paymentBreakdown = summary.byPayment.associate {
+                it.paymentMethod to PaymentStats(it.count, it.gross)
+            },
+            hourly = hourly,
+            dailyEntries = summary.byDay.map { it.day to it.gross },
+            bestSellers = summary.topItems.map { it.name to ItemStats(it.qty, it.gross) },
+            avgOrderValue = summary.avgOrderGross,
+            totalCashVariance = shifts.sumOf { it.variance ?: 0.0 },
+            peakHour = if (maxHourly > 0) hourly.indexOf(maxHourly) else null,
+            orders = orders,
+            shifts = shifts,
+            isFromLocalCache = false
+        )
+    }
+
+    /**
+     * Jalur offline. Rumusnya identik dengan RPC lewat [RevenueCalculator], tapi
+     * hanya melihat pesanan yang sempat tersimpan di Room — karena itu hasilnya
+     * ditandai [AnalyticsData.isFromLocalCache] supaya UI bisa memberi peringatan.
+     */
+    private suspend fun loadFromLocalCache(outletId: String, range: ResolvedDateRange) {
+        val entities = orderDao.getOrdersByDateRange(outletId, range.startMillis, range.endMillis)
+        val allDtos = entities.map { it.toOrderDto() }.filter { matchesNonStatusFilters(it) }
+        val completed = allDtos.filter { RevenueCalculator.isRevenue(it) }
+        val summary = RevenueCalculator.summarize(allDtos)
+
+        val hourly = MutableList(24) { 0 }
+        val dailyMap = linkedMapOf<String, Double>()
+        val itemMap = linkedMapOf<String, ItemStats>()
+        val paymentBreakdown = linkedMapOf<String, PaymentStats>()
+
+        completed.forEach { o ->
+            val gross = RevenueCalculator.grossOf(o)
+
+            val pm = o.paymentMethod ?: "unknown"
+            val prev = paymentBreakdown[pm] ?: PaymentStats(0, 0.0)
+            paymentBreakdown[pm] = PaymentStats(prev.count + 1, prev.revenue + gross)
+
+            // Jam dan hari dihitung di zona Jakarta, sama seperti RPC.
+            val instant = com.sukashawarma.pos.domain.gate.JakartaTime.instantOrNull(o.createdAt)
+            if (instant != null) {
+                val local = instant.atZone(com.sukashawarma.pos.domain.gate.JakartaTime.ZONE)
+                hourly[local.hour] += 1
+                val key = local.toLocalDate().toString()
+                dailyMap[key] = (dailyMap[key] ?: 0.0) + gross
+            }
+
+            o.orderItems?.forEach { oi ->
+                val curr = itemMap[oi.menuItemName] ?: ItemStats(0, 0.0)
+                itemMap[oi.menuItemName] = ItemStats(curr.qty + oi.quantity, curr.revenue + oi.subtotal)
+            }
+        }
+
+        val maxHourly = hourly.maxOrNull() ?: 0
+
+        _analyticsData.value = AnalyticsData(
+            grossRevenue = summary.gross,
+            totalOrders = summary.orderCount,
+            totalItemsSold = itemMap.values.sumOf { it.qty },
+            pendingCount = allDtos.count { it.status == "pending" },
+            canceledCount = allDtos.count { it.status == "cancelled" },
+            paymentBreakdown = paymentBreakdown,
+            hourly = hourly,
+            dailyEntries = dailyMap.toList().sortedBy { it.first },
+            bestSellers = itemMap.toList().sortedByDescending { it.second.qty }.take(10),
+            avgOrderValue = if (summary.orderCount > 0) summary.gross / summary.orderCount else 0.0,
+            totalCashVariance = 0.0,
+            peakHour = if (maxHourly > 0) hourly.indexOf(maxHourly) else null,
+            orders = allDtos.filter { matchesStatusFilter(it) },
+            shifts = emptyList(),
+            isFromLocalCache = true
+        )
+    }
+
+    private suspend fun fetchOrderList(outletId: String, range: ResolvedDateRange): List<OrderDto> {
+        val filters = mutableMapOf("outlet_id" to "eq.$outletId", "limit" to ORDER_LIST_LIMIT)
+
+        if (range.startIso != null && range.endIso != null) {
+            filters["and"] = "(created_at.gte.${range.startIso},created_at.lte.${range.endIso})"
+        } else if (range.startIso != null) {
+            filters["created_at"] = "gte.${range.startIso}"
+        } else if (range.endIso != null) {
+            filters["created_at"] = "lte.${range.endIso}"
+        }
+
+        if (statusFilter.value != "all") filters["status"] = "eq.${statusFilter.value}"
+        if (paymentFilter.value != "all") filters["payment_method"] = "eq.${paymentFilter.value}"
+        when (channelFilter.value) {
+            "all" -> Unit
+            "offline" -> filters["channel"] = "is.null"
+            "food_apps" -> filters["channel"] = "in.(${FOOD_APP_CHANNELS.joinToString(",")})"
+            "tiktokgo", "tiktok" -> filters["channel"] = "in.(${TIKTOK_CHANNELS.joinToString(",")})"
+            else -> filters["channel"] = "eq.${channelFilter.value}"
+        }
+
+        val dtos = api.getOrders(filters).body() ?: return emptyList()
+        val offlineSyncedIds = orderDao.getSyncedFromOfflineIds(outletId).toSet()
+        return dtos.map { if (offlineSyncedIds.contains(it.id)) it.copy(isSyncedFromOffline = true) else it }
+    }
+
+    private suspend fun fetchShifts(outletId: String, range: ResolvedDateRange): List<ShiftDto> {
+        val shiftFilters = mutableMapOf("outlet_id" to "eq.$outletId", "status" to "eq.closed")
+        if (range.startIso != null && range.endIso != null) {
+            shiftFilters["and"] = "(end_time.gte.${range.startIso},end_time.lte.${range.endIso})"
+        } else if (range.startIso != null) {
+            shiftFilters["end_time"] = "gte.${range.startIso}"
+        }
+        return api.getShifts(shiftFilters).body() ?: emptyList()
+    }
+
+    /** Filter selain status — dipakai untuk angka omzet di jalur offline. */
+    private fun matchesNonStatusFilters(dto: OrderDto): Boolean {
+        if (paymentFilter.value != "all" && dto.paymentMethod != paymentFilter.value) return false
+        return when (channelFilter.value) {
+            "all" -> true
+            "offline" -> dto.channel == null
+            "food_apps" -> dto.channel in FOOD_APP_CHANNELS
+            "tiktokgo", "tiktok" -> dto.channel in TIKTOK_CHANNELS
+            else -> dto.channel == channelFilter.value
+        }
+    }
+
+    private fun matchesStatusFilter(dto: OrderDto): Boolean =
+        statusFilter.value == "all" || dto.status == statusFilter.value
 
     fun exportToPdf(context: android.content.Context) {
         viewModelScope.launch {
@@ -305,9 +330,9 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
 
                 paint.textSize = 16f
                 paint.isFakeBoldText = false
-                canvas.drawText("Omzet Kotor: Rp ${String.format("%,.0f", data.totalRevenue)}", 50f, 100f, paint)
+                canvas.drawText("Omzet Kotor: Rp ${String.format("%,.0f", data.grossRevenue)}", 50f, 100f, paint)
                 canvas.drawText("Pesanan Sukses: ${data.totalOrders}", 50f, 130f, paint)
-                
+
                 var y = 170f
                 paint.isFakeBoldText = true
                 canvas.drawText("Distribusi Pembayaran", 50f, y, paint)
@@ -333,10 +358,14 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    private fun String.toLocalDateOrNull(): LocalDate? =
+        try { if (isBlank()) null else LocalDate.parse(this) } catch (e: Exception) { null }
+
     private fun LocalOrderEntity.toOrderDto(): OrderDto {
         val itemsType = object : com.google.gson.reflect.TypeToken<List<com.sukashawarma.pos.domain.model.OrderItem>>() {}.type
-        val itemsList: List<com.sukashawarma.pos.domain.model.OrderItem> = com.google.gson.Gson().fromJson(itemsJson, itemsType) ?: emptyList()
-        val orderItems = itemsList.map { 
+        val itemsList: List<com.sukashawarma.pos.domain.model.OrderItem> =
+            com.google.gson.Gson().fromJson(itemsJson, itemsType) ?: emptyList()
+        val orderItems = itemsList.map {
             OrderItemDto(
                 id = it.id,
                 orderId = id,
@@ -347,7 +376,7 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
                 subtotal = it.subtotal
             )
         }
-        
+
         val dtString = java.time.format.DateTimeFormatter.ISO_INSTANT.format(java.time.Instant.ofEpochMilli(createdAt))
         return OrderDto(
             id = id,
@@ -376,5 +405,11 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
             voidReason = null,
             isSyncedFromOffline = isSyncedFromOffline
         )
+    }
+
+    private companion object {
+        const val ORDER_LIST_LIMIT = "500"
+        val FOOD_APP_CHANNELS = listOf("gofood", "grabfood", "shopeefood", "tiktokgo", "tiktok", "tiktok_go")
+        val TIKTOK_CHANNELS = listOf("tiktokgo", "tiktok", "tiktok_go")
     }
 }

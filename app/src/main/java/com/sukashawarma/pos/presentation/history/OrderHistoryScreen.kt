@@ -386,21 +386,38 @@ fun OrderHistoryContent(viewModel: OrderHistoryViewModel) {
         searchQuery.isEmpty() || order.orderNumber.toString().contains(searchQuery) || (order.customerName?.contains(searchQuery, ignoreCase = true) == true)
     }
 
-    val nonCancelled = ordersHistory.filter { !it.status.equals("cancelled", true) }
-    val totalCash = nonCancelled.filter { it.paymentMethod.equals("cash", true) }.sumOf { it.totalAmount }
-    val totalQris = nonCancelled.filter { it.paymentMethod.equals("qris", true) }.sumOf { it.totalAmount }
-    val totalCard = nonCancelled.filter { it.paymentMethod.equals("card", true) }.sumOf { it.totalAmount }
-    val totalRevenue = nonCancelled.sumOf { it.totalAmount }
+    // Angka ini datang dari agregasi database, bukan dari `ordersHistory` yang hanya
+    // memuat 100-200 baris teratas — menjumlahkan daftar itu selalu di bawah nilai
+    // sebenarnya begitu rentangnya lebih dari sehari.
+    val summary by viewModel.revenueSummary.collectAsState()
+    val isSummaryFromCache by viewModel.isSummaryFromLocalCache.collectAsState()
+
+    fun grossOf(method: String) =
+        summary.byPayment.firstOrNull { it.paymentMethod.equals(method, true) }?.gross ?: 0.0
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            SummaryCard("TUNAI / CASH", "Rp ${String.format("%,.0f", totalCash)}", Color(0xFF10B981), Color(0xFF10B981), Color.White, Modifier.weight(1f))
-            SummaryCard("QRIS", "Rp ${String.format("%,.0f", totalQris)}", Color(0xFF3B82F6), Color(0xFF3B82F6), Color.White, Modifier.weight(1f))
-            SummaryCard("DEBIT / CARD", "Rp ${String.format("%,.0f", totalCard)}", Color(0xFF8B5CF6), Color(0xFF8B5CF6), Color.White, Modifier.weight(1f))
-            SummaryCard("TOTAL REVENUE", "Rp ${String.format("%,.0f", totalRevenue)}", Color.White, Color.White, ShawarmaOrange, Modifier.weight(1f))
+            SummaryCard("TUNAI / CASH", "Rp ${String.format("%,.0f", grossOf("cash"))}", Color(0xFF10B981), Color(0xFF10B981), Color.White, Modifier.weight(1f))
+            SummaryCard("QRIS", "Rp ${String.format("%,.0f", grossOf("qris"))}", Color(0xFF3B82F6), Color(0xFF3B82F6), Color.White, Modifier.weight(1f))
+            SummaryCard("DEBIT / CARD", "Rp ${String.format("%,.0f", grossOf("card"))}", Color(0xFF8B5CF6), Color(0xFF8B5CF6), Color.White, Modifier.weight(1f))
+            SummaryCard("OMZET KOTOR", "Rp ${String.format("%,.0f", summary.gross)}", Color.White, Color.White, ShawarmaOrange, Modifier.weight(1f))
+        }
+
+        if (isSummaryFromCache) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                "Data offline — omzet dihitung dari penyimpanan lokal dan mungkin belum lengkap.",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF92400E),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFFFEF3C7), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            )
         }
 
         Spacer(modifier = Modifier.height(16.dp))

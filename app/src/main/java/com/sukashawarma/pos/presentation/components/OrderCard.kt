@@ -1,5 +1,6 @@
 package com.sukashawarma.pos.presentation.components
 
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -16,6 +17,7 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Warning
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -102,12 +104,18 @@ fun OrderCard(
         else -> DefaultBorder
     }
 
+    val scope = rememberCoroutineScope()
     var showCancelDialog by remember { mutableStateOf(false) }
 
     if (showCancelDialog) {
         var cancelReason by remember { mutableStateOf("") }
         AlertDialog(
-            onDismissRequest = { showCancelDialog = false },
+            onDismissRequest = { 
+                scope.launch {
+                    kotlinx.coroutines.delay(100)
+                    showCancelDialog = false 
+                }
+            },
             title = { Text("Batalkan Pesanan") },
             text = {
                 Column {
@@ -126,7 +134,10 @@ fun OrderCard(
                     onClick = {
                         if (cancelReason.isNotBlank()) {
                             onCancelOrder(order, cancelReason)
-                            showCancelDialog = false
+                            scope.launch {
+                                kotlinx.coroutines.delay(100)
+                                showCancelDialog = false
+                            }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = TextRed)
@@ -135,7 +146,12 @@ fun OrderCard(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showCancelDialog = false }) {
+                TextButton(onClick = { 
+                    scope.launch {
+                        kotlinx.coroutines.delay(100)
+                        showCancelDialog = false 
+                    }
+                }) {
                     Text("Tutup", color = TextSlate)
                 }
             }
@@ -145,7 +161,14 @@ fun OrderCard(
     var showReprintDialog by remember { mutableStateOf(false) }
 
     if (showReprintDialog) {
-        androidx.compose.ui.window.Dialog(onDismissRequest = { showReprintDialog = false }) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { 
+                scope.launch {
+                    kotlinx.coroutines.delay(100)
+                    showReprintDialog = false 
+                }
+            }
+        ) {
             Surface(
                 shape = RoundedCornerShape(16.dp),
                 color = Color.White,
@@ -192,8 +215,11 @@ fun OrderCard(
                     ) {
                         Button(
                             onClick = {
-                                showReprintDialog = false
                                 onPrintKitchen(order)
+                                scope.launch {
+                                    kotlinx.coroutines.delay(100)
+                                    showReprintDialog = false
+                                }
                             },
                             modifier = Modifier
                                 .weight(1f)
@@ -207,8 +233,11 @@ fun OrderCard(
                         
                         Button(
                             onClick = {
-                                showReprintDialog = false
                                 onPrintCustomer(order)
+                                scope.launch {
+                                    kotlinx.coroutines.delay(100)
+                                    showReprintDialog = false
+                                }
                             },
                             modifier = Modifier
                                 .weight(1f)
@@ -398,6 +427,50 @@ fun OrderCard(
             }
 
             Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFF1F5F9)))
+
+            // Order Notes
+            if (!order.notes.isNullOrBlank()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                ) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = Color(0xFFFFFBEB), // amber-50 for notes
+                        shape = RoundedCornerShape(8.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A)) // amber-200
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Icon(
+                                Icons.Outlined.Edit,
+                                contentDescription = null,
+                                tint = Color(0xFFD97706), // amber-600
+                                modifier = Modifier.size(18.dp).padding(top = 1.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "Catatan Order:",
+                                    color = Color(0xFFD97706),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = order.notes,
+                                    color = Color(0xFF92400E), // amber-800
+                                    fontSize = 13.sp
+                                )
+                            }
+                        }
+                    }
+                }
+                Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFF1F5F9)))
+            }
 
             // Order Items
             Column(

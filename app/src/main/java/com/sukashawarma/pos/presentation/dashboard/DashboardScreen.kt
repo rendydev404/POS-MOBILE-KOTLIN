@@ -56,7 +56,7 @@ fun DashboardScreen(
     }
 
     val currentOutletName by viewModel.currentOutletName.collectAsState()
-    val totalLunasToday by viewModel.totalLunasToday.collectAsState()
+    val omzetKotorHariIni by viewModel.omzetKotorHariIni.collectAsState()
     val criticalStockNames by viewModel.criticalStockNames.collectAsState()
 
     var activeSourceFilter by remember { mutableStateOf("Semua") }
@@ -71,6 +71,19 @@ fun DashboardScreen(
     LaunchedEffect(printStatusMessage) {
         printStatusMessage?.let { msg ->
             android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
+    val currentOutletId by viewModel.currentOutletId.collectAsState()
+
+    // Auto-refresh every 15s to catch eager patches/updates (like cancellation approvals)
+    // Mirrors the exact same pattern used in OrderHistoryScreen
+    LaunchedEffect(currentOutletId) {
+        if (currentOutletId.isNotBlank()) {
+            while (true) {
+                kotlinx.coroutines.delay(15000)
+                viewModel.syncOrdersFromServer(currentOutletId)
+            }
         }
     }
 
@@ -181,8 +194,8 @@ fun DashboardScreen(
                             }
                             Spacer(modifier = Modifier.width(8.dp))
                             Column {
-                                Text("PENDAPATAN LUNAS", style = MaterialTheme.typography.bodySmall, fontSize = 9.sp, color = TextDarkMuted, fontWeight = FontWeight.Bold)
-                                Text("Rp ${String.format("%,.0f", totalLunasToday)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextDarkPrimary)
+                                Text("OMZET KOTOR HARI INI", style = MaterialTheme.typography.bodySmall, fontSize = 9.sp, color = TextDarkMuted, fontWeight = FontWeight.Bold)
+                                Text("Rp ${String.format("%,.0f", omzetKotorHariIni)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextDarkPrimary)
                             }
                         }
                     }
@@ -248,16 +261,47 @@ fun DashboardScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // 5. Adaptive Order Board (Row for Expanded, Pager for Compact/Medium)
+            
+            val filteredPending = remember(pendingOrders, activeSourceFilter) {
+                pendingOrders.filter { order ->
+                    when (activeSourceFilter) {
+                        "🌐 Online" -> order.source == com.sukashawarma.pos.domain.model.OrderSource.ONLINE
+                        "📱 Offline" -> order.source == com.sukashawarma.pos.domain.model.OrderSource.POS || order.source == com.sukashawarma.pos.domain.model.OrderSource.KIOSK
+                        else -> true
+                    }
+                }
+            }
+            
+            val filteredPreparing = remember(preparingOrders, activeSourceFilter) {
+                preparingOrders.filter { order ->
+                    when (activeSourceFilter) {
+                        "🌐 Online" -> order.source == com.sukashawarma.pos.domain.model.OrderSource.ONLINE
+                        "📱 Offline" -> order.source == com.sukashawarma.pos.domain.model.OrderSource.POS || order.source == com.sukashawarma.pos.domain.model.OrderSource.KIOSK
+                        else -> true
+                    }
+                }
+            }
+            
+            val filteredCompleted = remember(completedOrders, activeSourceFilter) {
+                completedOrders.filter { order ->
+                    when (activeSourceFilter) {
+                        "🌐 Online" -> order.source == com.sukashawarma.pos.domain.model.OrderSource.ONLINE
+                        "📱 Offline" -> order.source == com.sukashawarma.pos.domain.model.OrderSource.POS || order.source == com.sukashawarma.pos.domain.model.OrderSource.KIOSK
+                        else -> true
+                    }
+                }
+            }
+
             val column1: @Composable () -> Unit = {
                 BoardColumn(
                     modifier = Modifier.fillMaxSize(),
                     title = "Menunggu Pembayaran",
                     icon = Icons.Default.Schedule,
-                    badgeCount = pendingOrders.size,
+                    badgeCount = filteredPending.size,
                     emptyMessage = "Tidak ada pesanan tertunda\nPesanan baru akan muncul otomatis di sini."
                 ) {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        items(pendingOrders, key = { it.id }) { order ->
+                        items(filteredPending, key = { it.id }) { order ->
                             OrderCard(
                                 order = order,
                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
@@ -295,14 +339,14 @@ fun DashboardScreen(
                     modifier = Modifier.fillMaxSize(),
                     title = "Sedang Diproses",
                     icon = Icons.Default.Restaurant,
-                    badgeCount = preparingOrders.size,
+                    badgeCount = filteredPreparing.size,
                     hasSubTabs = true,
                     subTabState = preparingSubTab,
                     onSubTabChange = { preparingSubTab = it },
                     emptyMessage = "Tidak ada antrean masak\nDapur sedang santai, pesanan aktif akan muncul di sini."
                 ) {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        items(preparingOrders, key = { it.id }) { order ->
+                        items(filteredPreparing, key = { it.id }) { order ->
                             OrderCard(
                                 order = order,
                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
@@ -340,14 +384,14 @@ fun DashboardScreen(
                     modifier = Modifier.fillMaxSize(),
                     title = "Selesai / Lunas",
                     icon = Icons.Default.CheckCircle,
-                    badgeCount = completedOrders.size,
+                    badgeCount = filteredCompleted.size,
                     hasSearchBar = true,
                     searchQuery = completedSearchQuery,
                     onSearchQueryChange = { completedSearchQuery = it },
                     emptyMessage = "Belum ada pesanan selesai hari ini"
                 ) {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        items(completedOrders.filter { completedSearchQuery.isEmpty() || it.orderNumber.toString().contains(completedSearchQuery) }, key = { it.id }) { order ->
+                        items(filteredCompleted.filter { completedSearchQuery.isEmpty() || it.orderNumber.toString().contains(completedSearchQuery) }, key = { it.id }) { order ->
                             OrderCard(
                                 order = order,
                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },

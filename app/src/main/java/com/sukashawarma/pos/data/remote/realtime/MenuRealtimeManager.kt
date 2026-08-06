@@ -127,7 +127,7 @@ class MenuRealtimeManager(
             val json = JSONObject(text)
             if (json.optString("event") != "postgres_changes") return
             val payload = json.optJSONObject("payload") ?: return
-            val data = payload.optJSONObject("data") ?: return
+            val data = payload.optJSONObject("data") ?: payload
             val table = data.optString("table")
             val eventType = data.optString("type")
             val record = data.optJSONObject("record") ?: return

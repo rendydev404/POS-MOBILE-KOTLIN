@@ -40,7 +40,25 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     val currentCashierName = MutableStateFlow("Kasir")
     val outlets = MutableStateFlow<List<Pair<String, String>>>(emptyList())
 
-    val totalLunasToday = MutableStateFlow(0.0)
+    /**
+     * Omzet kotor hari ini: jumlah subtotal item dari pesanan `COMPLETED`, zona Jakarta.
+     *
+     * Dulu ini menjumlahkan `totalAmount` (nilai setelah diskon) dan diberi label
+     * "omzet", sehingga angkanya tidak pernah cocok dengan halaman Laporan.
+     * Aman dihitung dari Room karena cakupannya hanya hari ini — semua pesanan hari
+     * berjalan pasti ada di cache lokal.
+     */
+    val omzetKotorHariIni: StateFlow<Double> = currentOutletId
+        .flatMapLatest { outletId ->
+            orderDao.getOrdersByOutlet(outletId).map { entities ->
+                val today = LocalDate.now(ZoneId.of("Asia/Jakarta"))
+                entities.filter {
+                    com.sukashawarma.pos.domain.usecase.RevenueCalculator.isRevenue(it) &&
+                        isToday(it.createdAt, today)
+                }.sumOf { com.sukashawarma.pos.domain.usecase.RevenueCalculator.grossOf(it) }
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.Lazily, 0.0)
     val criticalStockNames = MutableStateFlow("")
     val lowStockCount = MutableStateFlow(0)
     
@@ -69,7 +87,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     val completedOrders: StateFlow<List<Order>> = orders
         .map { list -> 
-            val today = LocalDate.now(ZoneId.systemDefault())
+            val today = LocalDate.now(ZoneId.of("Asia/Jakarta"))
             list.filter { 
                 (it.status == OrderStatus.COMPLETED || it.status == OrderStatus.READY) && 
                 isToday(it.createdAt, today)
@@ -147,7 +165,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     suspend fun syncOrdersFromServer(outletId: String) {
         if (outletId.isBlank()) return
         try {
-            val res = api.getOrders(mapOf("outlet_id" to "eq.$outletId"))
+            val res = api.getOrders(mapOf("outlet_id" to "eq.$outletId", "order" to "created_at.desc"))
             if (res.isSuccessful && res.body() != null) {
                 val dtos = res.body()!!
                 dtos.forEach { dto -> 
@@ -155,18 +173,28 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     var newEntity = dtoToEntity(dto)
                     if (existing != null) {
                         newEntity = newEntity.copy(isSyncedFromOffline = existing.isSyncedFromOffline)
+                        // Prevent stale HTTP response from overwriting an eager real-time CANCELLED patch
+                        if (existing.status == com.sukashawarma.pos.domain.model.OrderStatus.CANCELLED.name && newEntity.status != com.sukashawarma.pos.domain.model.OrderStatus.CANCELLED.name) {
+                            newEntity = newEntity.copy(
+                                status = com.sukashawarma.pos.domain.model.OrderStatus.CANCELLED.name,
+                                cancellationStatus = "approved"
+                            )
+                        }
+                        // Prevent server null from overwriting a local pending_approval state
+                        val newEntityCancellationStatus = newEntity.cancellationStatus
+                        if (existing.cancellationStatus == "pending_approval" && newEntityCancellationStatus.isNullOrBlank()) {
+                            newEntity = newEntity.copy(
+                                cancellationStatus = "pending_approval",
+                                cancellationUserName = existing.cancellationUserName
+                            )
+                        }
                         orderDao.insertOrder(newEntity) // Always use the updated data from server
                     } else {
                         orderDao.insertOrder(newEntity)
                     }
                 }
 
-                val today = LocalDate.now(ZoneId.systemDefault())
-                val completedToday = dtos.filter { 
-                    (it.status.equals("completed", ignoreCase = true) || it.status.equals("ready", ignoreCase = true)) &&
-                    isToday(parseIsoTimestamp(it.createdAt), today)
-                }
-                totalLunasToday.value = completedToday.sumOf { it.totalAmount }
+                val today = LocalDate.now(ZoneId.of("Asia/Jakarta"))
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -352,7 +380,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             createdAt = entity.createdAt,
             isOffline = entity.syncState != com.sukashawarma.pos.data.local.entity.SyncState.SYNCED.name,
             isSyncedFromOffline = entity.isSyncedFromOffline,
-            channel = entity.channel
+            channel = entity.channel,
+            notes = entity.notes
         )
     }
 
@@ -374,12 +403,18 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 isChild = isChild
             )
         }
+        val mappedStatus = if (dto.cancellationStatus == "approved" || dto.status.equals("cancelled", ignoreCase = true)) {
+            OrderStatus.CANCELLED.name
+        } else {
+            safeParseStatus(dto.status).name
+        }
+
         return LocalOrderEntity(
             id = dto.id,
             outletId = dto.outletId,
             orderNumber = dto.orderNumber,
             customerName = dto.customerName ?: "Pelanggan",
-            status = safeParseStatus(dto.status).name,
+            status = mappedStatus,
             source = safeParseSource(dto.source).name,
             paymentMethod = safeParsePaymentMethod(dto.paymentMethod).name,
             itemsJson = gson.toJson(items),
@@ -392,6 +427,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             customerReceiptPrinted = dto.customerReceiptPrinted ?: false,
             cancellationStatus = dto.cancellationStatus,
             cancellationUserName = dto.cancellationUserName,
+            notes = dto.notes,
             createdAt = parseIsoTimestamp(dto.createdAt),
             syncState = com.sukashawarma.pos.data.local.entity.SyncState.SYNCED.name,
             dirtyFields = "",
@@ -420,6 +456,6 @@ private fun parseIsoTimestamp(iso: String): Long = try {
 }
 
 private fun isToday(timestamp: Long, today: LocalDate): Boolean {
-    val orderDate = Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()).toLocalDate()
+    val orderDate = Instant.ofEpochMilli(timestamp).atZone(ZoneId.of("Asia/Jakarta")).toLocalDate()
     return orderDate == today
 }

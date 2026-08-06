@@ -22,6 +22,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreditCard
@@ -76,7 +77,8 @@ import androidx.compose.material.icons.filled.BluetoothDisabled
 fun POSManualOrderScreen(
     viewModel: POSManualOrderViewModel,
     printerViewModel: BluetoothPrinterViewModel,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onBackClick: () -> Unit = {}
 ) {
     val mode by viewModel.mode.collectAsState()
     val channel by viewModel.channel.collectAsState()
@@ -136,7 +138,8 @@ fun POSManualOrderScreen(
         OrderManualHeader(
             mode = mode, 
             isPrinterConnected = isPrinterConnected,
-            onPrinterClick = { showPrinterDialog = true }
+            onPrinterClick = { showPrinterDialog = true },
+            onBackClick = onBackClick
         )
 
         OrderModeTabRow(mode = mode, onModeSelected = { viewModel.switchMode(it) })
@@ -271,7 +274,8 @@ fun POSManualOrderScreen(
 private fun OrderManualHeader(
     mode: OrderMode,
     isPrinterConnected: Boolean,
-    onPrinterClick: () -> Unit
+    onPrinterClick: () -> Unit,
+    onBackClick: () -> Unit
 ) {
     val (title, subtitle) = when (mode) {
         OrderMode.WALKIN -> "Order Offline — Pesanan Baru" to "Catat pesanan pelanggan secara offline / langsung"
@@ -286,9 +290,25 @@ private fun OrderManualHeader(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column {
-            Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = TwGray900)
-            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = TwGray500)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(
+                onClick = onBackClick,
+                modifier = Modifier
+                    .padding(end = 12.dp)
+                    .background(Color.White, CircleShape)
+                    .border(1.dp, TwGray200, CircleShape)
+                    .size(40.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ArrowBack,
+                    contentDescription = "Kembali ke Dashboard",
+                    tint = TwGray700
+                )
+            }
+            Column {
+                Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = TwGray900)
+                Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = TwGray500)
+            }
         }
         
         IconButton(

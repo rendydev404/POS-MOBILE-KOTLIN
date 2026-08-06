@@ -37,7 +37,7 @@ class OrderOnlineSyncManager(
     fun connect() {
         disconnect()
 
-        val wsUrl = SS_ORDER_URL.replace("https://", "wss://") + "realtime/v1/websocket?apikey=$SS_ORDER_KEY&vsn=1.0.0"
+        val wsUrl = SS_ORDER_URL.replace("https://", "wss://") + "/realtime/v1/websocket?apikey=$SS_ORDER_KEY&vsn=1.0.0"
 
         val request = Request.Builder().url(wsUrl).build()
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
