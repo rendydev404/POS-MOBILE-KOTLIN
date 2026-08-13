@@ -7,8 +7,12 @@ import androidx.lifecycle.viewModelScope
 import com.sukashawarma.pos.POSApplication
 import com.sukashawarma.pos.data.remote.SupabaseClient
 import com.sukashawarma.pos.data.remote.dto.*
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -75,6 +79,11 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
     val pettyCashCategory = MutableStateFlow("outlet")
     val pettyCashDescription = MutableStateFlow("")
     val pettyCashAmount = MutableStateFlow("")
+
+    // Sama seperti web (router.push('/kasir/reports?shift=closed')): sinyal
+    // sekali-pakai supaya layar pindah ke tab Laporan begitu tutup shift sukses.
+    private val _navigateToReports = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    val navigateToReports: SharedFlow<Unit> = _navigateToReports.asSharedFlow()
 
     val isShiftOpen = MutableStateFlow(false)
     val isLoading = MutableStateFlow(false)
@@ -356,6 +365,7 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
                     successMessage.value = "Shift berhasil ditutup."
                     loadRealShiftData()
                     com.sukashawarma.pos.data.remote.GlobalEventBus.pettyCashEvent.tryEmit(Unit)
+                    _navigateToReports.tryEmit(Unit)
                 } else {
                     errorMessage.value = "Gagal menutup shift: ${res.errorBody()?.string()}"
                 }

@@ -96,6 +96,14 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
                 loadRealReportData()
             }
         }
+        viewModelScope.launch {
+            // Tutup shift (dan top-up/pengeluaran petty cash) mengubah kartu
+            // "Laporan Laci Cash" — tanpa ini datanya baru muncul setelah ada
+            // event pesanan lain yang kebetulan lewat.
+            com.sukashawarma.pos.data.remote.GlobalEventBus.pettyCashEvent.collect {
+                loadRealReportData()
+            }
+        }
     }
 
     fun setOutlet(outletId: String) {

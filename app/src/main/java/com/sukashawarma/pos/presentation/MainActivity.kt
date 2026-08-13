@@ -124,6 +124,14 @@ class MainActivity : ComponentActivity() {
                     var currentTab by remember { mutableStateOf(POSTab.DASHBOARD) }
                     val isOnline by NetworkMonitor.isOnline.collectAsState()
 
+                    // Sama seperti web (router.push('/kasir/reports?shift=closed')):
+                    // begitu tutup shift sukses, pindah otomatis ke tab Laporan.
+                    LaunchedEffect(Unit) {
+                        shiftViewModel.navigateToReports.collect {
+                            currentTab = POSTab.REPORTS
+                        }
+                    }
+
                     // "Stok Outlet" bukan layar native — ia melempar ke web stok
                     // (Chrome diprioritaskan) sambil membawa sesi Supabase, jadi
                     // kasir tidak login ulang. Lihat StokOutletLauncher.
