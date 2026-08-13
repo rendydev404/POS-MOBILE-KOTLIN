@@ -380,6 +380,25 @@ data class GlobalSettingDto(
     val value: String?
 )
 
+/**
+ * Row `global_settings` key='app_update' — dipakai AppUpdateManager untuk cek
+ * versi APK terbaru. Distribusi app ini lewat WhatsApp (bukan Play Store),
+ * jadi update dicek & dipasang sendiri dari dalam aplikasi. `value` di kolom
+ * JSONB, jadi Gson bisa langsung memetakannya ke AppUpdateManifest.
+ */
+data class AppUpdateSettingDto(
+    val key: String,
+    val value: AppUpdateManifest?
+)
+
+data class AppUpdateManifest(
+    @SerializedName("version_code") val versionCode: Int,
+    @SerializedName("version_name") val versionName: String,
+    @SerializedName("apk_url") val apkUrl: String,
+    val notes: String? = null,
+    val mandatory: Boolean = false
+)
+
 data class CustomerLayoutDto(
     val paperWidth: Int = 58,
     val showLogo: Boolean = true,

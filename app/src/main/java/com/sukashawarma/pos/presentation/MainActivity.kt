@@ -113,6 +113,15 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                // Distribusi app ini lewat WhatsApp (bukan Play Store) — cek versi
+                // terbaru sendiri tiap kali kasir buka app. Lihat AppUpdateManager.
+                var updateManifest by remember { mutableStateOf<com.sukashawarma.pos.data.remote.dto.AppUpdateManifest?>(null) }
+                LaunchedEffect(activeSession) {
+                    if (activeSession != null) {
+                        updateManifest = com.sukashawarma.pos.data.update.AppUpdateManager.checkForUpdate()
+                    }
+                }
+
                 if (activeSession == null) {
                     // Show Cashier Login & Outlet Selection Screen
                     LoginScreen(
@@ -227,6 +236,30 @@ class MainActivity : ComponentActivity() {
                         OfflineIndicator(
                             isOffline = !isOnline,
                             modifier = Modifier.align(Alignment.TopCenter)
+                        )
+                    }
+
+                    updateManifest?.let { manifest ->
+                        val downloadState by com.sukashawarma.pos.data.update.AppUpdateManager.downloadState.collectAsState()
+                        val downloadProgress by com.sukashawarma.pos.data.update.AppUpdateManager.downloadProgress.collectAsState()
+
+                        com.sukashawarma.pos.presentation.components.AppUpdateDialog(
+                            manifest = manifest,
+                            downloadState = downloadState,
+                            downloadProgress = downloadProgress,
+                            onDismiss = { updateManifest = null },
+                            onStartDownload = {
+                                if (com.sukashawarma.pos.data.update.AppUpdateManager.canRequestInstall(context)) {
+                                    com.sukashawarma.pos.data.update.AppUpdateManager.startDownload(context, manifest)
+                                } else {
+                                    context.startActivity(
+                                        com.sukashawarma.pos.data.update.AppUpdateManager.installIntentSettings(context)
+                                    )
+                                }
+                            },
+                            onInstall = {
+                                com.sukashawarma.pos.data.update.AppUpdateManager.installDownloadedApk(context)
+                            }
                         )
                     }
                 }

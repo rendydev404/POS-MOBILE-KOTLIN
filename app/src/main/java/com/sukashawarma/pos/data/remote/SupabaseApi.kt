@@ -86,6 +86,14 @@ interface SupabaseApi {
         @Query("select") select: String = "key,value"
     ): Response<List<GlobalSettingDto>>
 
+    // Manifest versi APK terbaru — distribusi app ini lewat WhatsApp (bukan Play
+    // Store), jadi update dicek & dipasang sendiri dari dalam app. Lihat AppUpdateManager.
+    @GET("rest/v1/global_settings")
+    suspend fun getAppUpdateInfo(
+        @Query("key") keyFilter: String = "eq.app_update",
+        @Query("select") select: String = "key,value"
+    ): Response<List<AppUpdateSettingDto>>
+
     // Upsert one kiosk_settings row (bestseller/upsell/recommendation/unavailable/etc. list for
     // one outlet+key). Contract only in sub-project A — B is the first caller.
     @Headers("Prefer: resolution=merge-duplicates")
