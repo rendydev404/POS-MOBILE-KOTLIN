@@ -158,11 +158,10 @@ fun MenuManagementScreen(
                 }
             } else if (filteredItems.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(48.dp), tint = SlateBorder)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("Menu tidak ditemukan", color = TextSecondary, fontWeight = FontWeight.SemiBold)
-                    }
+                    com.sukashawarma.pos.presentation.components.EmptyState(
+                        title = "Menu tidak ditemukan",
+                        icon = Icons.Default.Search
+                    )
                 }
             } else {
                 LazyColumn(

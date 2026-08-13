@@ -11,6 +11,11 @@ import com.sukashawarma.pos.data.remote.SupabaseClient
 import com.sukashawarma.pos.data.remote.dto.OrderDto
 import com.sukashawarma.pos.data.remote.dto.PrintLayoutDto
 import com.sukashawarma.pos.data.remote.realtime.OrderRealtimeManager
+import com.sukashawarma.pos.data.remote.realtime.StockRealtimeManager
+import com.sukashawarma.pos.domain.model.StockAlert
+import com.sukashawarma.pos.domain.model.StockAlertStatus
+import com.sukashawarma.pos.domain.model.toStockAlerts
+import kotlinx.coroutines.Job
 import com.sukashawarma.pos.data.sync.OrderSyncEngine
 import com.sukashawarma.pos.data.remote.NetworkMonitor
 import com.sukashawarma.pos.domain.model.*
@@ -59,8 +64,21 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
         .stateIn(viewModelScope, SharingStarted.Lazily, 0.0)
-    val criticalStockNames = MutableStateFlow("")
-    val lowStockCount = MutableStateFlow(0)
+    /** Bahan menipis + kritis di outlet ini, apa adanya dari `monitoring_view_crew`. */
+    val stockAlerts = MutableStateFlow<List<StockAlert>>(emptyList())
+
+    /** Hanya yang berstatus `below` — inilah isi marquee merah, sama seperti web. */
+    val criticalStockAlerts: StateFlow<List<StockAlert>> = stockAlerts
+        .map { list -> list.filter { it.status == StockAlertStatus.BELOW } }
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    /** Badge di menu "Stok Outlet": jumlah bahan kritis, bukan jumlah menu habis. */
+    val lowStockCount: StateFlow<Int> = criticalStockAlerts
+        .map { it.size }
+        .stateIn(viewModelScope, SharingStarted.Lazily, 0)
+
+    private var stockAlertJob: Job? = null
+    private var stockRealtime: StockRealtimeManager? = null
     
     val printLayout = MutableStateFlow<PrintLayoutDto?>(null)
 
@@ -135,13 +153,20 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         currentOutletId.value = outletId
         currentOutletName.value = outletName
         currentCashierName.value = cashierName
-        fetchRealCriticalStockFromSupabase()
+        restartStockAlerts(outletId)
         fetchPrintLayout()
         viewModelScope.launch {
             trySyncPendingOrders(outletId)
             syncOrdersFromServer(outletId)
         }
-        com.sukashawarma.pos.data.remote.realtime.POSRealtimeService.start(getApplication(), outletId)
+        // Logout memanggil ini dengan outlet kosong. Dulu `start("")` diabaikan
+        // diam-diam oleh service, sehingga channel outlet LAMA tetap hidup dan
+        // HP terus berbunyi untuk pesanan outlet itu setelah kasir keluar.
+        if (outletId.isBlank()) {
+            com.sukashawarma.pos.data.remote.realtime.POSRealtimeService.stop(getApplication())
+        } else {
+            com.sukashawarma.pos.data.remote.realtime.POSRealtimeService.start(getApplication(), outletId)
+        }
     }
 
     /** Fase 3: drains any orders saved locally while offline, then refreshes from the server. */
@@ -159,7 +184,20 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         super.onCleared()
         // Service handles background connection independently now,
         // no need to disconnect when ViewModel clears.
+        // Channel stok tidak punya service latar seperti pesanan, jadi harus
+        // ditutup sendiri supaya socket-nya tidak menggantung.
+        stockRealtime?.disconnect()
+        stockRealtime = null
     }
+
+    /**
+     * True bila nilai `cancellation_status` berarti "tidak ada pembatalan".
+     *
+     * Server memakai tiga ejaan untuk hal yang sama: NULL (baris lama), string
+     * kosong, dan 'none' (default kolom sekarang).
+     */
+    private fun isNoCancellation(value: String?): Boolean =
+        value.isNullOrBlank() || value.equals("none", ignoreCase = true)
 
     /** Pulls this outlet's orders (with line items) from Supabase and mirrors them into Room. */
     suspend fun syncOrdersFromServer(outletId: String) {
@@ -168,8 +206,15 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             val res = api.getOrders(mapOf("outlet_id" to "eq.$outletId", "order" to "created_at.desc"))
             if (res.isSuccessful && res.body() != null) {
                 val dtos = res.body()!!
-                dtos.forEach { dto -> 
-                    val existing = orderDao.getOrderById(dto.id)
+                // Dikumpulkan dulu, lalu ditulis sekali. Versi lama menyisipkan tiap
+                // pesanan satu per satu pada SETIAP sync (tiap 15 detik dan tiap event
+                // realtime), termasuk pesanan yang isinya sama persis — setiap
+                // penyisipan memicu Room mengirim sinyal dan seluruh daftar pesanan,
+                // laporan, serta laci kasir dikomposisi ulang tanpa ada yang berubah.
+                val toWrite = mutableListOf<LocalOrderEntity>()
+                val existingById = orderDao.getAllOrdersByOutlet(outletId).associateBy { it.id }
+                dtos.forEach { dto ->
+                    val existing = existingById[dto.id]
                     var newEntity = dtoToEntity(dto)
                     if (existing != null) {
                         newEntity = newEntity.copy(isSyncedFromOffline = existing.isSyncedFromOffline)
@@ -180,42 +225,90 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                                 cancellationStatus = "approved"
                             )
                         }
-                        // Prevent server null from overwriting a local pending_approval state
-                        val newEntityCancellationStatus = newEntity.cancellationStatus
-                        if (existing.cancellationStatus == "pending_approval" && newEntityCancellationStatus.isNullOrBlank()) {
+                        // Jangan biarkan "belum ada pembatalan" dari server menimpa
+                        // status pending_approval yang baru ditulis lokal.
+                        //
+                        // Kolom `orders.cancellation_status` default-nya string 'none',
+                        // BUKAN NULL. Penjaga lama cuma memeriksa null/kosong, jadi
+                        // 'none' lolos dan menimpa status lokal — kartu "Menunggu
+                        // Persetujuan" balik jadi tombol Batal/Selesai dalam hitungan
+                        // detik, karena sync ini berjalan tiap 15 detik.
+                        // Perlindungan ini berbatas waktu. Tanpa batas, keputusan
+                        // TOLAK dari AM (server mengembalikan nilai ke 'none')
+                        // tidak pernah bisa mendarat dan kartu terus berputar.
+                        if (existing.cancellationStatus == "pending_approval" &&
+                            isNoCancellation(newEntity.cancellationStatus) &&
+                            com.sukashawarma.pos.data.sync.PendingCancellationGuard.isProtected(dto.id)
+                        ) {
                             newEntity = newEntity.copy(
                                 cancellationStatus = "pending_approval",
                                 cancellationUserName = existing.cancellationUserName
                             )
                         }
-                        orderDao.insertOrder(newEntity) // Always use the updated data from server
-                    } else {
-                        orderDao.insertOrder(newEntity)
                     }
+                    // Baris yang isinya identik tidak perlu ditulis ulang.
+                    if (newEntity != existing) toWrite += newEntity
                 }
 
-                val today = LocalDate.now(ZoneId.of("Asia/Jakarta"))
+                if (toWrite.isNotEmpty()) orderDao.insertOrders(toWrite)
             }
         } catch (e: Exception) {
             e.printStackTrace()
         }
     }
 
-    fun fetchRealCriticalStockFromSupabase() {
+    /**
+     * Ambil ulang daftar bahan menipis/kritis dari `monitoring_view_crew`.
+     *
+     * Versi sebelumnya membaca `menu_items.is_available` — menu yang dimatikan
+     * kasir, bukan stok bahan baku — sehingga banner "STOK KRITIS/HABIS" tidak
+     * pernah sinkron dengan papan stok dan umumnya tampil kosong.
+     */
+    fun refreshStockAlerts() {
+        val outletId = currentOutletId.value
+        if (outletId.isBlank()) return
         viewModelScope.launch {
             try {
-                val menuRes = api.getMenuItems()
-                if (menuRes.isSuccessful && menuRes.body() != null) {
-                    val soldOutItems = menuRes.body()!!.filter { it.isAvailable == false }
-                    lowStockCount.value = soldOutItems.size
-                    criticalStockNames.value = if (soldOutItems.isNotEmpty()) {
-                        soldOutItems.joinToString(" • ") { it.name.uppercase() }
-                    } else {
-                        ""
-                    }
+                val res = api.getStockAlerts("eq.$outletId")
+                if (res.isSuccessful) {
+                    stockAlerts.value = (res.body() ?: emptyList()).toStockAlerts()
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+            }
+        }
+    }
+
+    /**
+     * Pasang ulang pemantauan stok untuk satu outlet: channel realtime plus
+     * polling 30 detik sebagai jaring pengaman — realtime bisa putus tanpa
+     * suara, dan web pun tetap memasang `refetchInterval` di samping channel.
+     *
+     * Outlet kosong (setelah logout) menghentikan keduanya dan mengosongkan
+     * daftar, supaya nama bahan outlet lama tidak tertinggal di layar.
+     */
+    private fun restartStockAlerts(outletId: String) {
+        stockAlertJob?.cancel()
+
+        if (stockRealtime == null) {
+            stockRealtime = StockRealtimeManager(SupabaseClient.okHttpClient, viewModelScope).apply {
+                onStockChanged = {
+                    refreshStockAlerts()
+                    com.sukashawarma.pos.data.remote.GlobalEventBus.stockEvent.tryEmit(Unit)
+                }
+            }
+        }
+        stockRealtime?.connect(outletId)
+
+        if (outletId.isBlank()) {
+            stockAlerts.value = emptyList()
+            return
+        }
+
+        stockAlertJob = viewModelScope.launch {
+            while (isActive) {
+                refreshStockAlerts()
+                delay(30_000)
             }
         }
     }
@@ -241,11 +334,23 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             orderDao.updateOrderStatus(order.id, newStatus.name)
             try {
-                api.updateOrderStatus(
+                val res = api.updateOrderStatus(
                     orderIdFilter = "eq.${order.id}",
                     patch = mapOf("status" to newStatus.name.lowercase())
                 )
+                // Emit HANYA setelah server benar-benar menerima perubahan.
+                //
+                // Sebelumnya event ini dikirim sebelum PATCH berangkat. Kolektornya
+                // langsung menjalankan syncOrdersFromServer, yang menarik status
+                // LAMA dari server dan menimpa tulisan lokal barusan — kartu balik
+                // ke "Diproses" dan tombol Selesai baru berhasil di klik kedua.
+                if (res.isSuccessful) {
+                    com.sukashawarma.pos.data.remote.GlobalEventBus.orderSyncEvent.tryEmit(Unit)
+                    com.sukashawarma.pos.data.remote.GlobalEventBus.targetRefreshEvent.tryEmit(Unit)
+                }
             } catch (e: Exception) {
+                // Offline: status lokal sudah tersimpan dan layar lain membaca Room
+                // secara reaktif, jadi tidak ada yang perlu dipicu di sini.
                 e.printStackTrace()
             }
         }
@@ -319,16 +424,31 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     fun requestCancellation(order: Order, reason: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
         viewModelScope.launch {
             val staffName = currentCashierName.value
+            val previousCancellationStatus = order.cancellationStatus
             orderDao.updateCancellationStatus(order.id, "pending_approval", staffName)
+            com.sukashawarma.pos.data.sync.PendingCancellationGuard.mark(order.id)
             try {
-                api.updateOrderStatus(
+                // Hanya dua kolom ini yang ADA di tabel `orders` — sama persis dengan
+                // web (KasirOrderClient.tsx). Dulu di sini ikut dikirim
+                // `cancellation_user_name`, kolom yang tidak pernah ada, sehingga
+                // PostgREST menolak SELURUH patch dan status "menunggu persetujuan"
+                // tidak pernah tersimpan di server. Nama pemohon memang tidak
+                // disimpan di `orders`; jejaknya ada di `cancellation_requests`.
+                val patchRes = api.updateOrderStatus(
                     orderIdFilter = "eq.${order.id}",
                     patch = mapOf(
                         "cancellation_status" to "pending_approval",
-                        "cancellation_reason" to reason,
-                        "cancellation_user_name" to staffName
+                        "cancellation_reason" to reason
                     )
                 )
+                // Response<Void> tidak melempar exception untuk 4xx. Tanpa cek ini,
+                // kegagalan tadi lolos tanpa suara dan kasir mengira sudah terkirim.
+                if (!patchRes.isSuccessful) {
+                    com.sukashawarma.pos.data.sync.PendingCancellationGuard.clear(order.id)
+                    orderDao.updateCancellationStatus(order.id, previousCancellationStatus, null)
+                    onError("Gagal menandai pesanan (${patchRes.code()}). Coba lagi.")
+                    return@launch
+                }
 
                 // Generate expiresAt +24 hours
                 val expiresAt = java.time.Instant.now().plus(24, java.time.temporal.ChronoUnit.HOURS).toString()
@@ -359,12 +479,18 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         val itemType = object : TypeToken<List<OrderItem>>() {}.type
         val items: List<OrderItem> = gson.fromJson(entity.itemsJson, itemType) ?: emptyList()
 
+        val parsedStatus = try {
+            OrderStatus.valueOf(entity.status)
+        } catch (e: Exception) {
+            OrderStatus.PENDING
+        }
+
         return Order(
             id = entity.id,
             outletId = entity.outletId,
             orderNumber = entity.orderNumber,
             customerName = entity.customerName,
-            status = OrderStatus.valueOf(entity.status),
+            status = parsedStatus,
             source = OrderSource.valueOf(entity.source),
             paymentMethod = PaymentMethod.valueOf(entity.paymentMethod),
             items = items,
@@ -387,16 +513,17 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     private fun dtoToEntity(dto: OrderDto): LocalOrderEntity {
         val items = (dto.orderItems ?: emptyList()).map { item ->
-            val nameUpper = item.menuItemName.uppercase()
+            val safeName = item.resolvedName
+            val nameUpper = safeName.uppercase()
             val isChild = nameUpper.startsWith("EXTRA ") || nameUpper.startsWith("? EXTRA") || nameUpper.startsWith(" EXTRA")
             
             val finalId = item.id ?: java.util.UUID.randomUUID().toString()
-            android.util.Log.d("OrderSyncDebug", "dtoToEntity item: name=${item.menuItemName}, original_id=${item.id}, final_id=$finalId")
+            android.util.Log.d("OrderSyncDebug", "dtoToEntity item: name=${safeName}, original_id=${item.id}, final_id=$finalId")
             
             OrderItem(
                 id = finalId,
-                menuItemId = item.menuItemId,
-                name = item.menuItemName,
+                menuItemId = item.menuItemId ?: "",
+                name = safeName,
                 quantity = item.quantity,
                 unitPrice = item.unitPrice,
                 subtotal = item.subtotal,

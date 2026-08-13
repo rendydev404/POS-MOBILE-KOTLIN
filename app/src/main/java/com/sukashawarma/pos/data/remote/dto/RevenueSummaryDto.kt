@@ -5,8 +5,9 @@ import com.google.gson.annotations.SerializedName
 /**
  * Payload untuk RPC `pos_revenue_summary_guarded`.
  *
- * [start] dan [end] adalah ISO-8601 ber-offset Jakarta (`...+07:00`). Keduanya
- * boleh null untuk rentang "Semua Waktu". [channels] null berarti semua kanal.
+ * [start] dan [end] adalah instant UTC (`...Z`) dari batas hari Asia/Jakarta —
+ * lihat `JakartaTime.startOfDayIso`. Keduanya boleh null untuk rentang "Semua
+ * Waktu". [channels] null berarti semua kanal.
  */
 data class RevenueSummaryPayload(
     @SerializedName("p_outlet_id") val outletId: String,

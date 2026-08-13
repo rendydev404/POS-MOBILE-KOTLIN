@@ -88,19 +88,17 @@ object ReportDateRangeResolver {
         }
     }
 
-    /** Rentang inklusif dari awal hari [from] sampai akhir hari [to], zona Jakarta. */
+    /**
+     * Rentang inklusif dari awal hari [from] sampai akhir hari [to], zona Jakarta.
+     *
+     * Batas ISO dan batas milidetik diturunkan dari titik waktu yang sama, jadi
+     * jalur server dan jalur Room mustahil berbeda. Bentuk ISO-nya UTC (`...Z`) —
+     * lihat [JakartaTime.startOfDayIso] untuk alasannya.
+     */
     private fun bounded(from: LocalDate, to: LocalDate) = ResolvedDateRange(
         startIso = JakartaTime.startOfDayIso(from),
-        endIso = endOfDayIso(to),
+        endIso = JakartaTime.endOfDayIso(to),
         startMillis = JakartaTime.startOfDayMillis(from),
         endMillis = JakartaTime.endOfDayMillis(to)
     )
-
-    /**
-     * Batas atas sampai milidetik terakhir. `JakartaTime.endOfDayIso` berhenti di
-     * detik penuh, jadi pesanan pada 23:59:59.500 lolos filter Room tapi tersaring
-     * oleh server — angka yang sama jadi berbeda antara mode online dan offline.
-     */
-    private fun endOfDayIso(day: LocalDate): String =
-        "${JakartaTime.dateString(day)}T23:59:59.999+07:00"
 }

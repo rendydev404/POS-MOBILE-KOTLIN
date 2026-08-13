@@ -32,6 +32,16 @@
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.screen.landscape" android:required="true" />
 
+    <!-- Android 11+ menyembunyikan paket lain: tanpa ini Chrome tidak terlihat
+         dan menu "Stok Outlet" selalu jatuh ke browser default. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
+
     <application
         android:name=".POSApplication"
         android:allowBackup="true"

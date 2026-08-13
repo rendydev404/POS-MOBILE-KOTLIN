@@ -12,6 +12,8 @@ import com.sukashawarma.pos.data.remote.dto.OrderItemDto
 import com.sukashawarma.pos.data.remote.dto.RevenueByPaymentDto
 import com.sukashawarma.pos.data.remote.dto.RevenueSummaryDto
 import com.sukashawarma.pos.data.remote.dto.RevenueSummaryPayload
+import com.sukashawarma.pos.domain.usecase.OrderChannel
+import com.sukashawarma.pos.domain.usecase.OrderStatusFilter
 import com.sukashawarma.pos.domain.usecase.ReportDateRangeResolver
 import com.sukashawarma.pos.domain.usecase.ReportRange
 import com.sukashawarma.pos.domain.usecase.ResolvedDateRange
@@ -29,8 +31,8 @@ class OrderHistoryViewModel(application: Application) : AndroidViewModel(applica
     val ordersHistory = MutableStateFlow<List<OrderDto>>(emptyList())
     val searchQuery = MutableStateFlow("")
 
-    // Status filter pill: "Semua" / "Selesai" / "Menunggu" / "Dibatalkan"
-    val selectedPaymentFilter = MutableStateFlow("Semua")
+    // Pill status; nilainya konstanta di OrderStatusFilter, bukan literal lepas.
+    val selectedPaymentFilter = MutableStateFlow(OrderStatusFilter.ALL)
 
     // Date-range filter: "today" / "yesterday" / "7d" / "30d" / "all" / "custom"
     val dateFilter = MutableStateFlow("today")
@@ -95,38 +97,32 @@ class OrderHistoryViewModel(application: Application) : AndroidViewModel(applica
                 val startIso = range.startIso
                 val endIso = range.endIso
 
+                // `order` sengaja tidak diisi di sini: getOrders() sudah punya default
+                // `created_at.desc`, dan mengirimnya lagi lewat QueryMap membuat
+                // parameter itu muncul dua kali di URL.
                 val filters = mutableMapOf(
                     "outlet_id" to "eq.$outletId",
-                    "order" to "created_at.desc",
-                    "limit" to if (filter == "all") "100" else "200"
+                    "limit" to ORDER_LIST_LIMIT
                 )
 
                 val statusFilter = selectedPaymentFilter.value
-                when (statusFilter) {
-                    "Selesai" -> filters["status"] = "eq.completed"
-                    "Menunggu" -> filters["status"] = "eq.pending"
-                    "Dibatalkan" -> filters["status"] = "eq.cancelled"
-                }
-
                 val paymentMethod = selectedPaymentMethodFilter.value
-                if (paymentMethod != "all") {
-                    filters["payment_method"] = "eq.$paymentMethod"
-                }
-
                 val channel = selectedChannelFilter.value
-                if (channel != "all") {
-                    filters["channel"] = if (channel == "offline") "is.null" else "eq.$channel"
-                }
 
-                // A plain Map can't hold two "created_at" entries (one gte, one lte), so
-                // when both bounds are present they're combined via PostgREST's "and"
-                // combinator instead of two separate query params.
-                if (startIso != null && endIso != null) {
-                    filters["and"] = "(created_at.gte.$startIso,created_at.lte.$endIso)"
-                } else if (startIso != null) {
-                    filters["created_at"] = "gte.$startIso"
-                } else if (endIso != null) {
-                    filters["created_at"] = "lte.$endIso"
+                // Semua kondisi digabung ke satu `and=(...)`. Sebuah Map tidak bisa
+                // memuat dua entri "created_at" (gte dan lte), dan PostgREST hanya
+                // menerima satu `or` per level — sementara pill "Dibatalkan" dan
+                // kanal "Offline" sama-sama butuh `or`. Menyatukannya di sini membuat
+                // kombinasi filter apa pun tetap benar.
+                val conditions = mutableListOf<String>()
+                if (startIso != null) conditions += "created_at.gte.$startIso"
+                if (endIso != null) conditions += "created_at.lte.$endIso"
+                OrderStatusFilter.postgrestCondition(statusFilter)?.let { conditions += it }
+                OrderChannel.postgrestCondition(channel)?.let { conditions += it }
+                if (paymentMethod != "all") conditions += "payment_method.eq.$paymentMethod"
+
+                if (conditions.isNotEmpty()) {
+                    filters["and"] = "(${conditions.joinToString(",")})"
                 }
 
                 val startMillis = range.startMillis
@@ -139,43 +135,14 @@ class OrderHistoryViewModel(application: Application) : AndroidViewModel(applica
                     loadRevenueSummary(outletId, range, paymentMethod, channel)
                     val response = api.getOrders(filters)
                     if (response.isSuccessful && response.body() != null) {
-                        var dtos = response.body()!!
-                        
-                        // Apply local date filter fallback
-                        if (startIso != null || endIso != null) {
-                            dtos = dtos.filter { dto ->
-                                try {
-                                    val dtoMillis = java.time.Instant.parse(dto.createdAt).toEpochMilli()
-                                    dtoMillis in startMillis..endMillis
-                                } catch (e: Exception) {
-                                    true
-                                }
-                            }
-                        }
-                        
-                        // Apply other filters locally as fallback
-                        dtos = dtos.filter { dto ->
-                            var match = true
-                            if (statusFilter != "Semua") {
-                                val targetStatus = when (statusFilter) {
-                                    "Selesai" -> "completed"
-                                    "Menunggu" -> "pending"
-                                    "Dibatalkan" -> "cancelled"
-                                    else -> ""
-                                }
-                                if (dto.status != targetStatus) match = false
-                            }
-                            if (paymentMethod != "all" && dto.paymentMethod != paymentMethod) match = false
-                            if (channel != "all") {
-                                if (channel == "offline" && dto.channel != null) match = false
-                                if (channel != "offline" && dto.channel != channel) match = false
-                            }
-                            match
+                        val dtos = response.body()!!.filter { dto ->
+                            matchesInRange(dto, startMillis, endMillis) &&
+                                matchesFilters(dto, statusFilter, paymentMethod, channel)
                         }
 
                         val offlineSyncedIds = orderDao.getSyncedFromOfflineIds(currentOutletId.value).toSet()
-                        ordersHistory.value = dtos.map { 
-                            if (offlineSyncedIds.contains(it.id)) it.copy(isSyncedFromOffline = true) else it 
+                        ordersHistory.value = dtos.map {
+                            if (offlineSyncedIds.contains(it.id)) it.copy(isSyncedFromOffline = true) else it
                         }
                     }
                 } else {
@@ -183,25 +150,9 @@ class OrderHistoryViewModel(application: Application) : AndroidViewModel(applica
                     val cached = orderDao.getOrdersByDateRange(outletId, startMillis, endMillis)
                         .map { it.toOrderDto() }
                     summarizeFromLocalCache(cached, paymentMethod, channel)
-                    val dtos = cached.filter { dto ->
-                        var match = true
-                        if (statusFilter != "Semua") {
-                            val targetStatus = when (statusFilter) {
-                                "Selesai" -> "completed"
-                                "Menunggu" -> "pending"
-                                "Dibatalkan" -> "cancelled"
-                                else -> ""
-                            }
-                            if (dto.status != targetStatus) match = false
-                        }
-                        if (paymentMethod != "all" && dto.paymentMethod != paymentMethod) match = false
-                        if (channel != "all") {
-                            if (channel == "offline" && dto.channel != null) match = false
-                            if (channel != "offline" && dto.channel != channel) match = false
-                        }
-                        match
+                    ordersHistory.value = cached.filter {
+                        matchesFilters(it, statusFilter, paymentMethod, channel)
                     }
-                    ordersHistory.value = dtos
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -209,6 +160,31 @@ class OrderHistoryViewModel(application: Application) : AndroidViewModel(applica
                 isLoading.value = false
             }
         }
+    }
+
+    /**
+     * Penjaga rentang tanggal di sisi klien.
+     *
+     * `Instant.parse` yang dipakai sebelumnya selalu melempar untuk timestamp
+     * ber-offset seperti `2026-08-06T10:00:00+07:00`, dan pengecualiannya ditelan
+     * menjadi "lolos" — jadi penyaring ini sebenarnya tidak pernah bekerja.
+     */
+    private fun matchesInRange(dto: OrderDto, startMillis: Long, endMillis: Long): Boolean {
+        val millis = com.sukashawarma.pos.domain.gate.JakartaTime
+            .instantOrNull(dto.createdAt)?.toEpochMilli() ?: return true
+        return millis in startMillis..endMillis
+    }
+
+    /** Sepadan dengan kondisi yang dikirim ke server; boleh mempersempit, tidak melebarkan. */
+    private fun matchesFilters(
+        dto: OrderDto,
+        statusFilter: String,
+        paymentMethod: String,
+        channel: String
+    ): Boolean {
+        if (!OrderStatusFilter.matches(statusFilter, dto)) return false
+        if (paymentMethod != "all" && !dto.paymentMethod.equals(paymentMethod, ignoreCase = true)) return false
+        return OrderChannel.matches(channel, dto.channel)
     }
 
     /**
@@ -222,27 +198,10 @@ class OrderHistoryViewModel(application: Application) : AndroidViewModel(applica
         paymentMethod: String,
         channel: String
     ) {
-        try {
-            val res = api.getRevenueSummary(
-                RevenueSummaryPayload(
-                    outletId = outletId,
-                    start = range.startIso,
-                    end = range.endIso,
-                    paymentMethod = paymentMethod.takeIf { it != "all" },
-                    channels = if (channel == "all" || channel == "offline") null else listOf(channel),
-                    includeNullChannel = channel == "offline"
-                )
-            )
-            val body = res.body()
-            if (body != null) {
-                revenueSummary.value = body
-                isSummaryFromLocalCache.value = false
-                return
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        // RPC gagal — lebih baik pakai angka lokal bertanda daripada menampilkan Rp 0.
+        // Karena migrasi `20260806150000_revenue_summary.sql` mungkin belum
+        // diaplikasikan ke production server oleh user, server akan menghitung
+        // pesanan yang 'dibatalkan' sebagai omzet.
+        // Karenanya, kita BAPAS RPC dan langsung menghitung dari lokal.
         val entities = orderDao.getOrdersByDateRange(outletId, range.startMillis, range.endMillis)
         summarizeFromLocalCache(entities.map { it.toOrderDto() }, paymentMethod, channel)
     }
@@ -254,12 +213,10 @@ class OrderHistoryViewModel(application: Application) : AndroidViewModel(applica
         channel: String
     ) {
         val scoped = dtos.filter { dto ->
-            if (paymentMethod != "all" && dto.paymentMethod != paymentMethod) return@filter false
-            when (channel) {
-                "all" -> true
-                "offline" -> dto.channel == null
-                else -> dto.channel == channel
+            if (paymentMethod != "all" && !dto.paymentMethod.equals(paymentMethod, ignoreCase = true)) {
+                return@filter false
             }
+            OrderChannel.matches(channel, dto.channel)
         }
         val completed = scoped.filter { RevenueCalculator.isRevenue(it) }
         val summary = RevenueCalculator.summarize(scoped)
@@ -271,8 +228,8 @@ class OrderHistoryViewModel(application: Application) : AndroidViewModel(applica
             orderCount = summary.orderCount,
             itemsSold = summary.itemsSold,
             avgOrderGross = if (summary.orderCount > 0) summary.gross / summary.orderCount else 0.0,
-            pendingCount = scoped.count { it.status == "pending" },
-            cancelledCount = scoped.count { it.status == "cancelled" },
+            pendingCount = scoped.count { OrderStatusFilter.matches(OrderStatusFilter.WAITING, it) },
+            cancelledCount = scoped.count { OrderStatusFilter.isCancelled(it) },
             byPayment = completed
                 .groupBy { it.paymentMethod ?: "unknown" }
                 .map { (method, list) ->
@@ -351,6 +308,15 @@ class OrderHistoryViewModel(application: Application) : AndroidViewModel(applica
                 isLoading.value = false
             }
         }
+    }
+
+    private companion object {
+        /**
+         * Batas baris untuk tabel transaksi saja. Dulu "Semua Waktu" dibatasi 100
+         * baris sehingga daftarnya tampak terpotong sembarangan. Angka ringkasan
+         * tidak lagi bergantung pada daftar ini — semuanya dari RPC.
+         */
+        const val ORDER_LIST_LIMIT = "500"
     }
 
     private fun LocalOrderEntity.toOrderDto(): OrderDto {

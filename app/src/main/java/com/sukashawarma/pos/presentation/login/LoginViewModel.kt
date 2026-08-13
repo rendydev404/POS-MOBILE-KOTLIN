@@ -111,7 +111,7 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
         val pass = passwordInput.value
 
         if (user.isBlank() || pass.isBlank()) {
-            errorMessage.value = "Username dan Password harus diisi"
+            errorMessage.value = "Mohon lengkapi Email dan Password Anda."
             return
         }
 
@@ -124,7 +124,14 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val authRes = authApi.signInWithPassword(payload = SignInPayload(email, pass))
                 if (!authRes.isSuccessful || authRes.body() == null) {
-                    errorMessage.value = "Login gagal: Kredensial tidak valid"
+                    val errorBody = authRes.errorBody()?.string() ?: ""
+                    if (errorBody.contains("Invalid login credentials", ignoreCase = true)) {
+                        errorMessage.value = "Email atau Password yang Anda masukkan salah. Coba periksa kembali."
+                    } else if (errorBody.contains("Email not confirmed", ignoreCase = true)) {
+                        errorMessage.value = "Email Anda belum dikonfirmasi. Silakan periksa inbox email Anda."
+                    } else {
+                        errorMessage.value = "Login gagal. Silakan periksa kembali data Anda."
+                    }
                     return@launch
                 }
                 
@@ -137,7 +144,7 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
                 val staffRes = api.getStaffById("eq.${token.user.id}")
                 val staff = staffRes.body()?.firstOrNull()
                 if (staff == null || staff.isActive == false || staff.outletId.isNullOrBlank()) {
-                    errorMessage.value = "Akun staff tidak aktif atau tidak terkait ke outlet manapun"
+                    errorMessage.value = "Akun Anda saat ini tidak aktif atau belum terdaftar di outlet. Hubungi Manajer Anda."
                     return@launch
                 }
 
@@ -157,9 +164,9 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
                 activeSession.value = session
 
             } catch (e: HttpException) {
-                errorMessage.value = "Network error: ${e.message()}"
+                errorMessage.value = "Koneksi internet terputus atau server tidak merespons. Periksa koneksi Anda."
             } catch (e: Exception) {
-                errorMessage.value = "Terjadi kesalahan: ${e.message}"
+                errorMessage.value = "Terjadi masalah sistem. Silakan coba beberapa saat lagi."
             } finally {
                 isLoading.value = false
             }

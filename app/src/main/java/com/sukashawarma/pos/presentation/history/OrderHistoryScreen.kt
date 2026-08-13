@@ -37,6 +37,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.sukashawarma.pos.data.remote.dto.OrderDto
 import com.sukashawarma.pos.data.remote.dto.OrderItemDto
+import com.sukashawarma.pos.domain.usecase.OrderStatusFilter
 import com.sukashawarma.pos.presentation.reports.FilterDropdown
 import com.sukashawarma.pos.presentation.theme.*
 import kotlinx.coroutines.delay
@@ -79,12 +80,13 @@ fun OrderHistoryScreen(
         }
     }
 
-    // Auto-refresh every 15s, only while viewing today's histori — mirrors web's
-    // refetchInterval: dateFilter === 'today' ? 15000 : false.
+    // Histori sudah realtime lewat GlobalEventBus.orderSyncEvent (OrderHistoryViewModel init) —
+    // loop ini cuma jaring pengaman kalau event realtime sempat terlewat, sama seperti
+    // pola 30 detik yang dipakai DashboardViewModel.restartStockAlerts untuk stok.
     LaunchedEffect(selectedTab, dateFilter) {
         if (selectedTab == 0 && dateFilter == "today") {
             while (true) {
-                delay(15000)
+                delay(30000)
                 viewModel.fetchOrderHistory()
             }
         }
@@ -116,11 +118,21 @@ fun OrderHistoryScreen(
                         color = TextDarkPrimary
                     )
                     if (selectedTab == 0 && dateFilter == "today") {
-                        Text(
-                            text = "Suka Shawarma - Auto-refresh setiap 15 detik",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = TextDarkSecondary
-                        )
+                        val isRealtimeConnected by com.sukashawarma.pos.data.remote.GlobalEventBus.isRealtimeConnected.collectAsState()
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(7.dp)
+                                    .clip(RoundedCornerShape(50))
+                                    .background(if (isRealtimeConnected) Color(0xFF10B981) else Color(0xFFCBD5E1))
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (isRealtimeConnected) "Suka Shawarma - Update realtime aktif" else "Suka Shawarma - Menyambungkan realtime...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = TextDarkSecondary
+                            )
+                        }
                     } else {
                         Text(
                             text = "Suka Shawarma",
@@ -240,33 +252,38 @@ fun channelColor(id: String?): Color {
 }
 
 private val dateFilterOptions = listOf(
-    "today" to "Hari Ini",
-    "yesterday" to "Kemarin",
-    "7d" to "7 Hari Terakhir",
-    "30d" to "30 Hari Terakhir",
-    "all" to "Semua Waktu",
-    "custom" to "Custom Tanggal"
+    "Hari Ini" to "today",
+    "Kemarin" to "yesterday",
+    "7 Hari Terakhir" to "7d",
+    "30 Hari Terakhir" to "30d",
+    "Semua Waktu" to "all",
+    "Custom Tanggal" to "custom"
 )
 
 private val paymentMethodOptions = listOf(
-    "all" to "Semua Pembayaran",
-    "cash" to "Tunai (Cash)",
-    "qris" to "QRIS",
-    "card" to "Kartu (Card)"
+    "Semua Pembayaran" to "all",
+    "Tunai (Cash)" to "cash",
+    "QRIS" to "qris",
+    "Kartu (Card)" to "card"
 )
 
+// Nilai kunci di sini harus dikenali OrderChannel — di situlah pemetaannya ke isi
+// kolom `orders.channel` yang sebenarnya. "Semua Food Apps" perlu ada karena
+// sebagian pesanan ojol tersimpan dengan channel generik 'food_apps' dan tanpa
+// opsi ini tidak akan pernah muncul di filter mana pun.
 private val channelFilterOptions = listOf(
-    "all" to "Semua Channel",
-    "offline" to "Offline / Dine-in",
-    "gofood" to "GoFood",
-    "shopeefood" to "ShopeeFood",
-    "grabfood" to "GrabFood",
-    "tiktokgo" to "TikTok Go",
-    "website" to "Website Online"
+    "Semua Channel" to "all",
+    "Kasir / Dine-in" to "offline",
+    "Semua Food Apps" to "food_apps",
+    "GoFood" to "gofood",
+    "ShopeeFood" to "shopeefood",
+    "GrabFood" to "grabfood",
+    "TikTok Go" to "tiktokgo",
+    "Website Online" to "website"
 )
 
 private fun labelFor(options: List<Pair<String, String>>, value: String): String =
-    options.firstOrNull { it.first == value }?.second ?: value
+    options.firstOrNull { it.second == value }?.first ?: value
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -325,7 +342,7 @@ data class ParsedOrderItem(
 )
 
 private fun parseOrderItemName(item: OrderItemDto, index: Int): ParsedOrderItem {
-    var name = item.menuItemName
+    var name = item.resolvedName
     var note = ""
     var id = item.id ?: "idx-$index"
     var parentId: String? = null
@@ -391,6 +408,7 @@ fun OrderHistoryContent(viewModel: OrderHistoryViewModel) {
     // sebenarnya begitu rentangnya lebih dari sehari.
     val summary by viewModel.revenueSummary.collectAsState()
     val isSummaryFromCache by viewModel.isSummaryFromLocalCache.collectAsState()
+    val isOnline by com.sukashawarma.pos.data.remote.NetworkMonitor.isOnline.collectAsState()
 
     fun grossOf(method: String) =
         summary.byPayment.firstOrNull { it.paymentMethod.equals(method, true) }?.gross ?: 0.0
@@ -406,7 +424,7 @@ fun OrderHistoryContent(viewModel: OrderHistoryViewModel) {
             SummaryCard("OMZET KOTOR", "Rp ${String.format("%,.0f", summary.gross)}", Color.White, Color.White, ShawarmaOrange, Modifier.weight(1f))
         }
 
-        if (isSummaryFromCache) {
+        if (isSummaryFromCache && !isOnline) {
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 "Data offline — omzet dihitung dari penyimpanan lokal dan mungkin belum lengkap.",
@@ -432,8 +450,14 @@ fun OrderHistoryContent(viewModel: OrderHistoryViewModel) {
                     .background(Color(0xFFF3F4F6), RoundedCornerShape(20.dp))
                     .padding(4.dp)
             ) {
-                listOf("Semua Pesanan", "Menunggu", "Selesai", "Dibatalkan").forEach { filter ->
-                    val filterKey = if (filter == "Semua Pesanan") "Semua" else filter
+                // "Diproses" menggantikan label "Menunggu" yang lama: tidak ada
+                // pesanan berstatus `pending` di database, yang ada `preparing`.
+                listOf(
+                    "Semua Pesanan" to OrderStatusFilter.ALL,
+                    "Diproses" to OrderStatusFilter.WAITING,
+                    "Selesai" to OrderStatusFilter.DONE,
+                    "Dibatalkan" to OrderStatusFilter.CANCELLED
+                ).forEach { (filter, filterKey) ->
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(16.dp))
@@ -483,6 +507,14 @@ fun OrderHistoryContent(viewModel: OrderHistoryViewModel) {
         if (isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = ShawarmaOrange)
+            }
+        } else if (filteredOrders.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                com.sukashawarma.pos.presentation.components.EmptyState(
+                    title = "Belum ada transaksi",
+                    subtitle = "Pesanan pada rentang & filter ini akan muncul di sini secara otomatis.",
+                    icon = Icons.Default.Assignment
+                )
             }
         } else {
             LazyColumn(
@@ -559,32 +591,26 @@ private fun OrderRow(
                 Text("#${order.orderNumber}", fontWeight = FontWeight.Bold, color = Color(0xFF6B7280), modifier = Modifier.width(40.dp))
 
                 Column(modifier = Modifier.weight(2.2f)) {
-                    val statusText = when (order.status.lowercase()) {
-                        "completed" -> "Selesai"
-                        "pending" -> "Menunggu"
-                        "cancelled" -> "Dibatalkan"
+                    // Pembatalan yang sudah disetujui didahulukan: kolom `status`-nya
+                    // bisa saja masih "completed" sehingga badge-nya salah menulis
+                    // "Selesai". `preparing`/`ready` juga dulu tampil mentah.
+                    val isCancelled = OrderStatusFilter.isCancelled(order)
+                    val statusText = when {
+                        isCancelled -> "Dibatalkan"
+                        order.status.equals("completed", true) -> "Selesai"
+                        order.status.lowercase() in listOf("pending", "preparing", "ready") -> "Diproses"
                         else -> order.status
                     }
-                    val statusColor = when (order.status.lowercase()) {
-                        "completed" -> Color(0xFF10B981)
-                        "pending" -> ShawarmaOrange
-                        "cancelled" -> Color(0xFFEF4444)
+                    val statusColor = when {
+                        isCancelled -> Color(0xFFEF4444)
+                        order.status.equals("completed", true) -> Color(0xFF10B981)
+                        order.status.lowercase() in listOf("pending", "preparing", "ready") -> ShawarmaOrange
                         else -> Color.Gray
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(statusText, color = statusColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        if (order.channel != null) {
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Surface(shape = RoundedCornerShape(8.dp), color = channelColor(order.channel).copy(alpha = 0.12f)) {
-                                Text(
-                                    channelLabel(order.channel),
-                                    color = channelColor(order.channel),
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        com.sukashawarma.pos.presentation.components.OrderSourceBadge(source = order.source, channel = order.channel)
                         if (order.isSyncedFromOffline == true) {
                             Spacer(modifier = Modifier.width(6.dp))
                             Surface(shape = RoundedCornerShape(8.dp), color = Color(0xFF10B981).copy(alpha = 0.12f)) {
@@ -683,7 +709,8 @@ private fun OrderRow(
                         .background(Color(0xFFF9FAFB))
                         .padding(16.dp)
                 ) {
-                    groupOrderItems(order.orderItems).forEach { (root, children) ->
+                    val groupedItems = remember(order.orderItems) { groupOrderItems(order.orderItems) }
+                    groupedItems.forEach { (root, children) ->
                         Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -1018,7 +1045,10 @@ fun BonusCrewContent(
                     }
                 } else if (dailyBreakdown.isEmpty()) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("Belum ada data untuk bulan ini", color = TextDarkMuted)
+                        com.sukashawarma.pos.presentation.components.EmptyState(
+                            title = "Belum ada data untuk bulan ini",
+                            icon = Icons.Default.CalendarMonth
+                        )
                     }
                 } else {
                     // Table header

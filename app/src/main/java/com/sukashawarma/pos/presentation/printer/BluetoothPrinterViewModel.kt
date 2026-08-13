@@ -21,12 +21,15 @@ enum class ConnectionStatus {
     DISCONNECTED, CONNECTING, CONNECTED, ERROR
 }
 
+/** A discoverable/paired Bluetooth device. [rssi] is the signal strength in dBm, null when unknown (e.g. paired devices). */
+data class BtDevice(val name: String, val mac: String, val rssi: Int? = null)
+
 class BluetoothPrinterViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs: SharedPreferences = application.getSharedPreferences("PrinterPrefs", Context.MODE_PRIVATE)
     // BluetoothPrinterManager is now a singleton
-    
-    val pairedDevices = MutableStateFlow<List<Pair<String, String>>>(emptyList())
-    val discoveredDevices = MutableStateFlow<List<Pair<String, String>>>(emptyList())
+
+    val pairedDevices = MutableStateFlow<List<BtDevice>>(emptyList())
+    val discoveredDevices = MutableStateFlow<List<BtDevice>>(emptyList())
     
     val connectionStatus = MutableStateFlow(ConnectionStatus.DISCONNECTED)
     val connectedDeviceName = MutableStateFlow<String?>(null)
@@ -40,7 +43,7 @@ class BluetoothPrinterViewModel(application: Application) : AndroidViewModel(app
     }
 
     fun refreshPairedDevices() {
-        pairedDevices.value = BluetoothPrinterManager.getPairedDevices()
+        pairedDevices.value = BluetoothPrinterManager.getPairedDevices().map { (name, mac) -> BtDevice(name, mac) }
     }
 
     fun loadPairedDevices() {
@@ -154,11 +157,18 @@ class BluetoothPrinterViewModel(application: Application) : AndroidViewModel(app
                     device?.let {
                         val name = it.name ?: "Unknown Device"
                         val mac = it.address
-                        val list = discoveredDevices.value.toMutableList()
-                        // Ensure no duplicates
-                        if (list.none { existing -> existing.second == mac } && pairedDevices.value.none { existing -> existing.second == mac }) {
-                            list.add(Pair(name, mac))
-                            discoveredDevices.value = list
+                        val rssi = intent.getShortExtra(BluetoothDevice.EXTRA_RSSI, Short.MIN_VALUE).let { r ->
+                            if (r == Short.MIN_VALUE) null else r.toInt()
+                        }
+                        if (pairedDevices.value.none { existing -> existing.mac == mac }) {
+                            val list = discoveredDevices.value.toMutableList()
+                            val idx = list.indexOfFirst { existing -> existing.mac == mac }
+                            if (idx >= 0) {
+                                list[idx] = list[idx].copy(name = name, rssi = rssi ?: list[idx].rssi)
+                            } else {
+                                list.add(BtDevice(name, mac, rssi))
+                            }
+                            discoveredDevices.value = list.sortedByDescending { it.rssi ?: Int.MIN_VALUE }
                         }
                     }
                 }

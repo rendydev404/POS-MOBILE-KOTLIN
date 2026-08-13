@@ -34,12 +34,18 @@ object RevenueCalculator {
     /** Status pesanan yang diakui sebagai penjualan. */
     val REVENUE_STATUS: OrderStatus = OrderStatus.COMPLETED
 
-    fun isRevenue(status: String?): Boolean =
-        status?.equals(REVENUE_STATUS.name, ignoreCase = true) == true
+    fun isRevenue(status: String?, cancellationStatus: String?): Boolean =
+        status?.equals(REVENUE_STATUS.name, ignoreCase = true) == true &&
+            !OrderStatusFilter.isCancelled(status, cancellationStatus)
 
-    fun isRevenue(order: OrderDto): Boolean = isRevenue(order.status)
+    /**
+     * Pembatalan yang sudah disetujui owner tidak selalu ikut mengubah kolom
+     * `status` di server, jadi `status = 'completed'` saja tidak cukup — tanpa
+     * pengecekan ini pesanan yang sudah dibatalkan tetap terhitung sebagai omzet.
+     */
+    fun isRevenue(order: OrderDto): Boolean = isRevenue(order.status, order.cancellationStatus)
 
-    fun isRevenue(entity: LocalOrderEntity): Boolean = isRevenue(entity.status)
+    fun isRevenue(entity: LocalOrderEntity): Boolean = isRevenue(entity.status, entity.cancellationStatus)
 
     /**
      * Omzet kotor satu pesanan: jumlah subtotal seluruh baris item.

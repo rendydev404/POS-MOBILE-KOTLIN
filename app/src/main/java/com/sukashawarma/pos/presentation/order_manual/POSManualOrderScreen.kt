@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.RestaurantMenu
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.StickyNote2
 import androidx.compose.material.icons.filled.Store
 import androidx.compose.material.icons.filled.ThumbUp
@@ -144,19 +145,18 @@ fun POSManualOrderScreen(
 
         OrderModeTabRow(mode = mode, onModeSelected = { viewModel.switchMode(it) })
 
-        if (showInfoBanner) {
-            InfoBanner(mode = mode, onDismiss = { viewModel.showInfoBanner.value = false })
-        }
+        // InfoBanner removed to save space
 
         Row(
             modifier = Modifier
-                .fillMaxSize()
+                .weight(1f)
+                .fillMaxWidth()
                 .padding(12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Column(
                 modifier = Modifier
-                    .weight(1.6f)
+                    .weight(1f)
                     .fillMaxHeight(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -179,7 +179,7 @@ fun POSManualOrderScreen(
                     }
                 } else {
                     LazyVerticalGrid(
-                        columns = GridCells.Fixed(3),
+                        columns = GridCells.Adaptive(minSize = 120.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         modifier = Modifier.fillMaxSize()
@@ -198,20 +198,29 @@ fun POSManualOrderScreen(
                 }
             }
 
-            CartPanel(
-                viewModel = viewModel,
-                mode = mode,
-                channel = channel,
-                payment = payment,
-                customerName = customerName,
-                pickupTime = pickupTime,
-                promoSubsidy = promoSubsidy,
-                cashInput = cashInput,
-                cartLines = cartLines,
-                totals = totals,
-                isSubmitting = isSubmitting,
-                modifier = Modifier.weight(1f).fillMaxHeight()
-            )
+            // Kolomnya yang di-scroll, bukan isi panel: card keranjang memanjang ke bawah
+            // mengikuti jumlah varian menu, lalu seluruh card digeser saat di-scroll.
+            Column(
+                modifier = Modifier
+                    .width(360.dp)
+                    .fillMaxHeight()
+                    .verticalScroll(rememberScrollState())
+            ) {
+                CartPanel(
+                    viewModel = viewModel,
+                    mode = mode,
+                    channel = channel,
+                    payment = payment,
+                    customerName = customerName,
+                    pickupTime = pickupTime,
+                    promoSubsidy = promoSubsidy,
+                    cashInput = cashInput,
+                    cartLines = cartLines,
+                    totals = totals,
+                    isSubmitting = isSubmitting,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
     }
 
@@ -412,38 +421,41 @@ private fun InfoBanner(mode: OrderMode, onDismiss: () -> Unit) {
 
 @Composable
 private fun ChannelSelector(selectedChannel: String?, onSelect: (String) -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = Color.White,
-        border = androidx.compose.foundation.BorderStroke(1.dp, TwGray200),
-        shadowElevation = 1.dp
+    val logos = mapOf(
+        "gofood" to R.drawable.ic_gofood,
+        "shopeefood" to R.drawable.ic_shopeefood,
+        "grabfood" to R.drawable.ic_grabfood,
+        "tiktokgo" to R.drawable.ic_tiktokgo
+    )
+
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Text(
-                "PILIH CHANNEL",
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold,
-                color = TwGray500
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(FOOD_APP_CHANNELS) { ch ->
-                    val selected = normalizeChannel(selectedChannel) == ch.id
-                    Row(
-                        modifier = Modifier
-                            .border(1.dp, if (selected) TwAmber400 else TwGray200, RoundedCornerShape(10.dp))
-                            .background(if (selected) TwAmber50 else Color.White, RoundedCornerShape(10.dp))
-                            .clickable { onSelect(ch.id) }
-                            .padding(horizontal = 10.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(ch.label, fontWeight = FontWeight.Bold, color = if (selected) TwAmber600 else TwGray700, style = MaterialTheme.typography.bodySmall)
-                        if (selected) {
-                            Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = TwAmber500, modifier = Modifier.size(16.dp))
-                        }
-                    }
+        items(FOOD_APP_CHANNELS) { ch ->
+            val selected = normalizeChannel(selectedChannel) == ch.id
+            Row(
+                modifier = Modifier
+                    .border(1.dp, if (selected) TwAmber400 else TwGray200, RoundedCornerShape(12.dp))
+                    .background(if (selected) TwAmber50 else Color.White, RoundedCornerShape(12.dp))
+                    .clickable { onSelect(ch.id) }
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                logos[ch.id]?.let { resId ->
+                    Image(
+                        painter = painterResource(id = resId),
+                        contentDescription = ch.label,
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
+                Text(
+                    text = ch.label, 
+                    fontWeight = FontWeight.Bold, 
+                    color = if (selected) TwAmber600 else TwGray700, 
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
         }
     }
@@ -458,50 +470,29 @@ private fun SearchAndCategoryCard(
     onCategorySelected: (String) -> Unit,
     onScanReceiptClick: () -> Unit
 ) {
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = Color.White,
-        border = androidx.compose.foundation.BorderStroke(1.dp, TwGray200),
-        shadowElevation = 1.dp
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = onSearchChange,
-                    placeholder = { Text("Cari menu...", color = TwGray400) },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = TwGray400) },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(10.dp),
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        unfocusedContainerColor = TwGray50,
-                        focusedContainerColor = TwGray50,
-                        unfocusedBorderColor = TwGray200
-                    )
-                )
-                
-                Spacer(modifier = Modifier.width(8.dp))
-                
-                IconButton(
-                    onClick = onScanReceiptClick,
-                    modifier = Modifier
-                        .size(48.dp)
-                        .background(TwAmber50, RoundedCornerShape(10.dp))
-                        .border(1.dp, TwAmber400, RoundedCornerShape(10.dp))
-                ) {
-                    Icon(Icons.Default.PhotoCamera, contentDescription = "Scan Nota AI", tint = TwAmber600)
-                }
+    Row(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        LazyRow(
+            modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            item {
+                CategoryChip(label = "Semua", selected = selectedCatId.isEmpty(), onClick = { onCategorySelected("") })
             }
-            Spacer(modifier = Modifier.height(10.dp))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                item {
-                    CategoryChip(label = "Semua", selected = selectedCatId.isEmpty(), onClick = { onCategorySelected("") })
-                }
-                items(categories) { cat ->
-                    CategoryChip(label = cat.name, selected = cat.id == selectedCatId, onClick = { onCategorySelected(cat.id) })
-                }
+            items(categories) { cat ->
+                CategoryChip(label = cat.name, selected = cat.id == selectedCatId, onClick = { onCategorySelected(cat.id) })
             }
+        }
+        
+        Spacer(modifier = Modifier.width(8.dp))
+        
+        IconButton(
+            onClick = onScanReceiptClick,
+            modifier = Modifier
+                .size(40.dp)
+                .background(TwAmber50, RoundedCornerShape(10.dp))
+                .border(1.dp, TwAmber400, RoundedCornerShape(10.dp))
+        ) {
+            Icon(Icons.Default.PhotoCamera, contentDescription = "Scan Nota AI", tint = TwAmber600, modifier = Modifier.size(20.dp))
         }
     }
 }
@@ -554,11 +545,11 @@ private fun MenuItemCard(
                             .build(),
                         contentDescription = menuItem.name,
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxWidth().height(96.dp)
+                        modifier = Modifier.fillMaxWidth().height(80.dp)
                     )
                 } else {
                     Box(
-                        modifier = Modifier.fillMaxWidth().height(96.dp).background(TwGray50),
+                        modifier = Modifier.fillMaxWidth().height(80.dp).background(TwGray50),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(Icons.Default.RestaurantMenu, contentDescription = null, tint = TwGray300, modifier = Modifier.size(32.dp))
@@ -597,18 +588,20 @@ private fun MenuItemCard(
                 }
             }
 
-            Column(modifier = Modifier.padding(10.dp)) {
+            Column(modifier = Modifier.padding(8.dp)) {
                 Text(
                     text = menuItem.name,
-                    style = MaterialTheme.typography.labelLarge,
+                    style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     color = if (disabled) TwGray400 else TwGray800,
-                    maxLines = 2
+                    minLines = 2,
+                    maxLines = 2,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "Rp ${String.format("%,.0f", displayPrice)}",
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodySmall,
                     color = if (disabled) TwGray400 else TwAmber600,
                     fontWeight = FontWeight.Bold
                 )
@@ -644,7 +637,7 @@ private fun CartPanel(
         color = Color.White,
         border = androidx.compose.foundation.BorderStroke(1.dp, TwGray200)
     ) {
-        Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Keranjang", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = TwGray900)
                 if (cartLines.isNotEmpty()) {
@@ -655,14 +648,15 @@ private fun CartPanel(
                             color = TwAmber600,
                             fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(12.dp))
 
-            Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+            Divider(color = TwGray100, modifier = Modifier.padding(vertical = 12.dp))
+
+            Column(modifier = Modifier.fillMaxWidth()) {
                 if (cartLines.isEmpty()) {
                     Box(
                         modifier = Modifier
@@ -672,7 +666,11 @@ private fun CartPanel(
                             .padding(vertical = 32.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("Belum ada menu dipilih", style = MaterialTheme.typography.bodyMedium, color = TwGray400, textAlign = TextAlign.Center)
+                        com.sukashawarma.pos.presentation.components.EmptyState(
+                            title = "Belum ada menu dipilih",
+                            icon = Icons.Default.ShoppingCart,
+                            minHeight = 0.dp
+                        )
                     }
                 } else {
                     cartLines.filter { it.parentId == null }.forEach { parent ->
@@ -684,7 +682,7 @@ private fun CartPanel(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 FieldLabel("NAMA CUSTOMER")
                 OutlinedTextField(
@@ -695,36 +693,10 @@ private fun CartPanel(
                     shape = RoundedCornerShape(10.dp),
                     colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = Color.White, unfocusedBorderColor = TwGray200)
                 )
-                Spacer(modifier = Modifier.height(10.dp))
-
-                if (mode == OrderMode.WEBSITE) {
-                    FieldLabel("JAM AMBIL (HH:MM)")
-                    OutlinedTextField(
-                        value = pickupTime,
-                        onValueChange = { viewModel.pickupTime.value = it },
-                        placeholder = { Text("14:30") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        shape = RoundedCornerShape(10.dp)
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                }
-
-                if (needsPromoSubsidy) {
-                    FieldLabel("PROMO APPS (SUBSIDI)")
-                    OutlinedTextField(
-                        value = promoSubsidy,
-                        onValueChange = { v -> viewModel.promoSubsidy.value = v.filter { it.isDigit() } },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        shape = RoundedCornerShape(10.dp)
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                }
 
                 val paymentOptions = remember(mode) { viewModel.availablePaymentMethods() }
                 if (paymentOptions.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(10.dp))
                     FieldLabel("METODE PEMBAYARAN")
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         paymentOptions.forEach { method ->
@@ -736,29 +708,56 @@ private fun CartPanel(
                             )
                         }
                     }
+                }
+
+                if (mode == OrderMode.WEBSITE) {
                     Spacer(modifier = Modifier.height(10.dp))
+                    FieldLabel("JAM AMBIL (HH:MM)")
+                    OutlinedTextField(
+                        value = pickupTime,
+                        onValueChange = { viewModel.pickupTime.value = it },
+                        placeholder = { Text("14:30") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(10.dp)
+                    )
+                }
+                if (needsPromoSubsidy) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    FieldLabel("PROMO APPS (SUBSIDI)")
+                    OutlinedTextField(
+                        value = promoSubsidy,
+                        onValueChange = { v -> viewModel.promoSubsidy.value = v.filter { it.isDigit() } },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(10.dp)
+                    )
                 }
 
                 if (payment == PaymentMethod.CASH) {
+                    Spacer(modifier = Modifier.height(10.dp))
                     FieldLabel("UANG DITERIMA")
                     OutlinedTextField(
                         value = cashInput,
                         onValueChange = { v -> viewModel.cashInput.value = v.filter { it.isDigit() } },
                         leadingIcon = { Text("Rp", color = TwGray500, fontWeight = FontWeight.Bold) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
                         singleLine = true,
                         shape = RoundedCornerShape(10.dp)
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    FieldLabel("PILIHAN CEPAT")
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         QuickCashChip(
-                            label = "Uang Pas",
+                            label = "Pas",
                             highlight = true,
                             onClick = { viewModel.setExactCash(totals.total) },
                             modifier = Modifier.weight(1f)
                         )
-                        viewModel.quickCashAmounts(totals.total).take(3).forEach { amount ->
+                        viewModel.quickCashAmounts(totals.total).take(2).forEach { amount ->
                             QuickCashChip(
                                 label = "Rp ${String.format("%,.0f", amount)}",
                                 highlight = false,
@@ -767,6 +766,7 @@ private fun CartPanel(
                             )
                         }
                     }
+
                     val received = cashInput.toDoubleOrNull() ?: 0.0
                     if (received > 0) {
                         val enough = received >= totals.total
@@ -788,8 +788,8 @@ private fun CartPanel(
                         }
                     }
                 }
-            }
 
+            }
 
             Divider(color = TwGray100, modifier = Modifier.padding(vertical = 12.dp))
 
@@ -811,7 +811,7 @@ private fun CartPanel(
                         )
                     }
                 }
-            
+
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Subtotal", style = MaterialTheme.typography.bodyMedium, color = TwGray500)
                     Text("Rp ${String.format("%,.0f", totals.subtotal)}", style = MaterialTheme.typography.bodyMedium, color = TwGray700, fontWeight = FontWeight.Bold)
@@ -835,22 +835,31 @@ private fun CartPanel(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
+            // Modal "Tampilkan QRIS" (kode ini, tepatnya di bawah) hanya milik mode
+            // Order Offline di web — lihat WalkInCartPanel.tsx: gate-nya persis
+            // `payment === 'qris' && !isEndorse`. Untuk Food Apps/Website
+            // (order-manual/page.tsx baris ~1780), QRIS cuma tag metode bayar biasa;
+            // tombolnya selalu "Konfirmasi (Diproses)" dan langsung submit, tidak
+            // pernah menampilkan gambar QR. Sebelum ini modal QRIS menyala untuk
+            // SEMUA mode, jadi Food Apps pun ikut memunculkan QR yang tak seharusnya.
+            val showsQrisModal = payment == PaymentMethod.QRIS && mode == OrderMode.WALKIN
             val buttonColor = when {
-                payment == PaymentMethod.QRIS -> TwBlue500
+                showsQrisModal -> TwBlue500
                 payment == PaymentMethod.CARD -> TwPurple500
                 else -> TwEmerald500
             }
             val buttonLabel = when {
                 isSubmitting -> "MEMPROSES..."
-                payment == PaymentMethod.QRIS -> "Tampilkan QRIS"
+                showsQrisModal -> "Tampilkan QRIS"
                 mode == OrderMode.ENDORSE -> "Simpan Pesanan Endorse"
+                mode == OrderMode.ONLINE || mode == OrderMode.WEBSITE -> "Konfirmasi (Diproses)"
                 else -> "Bayar & Cetak Struk"
             }
             Button(
                 onClick = {
-                    if (payment == PaymentMethod.QRIS) {
+                    if (showsQrisModal) {
                         viewModel.isQrisModalOpen.value = true
                     } else {
                         viewModel.submitOrder()
@@ -862,7 +871,7 @@ private fun CartPanel(
                 colors = ButtonDefaults.buttonColors(containerColor = buttonColor)
             ) {
                 Icon(
-                    if (payment == PaymentMethod.QRIS) Icons.Filled.QrCode else Icons.Filled.CheckCircle,
+                    if (showsQrisModal) Icons.Filled.QrCode else Icons.Filled.CheckCircle,
                     contentDescription = null,
                     tint = Color.White,
                     modifier = Modifier.size(18.dp)
@@ -890,12 +899,14 @@ private fun QuickCashChip(label: String, highlight: Boolean, onClick: () -> Unit
     ) {
         Text(
             label,
-            modifier = Modifier.padding(vertical = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp, horizontal = 4.dp),
             color = if (highlight) TwEmerald700 else TwGray700,
             fontWeight = FontWeight.Bold,
             style = MaterialTheme.typography.labelMedium,
             textAlign = TextAlign.Center,
-            maxLines = 1
+            maxLines = 1,
+            softWrap = false,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Visible
         )
     }
 }
@@ -1497,6 +1508,31 @@ private fun OrderSuccessOverlay(
                             Text("Selesai & Transaksi Baru", color = Color.White, fontWeight = FontWeight.Bold)
                         }
                     }
+                }
+
+                // Jalan keluar wajib. Tombol cetak hanya menaikkan `printStep` bila
+                // pencetakan BERHASIL, sementara dialog ini menolak tombol back dan
+                // ketukan di luar — jadi tanpa printer (mode offline / printer belum
+                // terhubung) kasir terkurung dan harus mematikan aplikasi.
+                if (printStep != 2) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TextButton(
+                        onClick = onDismiss,
+                        enabled = !isPrinting,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            "Lewati & Tutup",
+                            color = TwGray500,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    Text(
+                        "Pesanan tetap tersimpan. Struk bisa dicetak ulang dari kartu pesanan.",
+                        color = TwGray400,
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
                 }
             }
         }

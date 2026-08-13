@@ -1,5 +1,9 @@
 package com.sukashawarma.pos.presentation.settings
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -12,8 +16,12 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Tablet
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -29,6 +37,24 @@ fun SettingsScreen(
     val selectedMac by viewModel.selectedPrinterMac.collectAsState()
     val isTestingPrinter by viewModel.isTestingPrinter.collectAsState()
     val printerStatusMessage by viewModel.printerStatusMessage.collectAsState()
+
+    // Tanpa izin Bluetooth runtime (Android 12+), getPairedDevices() diam-diam
+    // mengembalikan list kosong — layar terlihat "belum ada printer" padahal
+    // sebenarnya izinnya yang belum diberikan. Minta izin dulu lalu refresh.
+    var hasBluetoothPermission by remember { mutableStateOf(false) }
+    val permissionsToRequest = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+    } else {
+        arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+    }
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        hasBluetoothPermission = result.values.all { it }
+        if (hasBluetoothPermission) viewModel.refreshPairedDevices()
+    }
+    DisposableEffect(Unit) {
+        permissionLauncher.launch(permissionsToRequest)
+        onDispose { }
+    }
 
     Row(
         modifier = modifier
@@ -86,10 +112,18 @@ fun SettingsScreen(
                         color = SlateCard
                     ) {
                         Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Info, contentDescription = null, tint = TextMuted)
+                            Icon(
+                                if (hasBluetoothPermission) Icons.Default.Info else Icons.Default.Bluetooth,
+                                contentDescription = null,
+                                tint = TextMuted
+                            )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                "Belum ada printer ter-pairing. Pairing printer dulu lewat Pengaturan Bluetooth Android, lalu tekan refresh.",
+                                if (hasBluetoothPermission) {
+                                    "Belum ada printer ter-pairing. Pairing printer dulu lewat Pengaturan Bluetooth Android, lalu tekan refresh."
+                                } else {
+                                    "Izin Bluetooth belum diberikan. Terima izin yang diminta, lalu tekan refresh untuk memuat printer ter-pairing."
+                                },
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = TextSecondary
                             )

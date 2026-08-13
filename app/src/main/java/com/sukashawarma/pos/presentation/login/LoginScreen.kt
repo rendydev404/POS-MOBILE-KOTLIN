@@ -1,5 +1,6 @@
 package com.sukashawarma.pos.presentation.login
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -9,6 +10,8 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -16,7 +19,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.draw.paint
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import com.sukashawarma.pos.R
 import com.sukashawarma.pos.domain.model.UserSession
 import com.sukashawarma.pos.presentation.theme.*
 
@@ -44,7 +52,10 @@ fun LoginScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(SlateBackground),
+            .paint(
+                painterResource(id = R.drawable.bg_login_pattern),
+                contentScale = ContentScale.Crop
+            ),
         contentAlignment = Alignment.Center
     ) {
         Surface(
@@ -63,6 +74,13 @@ fun LoginScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // Header Branding
+                Image(
+                    painter = painterResource(id = R.mipmap.ic_launcher_round),
+                    contentDescription = "Logo Aplikasi",
+                    modifier = Modifier
+                        .size(80.dp)
+                        .padding(bottom = 8.dp)
+                )
                 Text(
                     text = "SUKA SHAWARMA",
                     style = MaterialTheme.typography.headlineLarge,
@@ -119,12 +137,22 @@ fun LoginScreen(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 // 2. Password Input
+                var passwordVisible by remember { mutableStateOf(false) }
                 OutlinedTextField(
                     value = password,
                     onValueChange = { viewModel.passwordInput.value = it },
                     label = { Text("Password") },
                     leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = TextSecondary) },
-                    visualTransformation = PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                            Icon(
+                                imageVector = if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = if (passwordVisible) "Sembunyikan password" else "Tampilkan password",
+                                tint = TextSecondary
+                            )
+                        }
+                    },
+                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),

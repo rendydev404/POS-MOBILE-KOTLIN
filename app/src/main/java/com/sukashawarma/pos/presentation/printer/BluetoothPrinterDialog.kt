@@ -19,6 +19,9 @@ import androidx.compose.material.icons.filled.BluetoothDisabled
 import androidx.compose.material.icons.filled.BluetoothSearching
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Print
+import androidx.compose.material.icons.filled.SignalCellularAlt
+import androidx.compose.material.icons.filled.SignalCellularAlt1Bar
+import androidx.compose.material.icons.filled.SignalCellularAlt2Bar
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -310,8 +313,8 @@ fun BluetoothPrinterDialog(
                                 )
                             }
                             items(pairedDevices) { device ->
-                                DeviceRow(name = device.first, mac = device.second) {
-                                    viewModel.connectToDevice(device.first, device.second)
+                                DeviceRow(name = device.name, mac = device.mac, rssi = device.rssi) {
+                                    viewModel.connectToDevice(device.name, device.mac)
                                 }
                             }
                         }
@@ -326,8 +329,8 @@ fun BluetoothPrinterDialog(
                                 )
                             }
                             items(discoveredDevices) { device ->
-                                DeviceRow(name = device.first, mac = device.second) {
-                                    viewModel.connectToDevice(device.first, device.second)
+                                DeviceRow(name = device.name, mac = device.mac, rssi = device.rssi) {
+                                    viewModel.connectToDevice(device.name, device.mac)
                                 }
                             }
                         }
@@ -357,7 +360,7 @@ fun BluetoothPrinterDialog(
 }
 
 @Composable
-fun DeviceRow(name: String, mac: String, onClick: () -> Unit) {
+fun DeviceRow(name: String, mac: String, rssi: Int? = null, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -372,9 +375,39 @@ fun DeviceRow(name: String, mac: String, onClick: () -> Unit) {
             modifier = Modifier.size(24.dp)
         )
         Spacer(modifier = Modifier.width(16.dp))
-        Column {
+        Column(modifier = Modifier.weight(1f)) {
             Text(text = name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
             Text(text = mac, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
         }
+        if (rssi != null) {
+            SignalStrengthIndicator(rssi = rssi)
+        }
+    }
+}
+
+/**
+ * Visual indicator of Bluetooth signal strength based on RSSI (dBm).
+ * Roughly: >= -60 kuat, -60..-80 sedang, < -80 lemah. Range typical for BT is 0 to -100.
+ */
+@Composable
+fun SignalStrengthIndicator(rssi: Int) {
+    val (icon, tint, label) = when {
+        rssi >= -60 -> Triple(Icons.Default.SignalCellularAlt, TwEmerald500, "Kuat")
+        rssi >= -80 -> Triple(Icons.Default.SignalCellularAlt2Bar, AmberPrimary, "Sedang")
+        else -> Triple(Icons.Default.SignalCellularAlt1Bar, TwRed500, "Lemah")
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = icon,
+            contentDescription = "Sinyal $label ($rssi dBm)",
+            tint = tint,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(
+            text = "$rssi dBm",
+            style = MaterialTheme.typography.labelSmall,
+            color = tint
+        )
     }
 }

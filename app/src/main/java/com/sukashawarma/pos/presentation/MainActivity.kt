@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -13,6 +14,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
+import com.sukashawarma.pos.domain.usecase.StokOutletLauncher
 import com.sukashawarma.pos.presentation.components.POSTab
 import com.sukashawarma.pos.presentation.components.SideNavRail
 import com.sukashawarma.pos.presentation.dashboard.DashboardScreen
@@ -59,6 +63,22 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { /* no-op — alarm suara/realtime tetap jalan walau ditolak, hanya notifikasi sistem yang hilang */ }
 
+    /**
+     * Socket realtime bisa mati diam-diam saat layar tidur / app di background.
+     * Tanpa pemulihan di sini, layar menampilkan data basi sampai heartbeat
+     * menyadarinya (~70 detik) atau poll berkala jalan.
+     */
+    override fun onResume() {
+        super.onResume()
+        val session = loginViewModel.activeSession.value ?: return
+        com.sukashawarma.pos.data.remote.realtime.POSRealtimeService.resume(this, session.outletId)
+        com.sukashawarma.pos.data.remote.GlobalEventBus.orderSyncEvent.tryEmit(Unit)
+        com.sukashawarma.pos.data.remote.GlobalEventBus.targetRefreshEvent.tryEmit(Unit)
+        com.sukashawarma.pos.data.remote.GlobalEventBus.ownerMessageRefreshEvent.tryEmit(Unit)
+        com.sukashawarma.pos.data.remote.GlobalEventBus.pettyCashEvent.tryEmit(Unit)
+        com.sukashawarma.pos.data.remote.GlobalEventBus.gateRefreshEvent.tryEmit(Unit)
+    }
+
     @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -84,6 +104,12 @@ class MainActivity : ComponentActivity() {
                         shiftViewModel.setOutlet(session.outletId)
                         reportsViewModel.setOutlet(session.outletId)
                         infoPorsiViewModel.currentOutletId.value = session.outletId
+
+                        // Tanpa ini tabel fcm_tokens tetap kosong dan edge function
+                        // send-fcm balas "No tokens found": onNewToken hanya menyala
+                        // sekali, biasanya sebelum kasir sempat login.
+                        com.sukashawarma.pos.data.notification.FcmTokenRegistrar
+                            .registerCurrentToken(session.staffId, session.outletId)
                     }
                 }
 
@@ -96,19 +122,60 @@ class MainActivity : ComponentActivity() {
                     // Active Session -> Show Main POS Tablet Layout
                     val session = activeSession!!
                     var currentTab by remember { mutableStateOf(POSTab.DASHBOARD) }
+                    val isOnline by NetworkMonitor.isOnline.collectAsState()
+
+                    // "Stok Outlet" bukan layar native — ia melempar ke web stok
+                    // (Chrome diprioritaskan) sambil membawa sesi Supabase, jadi
+                    // kasir tidak login ulang. Lihat StokOutletLauncher.
+                    val context = LocalContext.current
+                    val scope = rememberCoroutineScope()
+                    var isOpeningStok by remember { mutableStateOf(false) }
+                    val lowStockCount by dashboardViewModel.lowStockCount.collectAsState()
+                    var showPrinterDialog by remember { mutableStateOf(false) }
+
+                    if (showPrinterDialog) {
+                        com.sukashawarma.pos.presentation.printer.BluetoothPrinterDialog(
+                            viewModel = printerViewModel,
+                            onDismiss = { showPrinterDialog = false }
+                        )
+                    }
 
                     Box(modifier = Modifier.fillMaxSize()) {
                         POSAdaptiveScaffold(
                             windowSizeClass = windowSizeClass.widthSizeClass,
                             currentTab = currentTab,
-                            onTabSelected = { currentTab = it },
+                            onTabSelected = { tab ->
+                                if (tab != POSTab.STOK_OUTLET) {
+                                    currentTab = tab
+                                } else if (!isOpeningStok) {
+                                    isOpeningStok = true
+                                    scope.launch {
+                                        val message = when (StokOutletLauncher.open(context)) {
+                                            StokOutletLauncher.Result.Success -> null
+                                            StokOutletLauncher.Result.NoSession ->
+                                                "Sesi tidak bisa disiapkan. Login ulang lalu coba lagi."
+                                            StokOutletLauncher.Result.NoBrowser ->
+                                                "Tidak ada browser terpasang di perangkat ini."
+                                        }
+                                        message?.let {
+                                            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+                                        }
+                                        isOpeningStok = false
+                                    }
+                                }
+                            },
                             outletName = session.outletName,
+                            isOnline = isOnline,
+                            // Badge di menu "Stok Outlet" — sebelumnya selalu 0 karena
+                            // nilainya tidak pernah dialirkan ke scaffold.
+                            lowStockCount = lowStockCount,
                             onLogoutClick = {
                                 loginViewModel.logout()
                                 dashboardViewModel.setSession("", "", "Kasir")
                                 posManualOrderViewModel.currentOutletId.value = ""
                                 menuManagementViewModel.setOutlet("")
-                            }
+                            },
+                            onPrinterClick = { showPrinterDialog = true }
                         ) {
                             Column(modifier = Modifier.fillMaxSize().background(CreamBackground)) {
                                 // Admin Rules & Target Banner
@@ -142,13 +209,13 @@ class MainActivity : ComponentActivity() {
                                         POSTab.REPORTS -> ReportsScreen(viewModel = reportsViewModel)
                                         POSTab.SETTINGS -> SettingsScreen(viewModel = settingsViewModel)
                                         POSTab.PANDUAN -> SettingsScreen(viewModel = settingsViewModel)
-                                        POSTab.STOK_OUTLET -> MenuManagementScreen(viewModel = menuManagementViewModel)
+                                        // Ditangani di onTabSelected (buka web stok), currentTab tidak pernah bernilai ini.
+                                        POSTab.STOK_OUTLET -> Unit
                                     }
                                 }
                             }
                         }
 
-                        val isOnline by NetworkMonitor.isOnline.collectAsState()
                         OfflineIndicator(
                             isOffline = !isOnline,
                             modifier = Modifier.align(Alignment.TopCenter)

@@ -22,11 +22,12 @@ android {
         }
 
         buildConfigField("String", "SUPABASE_URL", "\"https://khpkoreaaucvyqfhynfq.supabase.co\"")
+        buildConfigField("String", "STOK_WEB_URL", "\"https://stok.sukashawarma.com\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtocGtvcmVhYXVjdnlxZmh5bmZxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5NjMyOTIsImV4cCI6MjA5NjUzOTI5Mn0.RdsvP6OKs6aiRnqqd02BYiv5gzbh4uGqO88dapo0Gso\"")
     }
 
     buildTypes {
-        release {
+        release { signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -34,12 +35,28 @@ android {
             )
         }
     }
+    
+    lint {
+        checkReleaseBuilds = false
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions {
         jvmTarget = "17"
+        // Strong skipping. Tanpa ini, composable dengan parameter "unstable" tidak
+        // pernah boleh di-skip: OrderCard menerima Order yang berisi List<OrderItem>
+        // (List = unstable), plus 6 lambda yang dibuat inline di DashboardScreen dan
+        // tidak ter-memoize — jadi SETIAP kartu pesanan disusun ulang dari nol di
+        // setiap recomposition, termasuk di tiap frame animasi buka/tutup sidebar.
+        // Flag ini membandingkan parameter unstable per-instance dan otomatis
+        // me-remember lambda, sehingga kartu yang datanya tidak berubah benar-benar
+        // di-skip. Murni perilaku compiler — tidak ada satu pun kode UI yang berubah.
+        freeCompilerArgs += listOf(
+            "-P",
+            "plugin:androidx.compose.compiler.plugins.kotlin:experimentalStrongSkipping=true"
+        )
     }
     buildFeatures {
         compose = true

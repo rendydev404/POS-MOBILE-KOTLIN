@@ -16,9 +16,28 @@ class JakartaTimeTest {
     }
 
     @Test
-    fun `day bounds use plus seven offset`() {
-        assertEquals("2026-08-01T00:00:00+07:00", JakartaTime.startOfDayIso(day))
-        assertEquals("2026-08-01T23:59:59+07:00", JakartaTime.endOfDayIso(day))
+    fun `day bounds are utc instants of the jakarta day`() {
+        // 2026-08-01T00:00:00+07:00 == 2026-07-31T17:00:00Z
+        assertEquals("2026-07-31T17:00:00Z", JakartaTime.startOfDayIso(day))
+        assertEquals("2026-08-01T16:59:59.999Z", JakartaTime.endOfDayIso(day))
+    }
+
+    /**
+     * Regresi: bentuk `+07:00` membuat SELURUH request PostgREST gagal, karena
+     * OkHttp meneruskan `+` mentah di query string dan server membacanya sebagai
+     * spasi (`22007 invalid input syntax for type timestamp with time zone`).
+     */
+    @Test
+    fun `day bounds never contain a plus sign`() {
+        assertFalse(JakartaTime.startOfDayIso(day).contains('+'))
+        assertFalse(JakartaTime.endOfDayIso(day).contains('+'))
+    }
+
+    @Test
+    fun `day bounds round trip back to the same jakarta day`() {
+        assertTrue(JakartaTime.isOnDay(JakartaTime.startOfDayIso(day), day))
+        assertTrue(JakartaTime.isOnDay(JakartaTime.endOfDayIso(day), day))
+        assertFalse(JakartaTime.isOnDay(JakartaTime.startOfDayIso(day.plusDays(1)), day))
     }
 
     @Test

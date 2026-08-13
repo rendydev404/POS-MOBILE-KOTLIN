@@ -66,7 +66,7 @@ fun ShiftScreen(
     
     var expenseAmount by remember { mutableStateOf("") }
     var expenseDesc by remember { mutableStateOf("") }
-    var expenseCategory by remember { mutableStateOf("operasional") }
+    var expenseCategory by remember { mutableStateOf("outlet") }
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -251,7 +251,8 @@ fun ShiftScreen(
     if (showOpenShiftDialog) {
         // Observe viewModel's openShiftInput so prefilled value is shown
         val openShiftInput by viewModel.openShiftInput.collectAsState()
-        
+        val pettyCashLocked by viewModel.pettyCashLocked.collectAsState()
+
         AlertDialog(
             onDismissRequest = { showOpenShiftDialog = false },
             title = { Text("Buka Shift", fontWeight = FontWeight.Bold) },
@@ -261,11 +262,25 @@ fun ShiftScreen(
                     Spacer(Modifier.height(16.dp))
                     OutlinedTextField(
                         value = openShiftInput,
-                        onValueChange = { viewModel.openShiftInput.value = it },
+                        onValueChange = { if (!pettyCashLocked) viewModel.openShiftInput.value = it },
+                        readOnly = pettyCashLocked,
                         label = { Text("Dana Operasional (Rp)") },
+                        trailingIcon = {
+                            if (pettyCashLocked) {
+                                Icon(Icons.Default.Lock, contentDescription = null, tint = Color.Gray)
+                            }
+                        },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.fillMaxWidth()
                     )
+                    if (pettyCashLocked) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Mengikuti sisa saldo petty cash dari closing shift sebelumnya. Hubungi SPV/Admin bila nominal ini perlu diubah.",
+                            fontSize = 11.sp,
+                            color = Color.Gray
+                        )
+                    }
                 }
             },
             confirmButton = {
@@ -397,7 +412,7 @@ fun PettyCashCard(pettyCashBalance: Double, approvedTopupsTotal: Double, expense
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun CatatPengeluaranForm(
     amount: String, onAmountChange: (String) -> Unit,
@@ -435,8 +450,19 @@ fun CatatPengeluaranForm(
                 // Category
                 Text("KATEGORI", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
                 Spacer(Modifier.height(6.dp))
-                Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("operasional" to "Operasional", "bahan_baku" to "Bahan Baku", "lainnya" to "Lainnya").forEach { (key, label) ->
+                androidx.compose.foundation.layout.FlowRow(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(
+                        "outlet" to "Outlet",
+                        "bb" to "Bahan Baku",
+                        "utilities" to "Utilitas",
+                        "admin" to "Admin",
+                        "overtime" to "Lembur",
+                        "ads" to "Iklan"
+                    ).forEach { (key, label) ->
                         FilterChip(
                             selected = category == key,
                             onClick = { onCategoryChange(key) },
@@ -563,7 +589,10 @@ fun RiwayatAktivitas(ledgerItems: List<LedgerItem>, viewModel: ShiftViewModel) {
             HorizontalDivider(color = Color(0xFFF3F4F6))
             if (ledgerItems.isEmpty()) {
                 Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-                    Text("Belum ada aktivitas shift ini", color = Color.Gray)
+                    com.sukashawarma.pos.presentation.components.EmptyState(
+                        title = "Belum ada aktivitas shift ini",
+                        icon = Icons.Default.ReceiptLong
+                    )
                 }
             } else {
                 LazyColumn(Modifier.fillMaxSize()) {
@@ -593,7 +622,10 @@ fun RiwayatAktivitasMobile(ledgerItems: List<LedgerItem>, viewModel: ShiftViewMo
             HorizontalDivider(color = Color(0xFFF3F4F6))
             if (ledgerItems.isEmpty()) {
                 Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-                    Text("Belum ada aktivitas shift ini", color = Color.Gray)
+                    com.sukashawarma.pos.presentation.components.EmptyState(
+                        title = "Belum ada aktivitas shift ini",
+                        icon = Icons.Default.ReceiptLong
+                    )
                 }
             } else {
                 LazyColumn(Modifier.fillMaxSize()) {
@@ -618,7 +650,7 @@ fun LedgerItemRow(item: LedgerItem, viewModel: ShiftViewModel) {
             when (item) {
                 is LedgerItem.Expense -> {
                     val exp = item.data
-                    val isVoided = exp.deletedAt != null
+                    val isVoided = !exp.deletedAt.isNullOrBlank()
                     Box(
                         Modifier.size(44.dp).clip(RoundedCornerShape(8.dp))
                             .background(if (isVoided) Color(0xFFF3F4F6) else Color(0xFFFEF2F2)),
@@ -734,7 +766,7 @@ fun LedgerItemRow(item: LedgerItem, viewModel: ShiftViewModel) {
             when (item) {
                 is LedgerItem.Expense -> {
                     val exp = item.data
-                    val isVoided = exp.deletedAt != null
+                    val isVoided = !exp.deletedAt.isNullOrBlank()
                     Text(
                         "-${formatRupiah(exp.amount)}", 
                         fontWeight = FontWeight.Black, 
@@ -762,15 +794,6 @@ fun LedgerItemRow(item: LedgerItem, viewModel: ShiftViewModel) {
                         color = if (isRejected) Color.Gray else Color(0xFF3B82F6),
                         textDecoration = if (isRejected) TextDecoration.LineThrough else null
                     )
-                    if (top.status == "approved_by_finance" || top.status == "forwarded_by_leader") {
-                        Text(
-                            "Terima Dana",
-                            color = Color(0xFF3B82F6),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(top = 6.dp).clickable { viewModel.receiveTopup(top.id) }.background(Color(0xFFEFF6FF), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
                 }
                 is LedgerItem.Sale -> {
                     Text(

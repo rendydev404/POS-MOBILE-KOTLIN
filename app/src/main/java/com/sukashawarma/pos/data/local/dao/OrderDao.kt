@@ -18,6 +18,16 @@ interface OrderDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrder(order: LocalOrderEntity)
 
+    /**
+     * Menulis banyak pesanan dalam SATU transaksi.
+     *
+     * Menyisipkan satu per satu membuat Room mengirim sinyal perubahan berkali-kali,
+     * dan tiap sinyal memicu komposisi ulang daftar pesanan, laporan, serta laci
+     * kasir. Satu transaksi = satu sinyal.
+     */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrders(orders: List<LocalOrderEntity>)
+
     @Query("UPDATE local_orders SET status = :status WHERE id = :orderId")
     suspend fun updateOrderStatus(orderId: String, status: String)
 
@@ -76,6 +86,33 @@ interface OrderDao {
         endMillis: Long
     ): List<LocalOrderEntity>
 
+    /**
+     * Versi reaktif dari [getOrdersByDateRange].
+     *
+     * Pembacaan sekali-jalan berlomba dengan proses yang menulis Room: keduanya
+     * dipicu event yang sama, dan pembacanya hampir selalu menang karena penulis
+     * harus menunggu HTTP dulu — hasilnya angka basi. Room mengirim ulang lewat
+     * Flow ini setiap kali tabelnya berubah, jadi tidak ada lagi balapan.
+     */
+    @Query(
+        "SELECT * FROM local_orders WHERE outletId = :outletId " +
+            "AND createdAt >= :startMillis AND createdAt <= :endMillis ORDER BY createdAt DESC"
+    )
+    fun observeOrdersByDateRange(
+        outletId: String,
+        startMillis: Long,
+        endMillis: Long
+    ): Flow<List<LocalOrderEntity>>
+
     @Query("SELECT id FROM local_orders WHERE outletId = :outletId AND isSyncedFromOffline = 1")
     suspend fun getSyncedFromOfflineIds(outletId: String): List<String>
+
+    /**
+     * Snapshot sekali jalan untuk pembanding saat sync.
+     *
+     * Menggantikan pemanggilan getOrderById() per pesanan: dulu satu sync dengan
+     * 200 pesanan berarti 200 kueri terpisah, setiap 15 detik.
+     */
+    @Query("SELECT * FROM local_orders WHERE outletId = :outletId")
+    suspend fun getAllOrdersByOutlet(outletId: String): List<LocalOrderEntity>
 }

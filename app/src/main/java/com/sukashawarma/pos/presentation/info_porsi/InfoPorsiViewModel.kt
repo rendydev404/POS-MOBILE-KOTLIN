@@ -30,6 +30,14 @@ class InfoPorsiViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             }
         }
+        // Proyeksi porsi bergerak mengikuti stok dan pesanan yang masuk; tanpa ini
+        // angkanya beku sampai halaman dibuka ulang.
+        viewModelScope.launch {
+            com.sukashawarma.pos.data.remote.GlobalEventBus.stockEvent.collect { loadPorsi() }
+        }
+        viewModelScope.launch {
+            com.sukashawarma.pos.data.remote.GlobalEventBus.orderSyncEvent.collect { loadPorsi() }
+        }
     }
 
     fun loadPorsi(outletId: String = currentOutletId.value) {

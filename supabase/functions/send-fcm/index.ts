@@ -1,5 +1,7 @@
-import { createClient } from '@supabase/supabase-js'
-import { SignJWT, importPKCS8 } from 'jose'
+// Specifier npm: ditulis langsung supaya file ini bisa di-deploy lewat editor
+// dashboard tanpa ikut membawa deno.json.
+import { createClient } from 'npm:@supabase/supabase-js@2'
+import { SignJWT, importPKCS8 } from 'npm:jose@5'
 
 let cachedToken: string | null = null
 let tokenExpiry: number = 0
@@ -114,9 +116,34 @@ Deno.serve(async (req) => {
       )
     }
 
-    const serviceAccount = JSON.parse(serviceAccountStr)
+    // Kalau secret-nya rusak, jangan biarkan menyamar sebagai error JSON generik —
+    // sebutkan variabel mana yang salah supaya langsung ketahuan.
+    let serviceAccount: Record<string, any>
+    try {
+      serviceAccount = JSON.parse(serviceAccountStr)
+    } catch (_e) {
+      return new Response(
+        JSON.stringify({
+          error: 'FIREBASE_SERVICE_ACCOUNT bukan JSON valid. Paste ulang isi utuh file service account dari Firebase Console.',
+          preview: serviceAccountStr.slice(0, 40),
+        }),
+        { status: 500, headers: { 'Content-Type': 'application/json' } }
+      )
+    }
+
     const projectId = serviceAccount.project_id
-    const accessToken = await getValidAccessToken(serviceAccount.client_email, serviceAccount.private_key)
+    // Project service account harus sama dengan project google-services.json app
+    // (pos-native-de856); kalau beda, FCM balas 403 untuk semua token.
+    if (!projectId) {
+      return new Response(
+        JSON.stringify({ error: 'FIREBASE_SERVICE_ACCOUNT tidak punya project_id' }),
+        { status: 500, headers: { 'Content-Type': 'application/json' } }
+      )
+    }
+    // Sebagian cara paste menyimpan private_key dengan "\n" literal, bukan baris
+    // baru sungguhan — importPKCS8 menolaknya. Normalkan dulu.
+    const privateKey = String(serviceAccount.private_key ?? '').replace(/\\n/g, '\n')
+    const accessToken = await getValidAccessToken(serviceAccount.client_email, privateKey)
 
     const dataPayload = buildDataPayload(type, record)
 
@@ -146,8 +173,18 @@ Deno.serve(async (req) => {
         })
 
         const data = await res.json()
-        // UNREGISTERED / SENDER_ID_MISMATCH = token mati, buang agar tabel tidak menumpuk.
-        if (res.status === 404 || res.status === 403) deadTokens.push(token)
+        // Hanya UNREGISTERED (404) yang benar-benar berarti token mati.
+        // 403 JANGAN dibuang: itu PERMISSION_DENIED di level kredensial/project
+        // (service account salah, FCM API belum aktif) yang mengenai SEMUA token
+        // sekaligus — memperlakukannya sebagai token mati akan mengosongkan
+        // seluruh tabel dalam sekali kirim, dan push mati permanen sesudahnya.
+        const errorCode = data?.error?.details?.find((d: any) =>
+          d['@type']?.includes('FcmError'))?.errorCode
+        if (res.status === 404 || errorCode === 'UNREGISTERED') {
+          deadTokens.push(token)
+        } else if (res.status === 403) {
+          console.error(`FCM 403 untuk token ${token.slice(0, 12)}… — kredensial/project bermasalah, token TIDAK dihapus:`, JSON.stringify(data))
+        }
         return { token, status: res.status, data }
       })
 

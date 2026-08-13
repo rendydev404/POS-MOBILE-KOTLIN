@@ -577,7 +577,13 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                 customerName.value
             }
             val selectedPayment = payment.value ?: PaymentMethod.CASH
-            val activeChannel = if (mode.value == OrderMode.WEBSITE) "website" else channel.value
+            // Endorse ditandai lewat channel agar bisa dibedakan dari walk-in POS biasa
+            // (source-nya sama-sama POS) — dipakai badge "Endorse" di kartu order/riwayat/laporan.
+            val activeChannel = when (mode.value) {
+                OrderMode.WEBSITE -> "website"
+                OrderMode.ENDORSE -> "endorse"
+                else -> channel.value
+            }
             val isWalkInLike = mode.value == OrderMode.WALKIN || mode.value == OrderMode.ENDORSE
             val amountReceived = if (selectedPayment == PaymentMethod.CASH) cashAmount() else totals.total
 
@@ -647,7 +653,7 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                             CreateOrderItemPayload(
                                 orderId = order.id,
                                 menuItemId = item.menuItemId,
-                                menuItemName = item.name,
+                                menuItemName = item.encodedMenuItemName(),
                                 quantity = item.quantity,
                                 unitPrice = item.unitPrice,
                                 subtotal = item.subtotal
@@ -712,6 +718,11 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                 localPaymentProofPath = localPaymentProofPath
             )
             orderDao.insertOrder(entity)
+            // Jangan tunggu echo realtime dari server: layar lain (target harian,
+            // laporan, histori, laci kasir) harus ikut berubah begitu pesanan
+            // tersimpan, termasuk saat pesanan masih tersimpan lokal/offline.
+            com.sukashawarma.pos.data.remote.GlobalEventBus.orderSyncEvent.tryEmit(Unit)
+            com.sukashawarma.pos.data.remote.GlobalEventBus.targetRefreshEvent.tryEmit(Unit)
 
             orderSuccessInfo.value = OrderSuccessInfo(
                 orderNumber = serverOrderNumber,

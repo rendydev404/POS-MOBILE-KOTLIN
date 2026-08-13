@@ -4,10 +4,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -57,7 +61,7 @@ fun DashboardScreen(
 
     val currentOutletName by viewModel.currentOutletName.collectAsState()
     val omzetKotorHariIni by viewModel.omzetKotorHariIni.collectAsState()
-    val criticalStockNames by viewModel.criticalStockNames.collectAsState()
+    val criticalStockAlerts by viewModel.criticalStockAlerts.collectAsState()
 
     var activeSourceFilter by remember { mutableStateOf("Semua") }
     var preparingSubTab by remember { mutableStateOf("Antrean") }
@@ -93,29 +97,11 @@ fun DashboardScreen(
             .background(CreamBackground)
     ) {
 
-        // 2. Top Banner 2: STOK KRITIS / HABIS Red Marquee (Matching Screenshot)
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(36.dp),
-            color = MarqueeRed
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Icons.Default.Warning, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "STOK KRITIS/HABIS: $criticalStockNames",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-            }
-        }
+        // 2. Pita stok kritis. Menghilang sendiri kalau tidak ada bahan kritis —
+        // dulu selalu tampil walau kosong. Ditekan → buka papan stok outlet.
+        com.sukashawarma.pos.presentation.components.StockMarquee(
+            alerts = criticalStockAlerts
+        )
 
         Column(
             modifier = Modifier
@@ -128,7 +114,7 @@ fun DashboardScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
                     Text(
                         text = "Order",
                         style = MaterialTheme.typography.headlineLarge,
@@ -148,10 +134,12 @@ fun DashboardScreen(
                             Icon(Icons.Default.Home, contentDescription = null, tint = ShawarmaOrange, modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "Anda berada di cabang: $currentOutletName",
+                                text = "Anda berada di outlet: $currentOutletName",
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Bold,
-                                color = ShawarmaOrangeDark
+                                color = ShawarmaOrangeDark,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -214,19 +202,27 @@ fun DashboardScreen(
                     shape = RoundedCornerShape(6.dp),
                     color = if (printerConnectionStatus == com.sukashawarma.pos.presentation.printer.ConnectionStatus.CONNECTED) TwEmerald50 else CreamSurface,
                     border = androidx.compose.foundation.BorderStroke(1.dp, if (printerConnectionStatus == com.sukashawarma.pos.presentation.printer.ConnectionStatus.CONNECTED) TwEmerald100 else CreamBorder),
-                    modifier = Modifier.clickable { showPrinterDialog = true }
+                    modifier = Modifier.clickable { showPrinterDialog = true }.wrapContentWidth().padding(end = 12.dp)
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val icon = if (printerConnectionStatus == com.sukashawarma.pos.presentation.printer.ConnectionStatus.CONNECTED) Icons.Default.CheckCircle else Icons.Default.Lock
+                        val icon = Icons.Default.Print
                         val tint = if (printerConnectionStatus == com.sukashawarma.pos.presentation.printer.ConnectionStatus.CONNECTED) TwEmerald600 else TextDarkMuted
-                        val text = if (printerConnectionStatus == com.sukashawarma.pos.presentation.printer.ConnectionStatus.CONNECTED) "PRINTER KASIR TERHUBUNG (${connectedDeviceName ?: ""})" else "PRINTER KASIR BELUM TERHUBUNG"
+                        val text = if (printerConnectionStatus == com.sukashawarma.pos.presentation.printer.ConnectionStatus.CONNECTED) "Terhubung" else "Belum Terhubung"
                         
-                        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(12.dp))
+                        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text(text, style = MaterialTheme.typography.bodySmall, fontSize = 10.sp, color = tint, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = text, 
+                            style = MaterialTheme.typography.bodySmall, 
+                            fontSize = 11.sp, 
+                            color = tint, 
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        )
                     }
                 }
 
@@ -294,14 +290,14 @@ fun DashboardScreen(
 
             val column1: @Composable () -> Unit = {
                 BoardColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    title = "Menunggu Pembayaran",
+                    modifier = Modifier.fillMaxWidth().fillMaxHeight(),
+                    title = "Menunggu Bayar",
                     icon = Icons.Default.Schedule,
                     badgeCount = filteredPending.size,
                     emptyMessage = "Tidak ada pesanan tertunda\nPesanan baru akan muncul otomatis di sini."
                 ) {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        items(filteredPending, key = { it.id }) { order ->
+                        items(filteredPending) { order ->
                             OrderCard(
                                 order = order,
                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
@@ -327,7 +323,13 @@ fun DashboardScreen(
                                         viewModel.markCustomerReceiptPrinted(o)
                                     }
                                 },
-                                onReprint = { o -> viewModel.printReceipt(context, o, isKitchen = false) }
+                                onReprint = { o -> viewModel.printReceipt(context, o, isKitchen = false) },
+                                onAcceptOrder = { o ->
+                                    viewModel.updateOrderStatus(o, com.sukashawarma.pos.domain.model.OrderStatus.PREPARING)
+                                    viewModel.printReceipt(context, o, isKitchen = true) {
+                                        viewModel.markKitchenReceiptPrinted(o)
+                                    }
+                                }
                             )
                         }
                     }
@@ -336,7 +338,7 @@ fun DashboardScreen(
 
             val column2: @Composable () -> Unit = {
                 BoardColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxWidth().fillMaxHeight(),
                     title = "Sedang Diproses",
                     icon = Icons.Default.Restaurant,
                     badgeCount = filteredPreparing.size,
@@ -346,7 +348,7 @@ fun DashboardScreen(
                     emptyMessage = "Tidak ada antrean masak\nDapur sedang santai, pesanan aktif akan muncul di sini."
                 ) {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        items(filteredPreparing, key = { it.id }) { order ->
+                        items(filteredPreparing) { order ->
                             OrderCard(
                                 order = order,
                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
@@ -381,7 +383,7 @@ fun DashboardScreen(
 
             val column3: @Composable () -> Unit = {
                 BoardColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxWidth().fillMaxHeight(),
                     title = "Selesai / Lunas",
                     icon = Icons.Default.CheckCircle,
                     badgeCount = filteredCompleted.size,
@@ -391,7 +393,8 @@ fun DashboardScreen(
                     emptyMessage = "Belum ada pesanan selesai hari ini"
                 ) {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        items(filteredCompleted.filter { completedSearchQuery.isEmpty() || it.orderNumber.toString().contains(completedSearchQuery) }, key = { it.id }) { order ->
+                        val itemsToShow = filteredCompleted.filter { completedSearchQuery.isEmpty() || it.orderNumber.toString().contains(completedSearchQuery) }
+                        items(itemsToShow) { order ->
                             OrderCard(
                                 order = order,
                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
@@ -424,42 +427,54 @@ fun DashboardScreen(
                 }
             }
 
-            if (windowSizeClass == WindowWidthSizeClass.Expanded) {
-                // 3-Column layout for Tablets (Landscape)
-                Row(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Box(modifier = Modifier.weight(1f)) { column1() }
-                    Box(modifier = Modifier.weight(1f)) { column2() }
-                    Box(modifier = Modifier.weight(1f)) { column3() }
-                }
-            } else {
-                // Swipeable Tabs (HorizontalPager) for Phones & Tablet Portrait
-                Column(modifier = Modifier.fillMaxSize()) {
-                    val tabs = listOf("Menunggu (${pendingOrders.size})", "Diproses (${preparingOrders.size})", "Selesai (${completedOrders.size})")
-                    TabRow(
-                        selectedTabIndex = pagerState.currentPage,
-                        containerColor = CreamBackground,
-                        contentColor = ShawarmaOrange,
-                        modifier = Modifier.padding(bottom = 12.dp)
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            ) {
+                val availableWidth = maxWidth
+
+                if (availableWidth >= 480.dp) {
+                    // 3 Kolom Penuh untuk Tablet, dengan scroll per kolom
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        tabs.forEachIndexed { index, title ->
-                            Tab(
-                                selected = pagerState.currentPage == index,
-                                onClick = { coroutineScope.launch { pagerState.animateScrollToPage(index) } },
-                                text = { Text(title, fontWeight = FontWeight.Bold, maxLines = 1) }
-                            )
-                        }
+                        Box(modifier = Modifier.fillMaxHeight().weight(1f)) { column1() }
+                        Box(modifier = Modifier.fillMaxHeight().weight(1f)) { column2() }
+                        Box(modifier = Modifier.fillMaxHeight().weight(1f)) { column3() }
                     }
-                    HorizontalPager(
-                        state = pagerState,
-                        modifier = Modifier.fillMaxSize()
-                    ) { page ->
-                        when (page) {
-                            0 -> column1()
-                            1 -> column2()
-                            2 -> column3()
+                } else {
+                    // Mobile / Layar Sempit: Pager dengan Swipeable Tabs
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        val tabs = listOf("Menunggu (${pendingOrders.size})", "Diproses (${preparingOrders.size})", "Selesai (${completedOrders.size})")
+                        TabRow(
+                            selectedTabIndex = pagerState.currentPage,
+                            containerColor = CreamBackground,
+                            contentColor = ShawarmaOrange,
+                            modifier = Modifier.padding(bottom = 12.dp)
+                        ) {
+                            tabs.forEachIndexed { index, title ->
+                                Tab(
+                                    selected = pagerState.currentPage == index,
+                                    onClick = { coroutineScope.launch { pagerState.animateScrollToPage(index) } },
+                                    text = { Text(title, fontWeight = FontWeight.Bold, maxLines = 1, fontSize = 12.sp) }
+                                )
+                            }
+                        }
+                        HorizontalPager(
+                            state = pagerState,
+                            modifier = Modifier.fillMaxSize()
+                        ) { page ->
+                            Box(modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp)) {
+                                when (page) {
+                                    0 -> column1()
+                                    1 -> column2()
+                                    2 -> column3()
+                                }
+                            }
                         }
                     }
                 }
@@ -484,42 +499,49 @@ private fun BoardColumn(
     content: @Composable () -> Unit
 ) {
     Surface(
-        modifier = modifier.fillMaxHeight(),
+        modifier = modifier,
         shape = RoundedCornerShape(12.dp),
         color = TwGray50,
         border = androidx.compose.foundation.BorderStroke(1.dp, CreamBorder)
     ) {
         Column(
             modifier = Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
                 .padding(12.dp)
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(icon, contentDescription = null, tint = ShawarmaOrange, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                    Icon(icon, contentDescription = null, tint = ShawarmaOrange, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = title,
                         style = MaterialTheme.typography.titleMedium,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
-                        color = TextDarkPrimary
+                        color = TextDarkPrimary,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )
                 }
 
+                Spacer(modifier = Modifier.width(4.dp))
+
                 Surface(
                     shape = RoundedCornerShape(12.dp),
-                    color = CreamBackground
+                    color = ShawarmaOrangeLight
                 ) {
                     Text(
-                        text = "$badgeCount Pesanan",
+                        text = "$badgeCount",
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                         style = MaterialTheme.typography.bodySmall,
                         fontSize = 11.sp,
-                        color = TextDarkSecondary
+                        fontWeight = FontWeight.Bold,
+                        color = ShawarmaOrangeDark,
+                        maxLines = 1
                     )
                 }
             }
@@ -547,7 +569,9 @@ private fun BoardColumn(
                                 text = "$tab 0",
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isSelected) ShawarmaOrange else TextDarkSecondary
+                                color = if (isSelected) ShawarmaOrange else TextDarkSecondary,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -577,27 +601,34 @@ private fun BoardColumn(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f)
+                        .defaultMinSize(minHeight = 200.dp)
                         .border(1.dp, CreamBorder, RoundedCornerShape(10.dp))
                         .padding(16.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                         Icon(icon, contentDescription = null, tint = TextDarkMuted, modifier = Modifier.size(40.dp))
                         Spacer(modifier = Modifier.height(10.dp))
                         Text(
                             text = emptyMessage,
                             style = MaterialTheme.typography.bodyMedium,
                             color = TextDarkMuted,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            maxLines = 4,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
                     }
                 }
             } else {
-                Box(modifier = Modifier.weight(1f)) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                ) {
                     content()
                 }
             }
         }
     }
 }
+
+

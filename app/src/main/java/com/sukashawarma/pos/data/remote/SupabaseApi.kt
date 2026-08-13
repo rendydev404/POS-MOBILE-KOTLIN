@@ -14,6 +14,18 @@ interface SupabaseApi {
         @Query("select") select: String = "item_name,projection_text"
     ): Response<List<MonitoringViewCrewDto>>
 
+    // Bahan baku menipis/habis di outlet ini. Filter status dilakukan di server,
+    // sama persis dengan POS web (lib/useStockAlerts.ts) supaya kasir dan papan
+    // stok tidak pernah menampilkan daftar yang berbeda.
+    @GET("rest/v1/monitoring_view_crew")
+    suspend fun getStockAlerts(
+        @Query("outlet_id") outletIdFilter: String,
+        @Query("status") statusFilter: String = "in.(below,warning)",
+        @Query("select") select: String =
+            "bahan_baku_id,item_name,satuan,kategori,current_qty,threshold,status,projection_text",
+        @Query("order") order: String = "status,item_name"
+    ): Response<List<MonitoringViewCrewDto>>
+
     // Fetch the logged-in staff's own row (RLS: outlet_staff_read_self allows id = auth.uid())
     @GET("rest/v1/outlet_staff")
     suspend fun getStaffById(
@@ -104,7 +116,7 @@ interface SupabaseApi {
     @GET("rest/v1/orders")
     suspend fun getOrders(
         @QueryMap filters: Map<String, String>,
-        @Query("select") select: String = "*,order_items(*)",
+        @Query("select") select: String = "*,order_items(*,menu_item:menu_items(id,name))",
         @Query("order") order: String = "created_at.desc"
     ): Response<List<OrderDto>>
 
@@ -154,7 +166,7 @@ interface SupabaseApi {
     @PATCH("rest/v1/shifts")
     suspend fun updateShift(
         @Query("id") shiftIdFilter: String,
-        @Body patch: Map<String, Any>
+        @Body patch: @JvmSuppressWildcards Map<String, Any>
     ): Response<Void>
 
     // Fetch Real Petty Cash Expenses from Supabase
@@ -190,13 +202,12 @@ interface SupabaseApi {
     @POST("rest/v1/rpc/get_my_target_progress")
     suspend fun getMyTargetProgress(@Body payload: Map<String, String> = emptyMap()): Response<List<TargetProgressDto>>
 
-    // Registers/refreshes this device's FCM token (see fcm_tokens migration).
-    @Headers("Prefer: resolution=merge-duplicates")
-    @POST("rest/v1/fcm_tokens")
-    suspend fun upsertFcmToken(
-        @Query("on_conflict") onConflict: String = "staff_id,token",
-        @Body payload: UpsertFcmTokenPayload
-    ): Response<Void>
+    // Mendaftarkan device ini ke akun yang sedang login. Lewat RPC, bukan upsert
+    // langsung ke tabel: satu device = satu baris, dan login berikutnya mengambil
+    // alih baris itu supaya notifikasi tidak lagi menyasar akun yang sudah logout
+    // (migrasi 20260808_fcm_tokens_one_row_per_device.sql).
+    @POST("rest/v1/rpc/register_fcm_token")
+    suspend fun registerFcmToken(@Body payload: RegisterFcmTokenPayload): Response<Void>
 
     @GET("rest/v1/petty_cash_topups")
     suspend fun getPettyCashTopups(
@@ -207,9 +218,6 @@ interface SupabaseApi {
 
     @POST("rest/v1/rpc/void_petty_cash_expense")
     suspend fun voidPettyCashExpense(@Body payload: VoidPettyCashPayload): Response<Void>
-
-    @POST("rest/v1/rpc/crew_receive_funds")
-    suspend fun crewReceiveFunds(@Body payload: ReceiveFundsPayload): Response<Void>
 
     @POST("rest/v1/rpc/calculate_monthly_crew_bonus")
     suspend fun calculateMonthlyCrewBonus(@Body payload: MonthlyBonusPayload): Response<List<MonthlyBonusResultDto>>

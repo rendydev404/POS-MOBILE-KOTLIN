@@ -62,7 +62,7 @@ class OrderSyncEngine(
                     CreateOrderItemPayload(
                         orderId = entity.id,
                         menuItemId = item.menuItemId,
-                        menuItemName = item.name,
+                        menuItemName = item.encodedMenuItemName(),
                         quantity = item.quantity,
                         unitPrice = item.unitPrice,
                         subtotal = item.subtotal
@@ -101,6 +101,12 @@ class OrderSyncEngine(
                 // Network hiccup mid-loop — stop here, remaining orders retry next trigger.
                 break
             }
+        }
+        if (syncedCount > 0) {
+            // Pesanan offline baru sampai ke server: omzet & laporan berubah untuk
+            // semua layar, dan angka target sekarang sudah bisa dihitung server.
+            com.sukashawarma.pos.data.remote.GlobalEventBus.orderSyncEvent.tryEmit(Unit)
+            com.sukashawarma.pos.data.remote.GlobalEventBus.targetRefreshEvent.tryEmit(Unit)
         }
         return syncedCount
     }

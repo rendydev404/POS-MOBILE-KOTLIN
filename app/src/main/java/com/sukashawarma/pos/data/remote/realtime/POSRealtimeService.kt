@@ -51,6 +51,7 @@ class POSRealtimeService : Service() {
                 GlobalEventBus.orderSyncEvent.tryEmit(Unit)
                 GlobalEventBus.ownerMessageRefreshEvent.tryEmit(Unit)
                 GlobalEventBus.targetRefreshEvent.tryEmit(Unit)
+                GlobalEventBus.pettyCashEvent.tryEmit(Unit)
             }
         }
 
@@ -63,7 +64,11 @@ class POSRealtimeService : Service() {
         onlineSyncManager.connect()
         
         realtimeManager.onChange = { table, eventType, record ->
-            if (table == "orders") {
+            if (table == "order_items") {
+                // Item berubah -> omzet & laporan ikut berubah.
+                GlobalEventBus.orderSyncEvent.tryEmit(Unit)
+                GlobalEventBus.targetRefreshEvent.tryEmit(Unit)
+            } else if (table == "orders") {
                 // Fallback to currentOutletId if it's missing in the payload (common in UPDATE events without FULL replica identity)
                 val recordOutletId = record.optString("outlet_id", currentOutletId)
                 val recordSource = record.optString("source", "pos")
@@ -84,20 +89,41 @@ class POSRealtimeService : Service() {
                             
                             val isIncomingCancelled = cancellationStatus == "approved" || status.equals("cancelled", ignoreCase = true)
                             
+                            val mappedStatus = try {
+                                com.sukashawarma.pos.domain.model.OrderStatus.valueOf(status.uppercase()).name
+                            } catch (e: Exception) {
+                                com.sukashawarma.pos.domain.model.OrderStatus.PENDING.name
+                            }
+
                             val finalStatus = if (isIncomingCancelled || isCurrentlyCancelled) {
                                 com.sukashawarma.pos.domain.model.OrderStatus.CANCELLED.name
                             } else {
-                                status.uppercase()
+                                mappedStatus
                             }
                             
                             orderDao.updateOrderStatus(orderId, finalStatus)
                             
+                            // 'none' adalah nilai default kolom `cancellation_status`,
+                            // artinya "belum ada pembatalan" — sama saja dengan NULL.
+                            val incomingKosong = cancellationStatus.isNullOrBlank() ||
+                                cancellationStatus.equals("none", ignoreCase = true)
+                            val menungguPersetujuan = existing?.cancellationStatus == "pending_approval"
+
                             if (isCurrentlyCancelled && !isIncomingCancelled) {
                                 // Do not downgrade cancellation_status if the incoming event is a stale order record
                             } else {
                                 if (isIncomingCancelled) {
                                     orderDao.updateCancellationStatus(orderId, "approved", cancellationUserName)
-                                } else if (!record.isNull("cancellation_status")) {
+                                } else if (menungguPersetujuan && incomingKosong &&
+                                    com.sukashawarma.pos.data.sync.PendingCancellationGuard.isProtected(orderId)
+                                ) {
+                                    // Event lain (mis. perubahan status pesanan) tidak boleh
+                                    // membatalkan pengajuan yang baru saja diajukan. Setelah
+                                    // jendela perlindungan lewat, 'none' dari server berarti
+                                    // AM menolak — dan itu harus mendarat.
+                                } else if (menungguPersetujuan && incomingKosong) {
+                                    orderDao.updateCancellationStatus(orderId, null, null)
+                                } else if (!incomingKosong) {
                                     orderDao.updateCancellationStatus(orderId, cancellationStatus, cancellationUserName)
                                 }
                             }
@@ -105,7 +131,10 @@ class POSRealtimeService : Service() {
                     }
 
                     GlobalEventBus.orderSyncEvent.tryEmit(Unit)
-                    
+                    // Omzet berubah -> progress target harian harus ikut, tanpa
+                    // menunggu poll berkala di banner.
+                    GlobalEventBus.targetRefreshEvent.tryEmit(Unit)
+
                     if (eventType == "INSERT" && recordSource.lowercase() != "pos") {
                         alertPlayer.playNewOrderAlert()
                         showPushNotification(
@@ -137,14 +166,26 @@ class POSRealtimeService : Service() {
                 GlobalEventBus.targetRefreshEvent.tryEmit(Unit)
             } else if (table == "bypass_requests") {
                 GlobalEventBus.bypassRequestEvent.tryEmit(Unit)
+            } else if (table == "petty_cash_topups" || table == "petty_cash_expenses") {
+                GlobalEventBus.pettyCashEvent.tryEmit(Unit)
             } else if (table == "cancellation_requests") {
                 val orderId = record.optString("order_id")
                 val status = record.optString("status")
                 
                 serviceScope.launch {
-                    if (orderId.isNotBlank() && status == "approved") {
-                        orderDao.updateOrderStatus(orderId, com.sukashawarma.pos.domain.model.OrderStatus.CANCELLED.name)
-                        orderDao.updateCancellationStatus(orderId, "approved", null)
+                    if (orderId.isNotBlank()) {
+                        // Keputusan AM selalu menang atas status lokal yang optimistis.
+                        com.sukashawarma.pos.data.sync.PendingCancellationGuard.clear(orderId)
+                        if (status == "approved") {
+                            orderDao.updateOrderStatus(orderId, com.sukashawarma.pos.domain.model.OrderStatus.CANCELLED.name)
+                            orderDao.updateCancellationStatus(orderId, "approved", null)
+                        } else if (status == "rejected") {
+                            // Dulu cabang ini tidak ada sama sekali: penolakan tidak
+                            // pernah diterapkan, jadi kartu terus menampilkan
+                            // "Menunggu Persetujuan Batal" tanpa akhir. Pesanan tidak
+                            // jadi dibatalkan, jadi status aslinya dibiarkan utuh.
+                            orderDao.updateCancellationStatus(orderId, null, null)
+                        }
                     }
                 }
                 GlobalEventBus.orderSyncEvent.tryEmit(Unit)
@@ -157,6 +198,10 @@ class POSRealtimeService : Service() {
         if (!outletId.isNullOrBlank() && outletId != currentOutletId) {
             currentOutletId = outletId
             realtimeManager.connect(currentOutletId)
+        } else if (intent?.getBooleanExtra(EXTRA_RESUME, false) == true) {
+            // Layar tidur/app di background membuat socket mati diam-diam; tanpa ini
+            // layar baru menyusul setelah heartbeat timeout (~70 detik).
+            realtimeManager.reconnectNow()
         }
         return START_STICKY
     }
@@ -228,6 +273,7 @@ class POSRealtimeService : Service() {
 
     companion object {
         const val EXTRA_OUTLET_ID = "outlet_id"
+        const val EXTRA_RESUME = "resume"
         private const val CHANNEL_ID = "pos_service_channel"
         private const val FOREGROUND_NOTIFICATION_ID = 1001
 
@@ -244,6 +290,22 @@ class POSRealtimeService : Service() {
         
         fun stop(context: Context) {
             context.stopService(Intent(context, POSRealtimeService::class.java))
+        }
+
+        /**
+         * Sambung ulang begitu app kembali ke depan. `outletId` tetap dikirim agar
+         * channel tetap pulih walau service sempat dimatikan sistem.
+         */
+        fun resume(context: Context, outletId: String) {
+            val intent = Intent(context, POSRealtimeService::class.java).apply {
+                putExtra(EXTRA_OUTLET_ID, outletId)
+                putExtra(EXTRA_RESUME, true)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
         }
     }
 }

@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -78,10 +79,11 @@ fun InfoPorsiScreen(
                         .padding(32.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Belum Ada Data", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextDarkPrimary)
-                        Text("Tidak ada data stok/resep yang dapat dihitung porsinya.", color = TextDarkSecondary)
-                    }
+                    com.sukashawarma.pos.presentation.components.EmptyState(
+                        title = "Belum Ada Data",
+                        subtitle = "Tidak ada data stok/resep yang dapat dihitung porsinya.",
+                        icon = Icons.Default.Inventory2
+                    )
                 }
             } else {
                 Surface(

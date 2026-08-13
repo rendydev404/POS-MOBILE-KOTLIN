@@ -20,9 +20,21 @@ object JakartaTime {
 
     fun dateString(day: LocalDate): String = day.format(DateTimeFormatter.ISO_LOCAL_DATE)
 
-    fun startOfDayIso(day: LocalDate): String = "${dateString(day)}T00:00:00+07:00"
+    /**
+     * Batas hari sebagai instant UTC (`...Z`), menunjuk titik waktu yang sama
+     * dengan tengah malam di Jakarta.
+     *
+     * Sengaja BUKAN bentuk `+07:00`: string ini dipakai sebagai nilai query
+     * PostgREST, dan OkHttp tidak mem-persen-encode `+` di query string. Server
+     * menerimanya sebagai spasi lalu menolak seluruh request dengan
+     * `22007 invalid input syntax for type timestamp with time zone`.
+     */
+    fun startOfDayIso(day: LocalDate): String =
+        Instant.ofEpochMilli(startOfDayMillis(day)).toString()
 
-    fun endOfDayIso(day: LocalDate): String = "${dateString(day)}T23:59:59+07:00"
+    /** Batas atas inklusif, sampai milidetik terakhir hari itu. */
+    fun endOfDayIso(day: LocalDate): String =
+        Instant.ofEpochMilli(endOfDayMillis(day)).toString()
 
     fun startOfDayMillis(day: LocalDate): Long = day.atStartOfDay(ZONE).toInstant().toEpochMilli()
 

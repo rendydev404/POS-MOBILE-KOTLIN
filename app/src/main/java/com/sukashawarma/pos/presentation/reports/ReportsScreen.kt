@@ -40,6 +40,7 @@ fun ReportsScreen(
     val payment by viewModel.paymentFilter.collectAsState()
     val status by viewModel.statusFilter.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
+    val isOnline by com.sukashawarma.pos.data.remote.NetworkMonitor.isOnline.collectAsState()
 
     val context = LocalContext.current
 
@@ -72,7 +73,7 @@ fun ReportsScreen(
                 }
             }
         } else {
-            if (analytics.isFromLocalCache) {
+            if (analytics.isFromLocalCache && !isOnline) {
                 item { OfflineDataBanner() }
             }
             item { KPICards(analytics) }
@@ -237,7 +238,9 @@ fun FilterDropdown(selected: String, options: List<Pair<String, String>>, onSele
 
 /** Ditampilkan saat angka berasal dari cache Room, bukan dari agregasi server. */
 @Composable
-fun OfflineDataBanner() {
+fun OfflineDataBanner(isOnline: Boolean = false) {
+    if (isOnline) return
+    
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
@@ -361,9 +364,11 @@ fun DistribusiPembayaran(data: AnalyticsData) {
             Spacer(modifier = Modifier.height(16.dp))
 
             if (data.paymentBreakdown.isEmpty()) {
-                Box(modifier = Modifier.height(120.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    Text("Belum ada data", color = Color(0xFF9CA3AF))
-                }
+                com.sukashawarma.pos.presentation.components.EmptyState(
+                    title = "Belum ada data pembayaran",
+                    icon = Icons.Default.CreditCard,
+                    minHeight = 120.dp
+                )
             } else {
                 val sorted = data.paymentBreakdown.entries.sortedByDescending { it.value.count }
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -435,9 +440,11 @@ fun TotalMenuTerjual(data: AnalyticsData) {
 
             Spacer(modifier = Modifier.height(16.dp))
             if (data.totalItemsSold == 0 || data.bestSellers.isEmpty()) {
-                Box(modifier = Modifier.height(80.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    Text("Belum ada item terjual", fontSize = 12.sp, color = Color(0xFF9CA3AF))
-                }
+                com.sukashawarma.pos.presentation.components.EmptyState(
+                    title = "Belum ada item terjual",
+                    icon = Icons.Default.ShoppingBasket,
+                    minHeight = 100.dp
+                )
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     data.bestSellers.take(4).forEach { (name, stats) ->
@@ -473,9 +480,11 @@ fun TrenPendapatanChart(data: AnalyticsData) {
             Spacer(modifier = Modifier.height(24.dp))
 
             if (data.dailyEntries.isEmpty()) {
-                Box(modifier = Modifier.height(180.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    Text("Belum ada data untuk ditampilkan", fontSize = 14.sp, color = Color(0xFF9CA3AF))
-                }
+                com.sukashawarma.pos.presentation.components.EmptyState(
+                    title = "Belum ada data untuk ditampilkan",
+                    icon = Icons.Default.TrendingUp,
+                    minHeight = 180.dp
+                )
             } else {
                 val maxDaily = data.dailyEntries.maxOfOrNull { it.second }?.takeIf { it > 0 } ?: 1.0
                 Row(modifier = Modifier.height(180.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.Bottom) {
@@ -544,9 +553,11 @@ fun Top10Products(data: AnalyticsData) {
             Spacer(modifier = Modifier.height(20.dp))
 
             if (data.bestSellers.isEmpty()) {
-                Box(modifier = Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) {
-                    Text("Belum ada data penjualan", color = Color(0xFF9CA3AF))
-                }
+                com.sukashawarma.pos.presentation.components.EmptyState(
+                    title = "Belum ada data penjualan",
+                    icon = Icons.Default.Star,
+                    minHeight = 100.dp
+                )
             } else {
                 val maxQty = data.bestSellers.firstOrNull()?.second?.qty ?: 1
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -608,7 +619,7 @@ fun TransactionHistoryTable(orders: List<OrderDto>, searchQuery: String, onSearc
             val filteredOrders = orders.filter { it.status == "completed" }.filter {
                 searchQuery.isEmpty() || 
                 it.orderNumber.toString().contains(searchQuery, ignoreCase = true) ||
-                it.orderItems?.any { item -> item.menuItemName.contains(searchQuery, ignoreCase = true) } == true ||
+                it.orderItems?.any { item -> item.displayName.contains(searchQuery, ignoreCase = true) } == true ||
                 it.paymentMethod?.contains(searchQuery, ignoreCase = true) == true
             }
 
@@ -627,9 +638,11 @@ fun TransactionHistoryTable(orders: List<OrderDto>, searchQuery: String, onSearc
                     }
                     if (filteredOrders.isEmpty()) {
                         item {
-                            Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                                Text("Data tidak ditemukan", color = Color(0xFF9CA3AF))
-                            }
+                            com.sukashawarma.pos.presentation.components.EmptyState(
+                                title = "Data tidak ditemukan",
+                                icon = Icons.Default.Search,
+                                minHeight = 140.dp
+                            )
                         }
                     } else {
                         items(filteredOrders) { order ->
@@ -648,9 +661,11 @@ fun TransactionHistoryTable(orders: List<OrderDto>, searchQuery: String, onSearc
                                     LocalDateTime.parse(cleanDate).format(DateTimeFormatter.ofPattern("dd MMM yyyy, HH:mm"))
                                 } catch(e:Exception) { order.createdAt }
                                 Text(dateStr, fontSize = 12.sp, color = Color(0xFF6B7280), modifier = Modifier.weight(1f))
-                                val itemsStr = order.orderItems?.joinToString(", ") { it.menuItemName } ?: ""
+                                val itemsStr = order.orderItems?.joinToString(", ") { it.displayName } ?: ""
                                 Text(itemsStr, fontSize = 14.sp, color = Color(0xFF4B5563), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(2f))
-                                Text(order.channel ?: "-", fontSize = 12.sp, color = Color(0xFF6B7280), modifier = Modifier.weight(0.8f))
+                                Box(modifier = Modifier.weight(0.8f)) {
+                                    com.sukashawarma.pos.presentation.components.OrderSourceBadge(source = order.source, channel = order.channel)
+                                }
                                 Text(order.paymentMethod?.uppercase() ?: "-", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2563EB), modifier = Modifier.weight(0.8f).background(Color(0xFFEFF6FF), RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 4.dp))
                                 Text(formatRupiah(order.totalAmount), fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF111827), modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.End)
                             }
@@ -672,8 +687,12 @@ fun LaporanLaciCash(data: AnalyticsData) {
             Spacer(modifier = Modifier.height(24.dp))
 
             if (data.shifts.isEmpty()) {
-                Box(modifier = Modifier.fillMaxWidth().background(Color(0xFFF9FAFB), RoundedCornerShape(12.dp)).border(1.dp, Color(0xFFF3F4F6), RoundedCornerShape(12.dp)).padding(32.dp), contentAlignment = Alignment.Center) {
-                    Text("Data shift tidak ditemukan", color = Color(0xFF9CA3AF), fontWeight = FontWeight.Medium)
+                Box(modifier = Modifier.fillMaxWidth().background(Color(0xFFF9FAFB), RoundedCornerShape(12.dp)).border(1.dp, Color(0xFFF3F4F6), RoundedCornerShape(12.dp))) {
+                    com.sukashawarma.pos.presentation.components.EmptyState(
+                        title = "Data shift tidak ditemukan",
+                        icon = Icons.Default.PointOfSale,
+                        minHeight = 140.dp
+                    )
                 }
             } else {
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {

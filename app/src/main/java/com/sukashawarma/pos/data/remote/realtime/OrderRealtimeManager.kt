@@ -109,6 +109,21 @@ class OrderRealtimeManager(
                             put("schema", "public")
                             put("table", "cancellation_requests")
                         })
+                        put(JSONObject().apply {
+                            put("event", "*")
+                            put("schema", "public")
+                            put("table", "petty_cash_topups")
+                        })
+                        put(JSONObject().apply {
+                            put("event", "*")
+                            put("schema", "public")
+                            put("table", "petty_cash_expenses")
+                        })
+                        put(JSONObject().apply {
+                            put("event", "*")
+                            put("schema", "public")
+                            put("table", "order_items")
+                        })
                     })
                 })
                 channelToken = SessionTokenHolder.accessToken

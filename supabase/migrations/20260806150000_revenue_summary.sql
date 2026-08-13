@@ -34,6 +34,7 @@ WITH scoped AS (
     o.payment_method,
     o.total_amount,
     o.created_at,
+    o.cancellation_status,
     COALESCE(o.discount_amount, 0) AS discount_amount,
     COALESCE(o.promo_subsidy, 0)   AS promo_subsidy
   FROM public.orders o
@@ -64,7 +65,10 @@ completed AS (
     FROM public.order_items
     GROUP BY order_id
   ) i ON i.order_id = s.id
+  -- Pembatalan yang sudah disetujui owner tidak selalu ikut mengubah kolom
+  -- `status`, jadi `status = 'completed'` saja masih meloloskan pesanan batal.
   WHERE s.status = 'completed'
+    AND COALESCE(s.cancellation_status, '') <> 'approved'
 ),
 totals AS (
   SELECT
@@ -117,11 +121,18 @@ top_items AS (
     LIMIT 10
   ) x
 ),
--- Pending dan cancelled dihitung dari `scoped`, bukan `completed`.
+-- Dihitung dari `scoped`, bukan `completed`. "Pending" mencakup seluruh pesanan
+-- yang masih berjalan: tidak ada baris berstatus 'pending' di tabel ini, yang
+-- ada 'preparing', sehingga menghitung 'pending' saja selalu menghasilkan nol.
 statuses AS (
   SELECT
-    COUNT(*) FILTER (WHERE status = 'pending')   AS pending_count,
-    COUNT(*) FILTER (WHERE status = 'cancelled') AS cancelled_count
+    COUNT(*) FILTER (
+      WHERE status IN ('pending', 'preparing', 'ready')
+        AND COALESCE(cancellation_status, '') <> 'approved'
+    ) AS pending_count,
+    COUNT(*) FILTER (
+      WHERE status = 'cancelled' OR COALESCE(cancellation_status, '') = 'approved'
+    ) AS cancelled_count
   FROM scoped
 )
 SELECT jsonb_build_object(

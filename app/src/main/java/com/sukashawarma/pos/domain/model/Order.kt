@@ -30,7 +30,16 @@ data class OrderItem(
     val subtotal: Double = unitPrice * quantity,
     val note: String = "",
     val isChild: Boolean = false
-)
+) {
+    /**
+     * `order_items` (Supabase) tidak punya kolom note sendiri — [note] harus
+     * disisipkan ke `menu_item_name` pakai delimiter `|NOTE|`, konvensi yang
+     * sudah dipakai OrderCard/OrderHistoryScreen saat parsing nama item balik.
+     * Selalu pakai ini saat membangun payload create-order-item ke server.
+     */
+    fun encodedMenuItemName(): String =
+        if (note.isBlank()) name else "$name|NOTE|$note"
+}
 
 data class Order(
     val id: String = java.util.UUID.randomUUID().toString(),

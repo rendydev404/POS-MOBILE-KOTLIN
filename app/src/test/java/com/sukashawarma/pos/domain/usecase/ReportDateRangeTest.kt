@@ -1,6 +1,7 @@
 package com.sukashawarma.pos.domain.usecase
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -19,15 +20,15 @@ class ReportDateRangeTest {
     @Test
     fun `hari ini dibatasi awal dan akhir hari Jakarta`() {
         val r = resolve(ReportRange.TODAY)
-        assertEquals("2026-08-06T00:00:00+07:00", r.startIso)
-        assertEquals("2026-08-06T23:59:59.999+07:00", r.endIso)
+        assertEquals("2026-08-05T17:00:00Z", r.startIso)
+        assertEquals("2026-08-06T16:59:59.999Z", r.endIso)
     }
 
     @Test
     fun `kemarin tidak menyentuh hari ini`() {
         val r = resolve(ReportRange.YESTERDAY)
-        assertEquals("2026-08-05T00:00:00+07:00", r.startIso)
-        assertEquals("2026-08-05T23:59:59.999+07:00", r.endIso)
+        assertEquals("2026-08-04T17:00:00Z", r.startIso)
+        assertEquals("2026-08-05T16:59:59.999Z", r.endIso)
     }
 
     @Test
@@ -35,14 +36,14 @@ class ReportDateRangeTest {
         val r = resolve(ReportRange.LAST_7_DAYS)
         // 31 Juli sampai 6 Agustus = 7 hari. Versi lama mundur 7 hari penuh
         // sehingga mencakup 8 hari.
-        assertEquals("2026-07-31T00:00:00+07:00", r.startIso)
-        assertEquals("2026-08-06T23:59:59.999+07:00", r.endIso)
+        assertEquals("2026-07-30T17:00:00Z", r.startIso)
+        assertEquals("2026-08-06T16:59:59.999Z", r.endIso)
     }
 
     @Test
     fun `tiga puluh hari terakhir mencakup tiga puluh hari`() {
         val r = resolve(ReportRange.LAST_30_DAYS)
-        assertEquals("2026-07-08T00:00:00+07:00", r.startIso)
+        assertEquals("2026-07-07T17:00:00Z", r.startIso)
     }
 
     @Test
@@ -60,15 +61,15 @@ class ReportDateRangeTest {
     @Test
     fun `kustom inklusif sampai akhir hari terakhir`() {
         val r = resolve(ReportRange.CUSTOM, LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 3))
-        assertEquals("2026-08-01T00:00:00+07:00", r.startIso)
-        assertEquals("2026-08-03T23:59:59.999+07:00", r.endIso)
+        assertEquals("2026-07-31T17:00:00Z", r.startIso)
+        assertEquals("2026-08-03T16:59:59.999Z", r.endIso)
     }
 
     @Test
     fun `kustom dengan tanggal terbalik tetap menghasilkan rentang yang benar`() {
         val r = resolve(ReportRange.CUSTOM, LocalDate.of(2026, 8, 3), LocalDate.of(2026, 8, 1))
-        assertEquals("2026-08-01T00:00:00+07:00", r.startIso)
-        assertEquals("2026-08-03T23:59:59.999+07:00", r.endIso)
+        assertEquals("2026-07-31T17:00:00Z", r.startIso)
+        assertEquals("2026-08-03T16:59:59.999Z", r.endIso)
     }
 
     @Test
@@ -83,6 +84,21 @@ class ReportDateRangeTest {
         // 2026-08-05T17:00:00Z = 2026-08-06T00:00:00+07:00
         assertEquals(1785949200000L, r.startMillis)
         assertEquals(1786035599999L, r.endMillis)
+    }
+
+    /**
+     * Regresi. String ini masuk ke query PostgREST apa adanya, dan OkHttp
+     * meneruskan `+` mentah — server membacanya sebagai spasi lalu menolak seluruh
+     * request dengan `22007 invalid input syntax for type timestamp with time
+     * zone`, sehingga daftar riwayat selalu kosong untuk semua rentang tanggal.
+     */
+    @Test
+    fun `batas ISO tidak pernah memuat plus yang merusak query`() {
+        ReportRange.values().forEach { range ->
+            val r = resolve(range, LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 3))
+            assertFalse("$range punya + di startIso", r.startIso?.contains('+') ?: false)
+            assertFalse("$range punya + di endIso", r.endIso?.contains('+') ?: false)
+        }
     }
 
     @Test

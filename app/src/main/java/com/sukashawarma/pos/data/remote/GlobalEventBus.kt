@@ -19,4 +19,6 @@ object GlobalEventBus {
     val isRealtimeConnected = MutableStateFlow(false)
     val bypassRequestEvent = event()
     val gateRefreshEvent = event()
+    val pettyCashEvent = event()
+    val stockEvent = event()
 }

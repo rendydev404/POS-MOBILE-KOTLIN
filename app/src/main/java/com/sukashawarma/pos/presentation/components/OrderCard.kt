@@ -7,17 +7,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Print
-import androidx.compose.material.icons.filled.RestaurantMenu
-import androidx.compose.material.icons.outlined.Cancel
-import androidx.compose.material.icons.outlined.Print
-import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.Schedule
-import androidx.compose.material.icons.outlined.Timer
-import androidx.compose.material.icons.outlined.Warning
-import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -74,7 +65,8 @@ fun OrderCard(
     onCancelOrder: (Order, String) -> Unit,
     onPrintKitchen: (Order) -> Unit,
     onPrintCustomer: (Order) -> Unit,
-    onReprint: (Order) -> Unit,
+    onReprint: (Order) -> Unit = {},
+    onAcceptOrder: (Order) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val timeFormat = SimpleDateFormat("HH.mm", Locale.getDefault())
@@ -109,53 +101,121 @@ fun OrderCard(
 
     if (showCancelDialog) {
         var cancelReason by remember { mutableStateOf("") }
-        AlertDialog(
-            onDismissRequest = { 
-                scope.launch {
-                    kotlinx.coroutines.delay(100)
-                    showCancelDialog = false 
-                }
-            },
-            title = { Text("Batalkan Pesanan") },
-            text = {
-                Column {
-                    Text("Alasan pembatalan (wajib):")
-                    Spacer(modifier = Modifier.height(8.dp))
+        val closeDialog = {
+            scope.launch {
+                kotlinx.coroutines.delay(100)
+                showCancelDialog = false
+            }
+        }
+        androidx.compose.ui.window.Dialog(onDismissRequest = { closeDialog() }) {
+            Card(
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(CircleShape)
+                            .background(
+                                androidx.compose.ui.graphics.Brush.radialGradient(
+                                    colors = listOf(TextRed.copy(alpha = 0.18f), Color.Transparent)
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(52.dp)
+                                .clip(CircleShape)
+                                .background(TextRed.copy(alpha = 0.12f))
+                                .border(1.5.dp, TextRed.copy(alpha = 0.35f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.DeleteForever,
+                                contentDescription = null,
+                                tint = TextRed,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        "Batalkan Pesanan?",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = TextSlateDark
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        "Tindakan ini tidak bisa dibatalkan. Mohon isi alasan pembatalan di bawah ini.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSlate,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+
+                    Spacer(modifier = Modifier.height(20.dp))
+                    Text(
+                        "ALASAN PEMBATALAN",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = TextSlate,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
                     OutlinedTextField(
                         value = cancelReason,
                         onValueChange = { cancelReason = it },
+                        placeholder = { Text("cth: Pesanan salah input, pelanggan batal, dll") },
                         modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
+                        minLines = 3,
+                        maxLines = 4,
+                        shape = RoundedCornerShape(14.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            unfocusedContainerColor = Color(0xFFFAFAFA),
+                            focusedContainerColor = Color.White,
+                            unfocusedBorderColor = DefaultBorder,
+                            focusedBorderColor = TextRed
+                        )
                     )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (cancelReason.isNotBlank()) {
-                            onCancelOrder(order, cancelReason)
-                            scope.launch {
-                                kotlinx.coroutines.delay(100)
-                                showCancelDialog = false
-                            }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { closeDialog() },
+                            modifier = Modifier.weight(1f).height(48.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, DefaultBorder),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = TextSlate)
+                        ) {
+                            Text("Tutup", fontWeight = FontWeight.SemiBold)
                         }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = TextRed)
-                ) {
-                    Text("Batalkan")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { 
-                    scope.launch {
-                        kotlinx.coroutines.delay(100)
-                        showCancelDialog = false 
+                        Button(
+                            onClick = {
+                                if (cancelReason.isNotBlank()) {
+                                    onCancelOrder(order, cancelReason)
+                                    closeDialog()
+                                }
+                            },
+                            enabled = cancelReason.isNotBlank(),
+                            modifier = Modifier.weight(1f).height(48.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = TextRed, disabledContainerColor = TextRed.copy(alpha = 0.35f))
+                        ) {
+                            Icon(Icons.Filled.DeleteForever, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Batalkan", fontWeight = FontWeight.Bold)
+                        }
                     }
-                }) {
-                    Text("Tutup", color = TextSlate)
                 }
             }
-        )
+        }
     }
 
     var showReprintDialog by remember { mutableStateOf(false) }
@@ -390,18 +450,7 @@ fun OrderCard(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.padding(top = 2.dp)
                         ) {
-                            Surface(
-                                color = Color(0xFFF1F5F9), // slate-100
-                                shape = RoundedCornerShape(4.dp)
-                            ) {
-                                Text(
-                                    text = (if (order.source == OrderSource.ONLINE) "ONLINE" else "KASIR").uppercase(),
-                                    color = TextSlate,
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                                )
-                            }
+                            OrderSourceBadge(source = order.source.name, channel = order.channel)
                             Spacer(modifier = Modifier.width(6.dp))
                             Surface(
                                 color = Color(0xFFE0E7FF), // indigo-100
@@ -430,46 +479,216 @@ fun OrderCard(
 
             // Order Notes
             if (!order.notes.isNullOrBlank()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 10.dp)
-                ) {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        color = Color(0xFFFFFBEB), // amber-50 for notes
-                        shape = RoundedCornerShape(8.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A)) // amber-200
+                val notes = order.notes
+                if (!notes.contains("-- INFO PEMESAN ONLINE --")) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 10.dp)
                     ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            verticalAlignment = Alignment.Top
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = Color(0xFFFFFBEB), // amber-50 for notes
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A)) // amber-200
                         ) {
-                            Icon(
-                                Icons.Outlined.Edit,
-                                contentDescription = null,
-                                tint = Color(0xFFD97706), // amber-600
-                                modifier = Modifier.size(18.dp).padding(top = 1.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text(
-                                    text = "Catatan Order:",
-                                    color = Color(0xFFD97706),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.Top
+                            ) {
+                                Icon(
+                                    Icons.Outlined.Edit,
+                                    contentDescription = null,
+                                    tint = Color(0xFFD97706), // amber-600
+                                    modifier = Modifier.size(18.dp).padding(top = 1.dp)
                                 )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = order.notes,
-                                    color = Color(0xFF92400E), // amber-800
-                                    fontSize = 13.sp
-                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        text = "Catatan Order:",
+                                        color = Color(0xFFD97706),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = notes,
+                                        color = Color(0xFF92400E), // amber-800
+                                        fontSize = 13.sp
+                                    )
+                                }
                             }
                         }
                     }
+                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFF1F5F9)))
+                } else {
+                    val (customerNote, infoData) = remember(notes) {
+                        val parts = notes.split("-- CATATAN PELANGGAN --")
+                        val infoPart = parts[0].replace("-- INFO PEMESAN ONLINE --", "").trim()
+                        val note = if (parts.size > 1) parts[1].trim() else ""
+
+                        val infoLines = infoPart.split("\n").filter { it.isNotBlank() }
+                        val data = infoLines.mapNotNull { line ->
+                            val split = line.split(":")
+                            if (split.size >= 2) {
+                                val key = split[0].trim()
+                                val value = split.drop(1).joinToString(":").trim()
+                                key to value
+                            } else {
+                                null
+                            }
+                        }
+                        note to data
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        // Online Details Grid
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = Color(0xFFFFF7ED), // orange-50
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFEDD5).copy(alpha = 0.5f)) // orange-100/50
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(bottom = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.Language,
+                                        contentDescription = null,
+                                        tint = Color(0xFF3B82F6), // blue-500
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "DETAIL PEMESAN ONLINE",
+                                        color = Color(0xFF1D4ED8), // blue-700
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 0.5.sp
+                                    )
+                                }
+                                
+                                // Grid items
+                                Box(modifier = Modifier.fillMaxWidth()) {
+                                    val midpoint = (infoData.size + 1) / 2
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            infoData.take(midpoint).forEach { (key, value) ->
+                                                Surface(
+                                                    color = Color.White.copy(alpha = 0.6f),
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFEDD5).copy(alpha = 0.3f))
+                                                ) {
+                                                    Column(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
+                                                        Text(
+                                                            text = key.uppercase(),
+                                                            color = Color(0xFF9A3412).copy(alpha = 0.5f), // orange-800/50
+                                                            fontSize = 9.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            letterSpacing = 0.5.sp
+                                                        )
+                                                        Spacer(modifier = Modifier.height(2.dp))
+                                                        val finalValue = if (key.lowercase() == "pembayaran") {
+                                                            value.replace("_", " ").uppercase()
+                                                        } else {
+                                                            value
+                                                        }
+                                                        Text(
+                                                            text = finalValue,
+                                                            color = Color(0xFF334155), // slate-700
+                                                            fontSize = 11.sp,
+                                                            fontWeight = FontWeight.SemiBold
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            infoData.drop(midpoint).forEach { (key, value) ->
+                                                Surface(
+                                                    color = Color.White.copy(alpha = 0.6f),
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFEDD5).copy(alpha = 0.3f))
+                                                ) {
+                                                    Column(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
+                                                        Text(
+                                                            text = key.uppercase(),
+                                                            color = Color(0xFF9A3412).copy(alpha = 0.5f), // orange-800/50
+                                                            fontSize = 9.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            letterSpacing = 0.5.sp
+                                                        )
+                                                        Spacer(modifier = Modifier.height(2.dp))
+                                                        val finalValue = if (key.lowercase() == "pembayaran") {
+                                                            value.replace("_", " ").uppercase()
+                                                        } else {
+                                                            value
+                                                        }
+                                                        Text(
+                                                            text = finalValue,
+                                                            color = Color(0xFF334155), // slate-700
+                                                            fontSize = 11.sp,
+                                                            fontWeight = FontWeight.SemiBold
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Customer Note
+                        if (customerNote.isNotBlank()) {
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                color = Color(0xFFFFFBEB), // amber-50
+                                shape = RoundedCornerShape(8.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A)) // amber-200
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            Icons.Outlined.ChatBubbleOutline,
+                                            contentDescription = null,
+                                            tint = Color(0xFFD97706), // amber-600
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "Pesan Khusus Pelanggan",
+                                            color = Color(0xFFD97706),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = customerNote,
+                                        color = Color(0xFF92400E), // amber-900
+                                        fontSize = 13.sp,
+                                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFF1F5F9)))
                 }
-                Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFF1F5F9)))
             }
 
             // Order Items
@@ -479,61 +698,69 @@ fun OrderCard(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                val parsedItems = order.items.map { oi ->
-                    var name = oi.name
-                    var note = oi.note
-                    var id = oi.id
-                    var parentId: String? = null
+                // Parsing nama|catatan|parent dilakukan sekali per perubahan order.items,
+                // bukan setiap recomposition/relayout (mis. saat sidebar animasi lebar
+                // memaksa seluruh Column ini re-measure) — sebelumnya split string ini
+                // jalan berulang tanpa cache, ikut jadi beban di setiap frame animasi.
+                val (rootItems, childrenMap) = remember(order.items) {
+                    val parsedItems = order.items.map { oi ->
+                        var name = oi.name
+                        var note = oi.note
+                        var id = oi.id
+                        var parentId: String? = null
 
-                    val noteSplit = name.split("|NOTE|")
-                    if (noteSplit.size > 1) {
-                        note = noteSplit[1]
-                        name = noteSplit[0]
+                        val noteSplit = name.split("|NOTE|")
+                        if (noteSplit.size > 1) {
+                            note = noteSplit[1]
+                            name = noteSplit[0]
+                        }
+
+                        val parentSplit = name.split("|PARENT|")
+                        if (parentSplit.size > 1) {
+                            parentId = parentSplit[1]
+                            name = parentSplit[0]
+                        }
+
+                        val idSplit = name.split("|ID|")
+                        if (idSplit.size > 1) {
+                            id = idSplit[1]
+                            name = idSplit[0]
+                        }
+
+                        ParsedOrderItem(id, name, note, parentId, oi.quantity)
                     }
 
-                    val parentSplit = name.split("|PARENT|")
-                    if (parentSplit.size > 1) {
-                        parentId = parentSplit[1]
-                        name = parentSplit[0]
+                    val rootItems = mutableListOf<ParsedOrderItem>()
+                    val childrenMap = mutableMapOf<String, MutableList<ParsedOrderItem>>()
+                    var lastRootId: String? = null
+
+                    parsedItems.forEach { i ->
+                        val nameLower = i.name.lowercase()
+                        val isImplicitExtra = i.parentId.isNullOrBlank() &&
+                            (nameLower.startsWith("extra ") || nameLower.startsWith("toping ") || nameLower.startsWith("? extra") || nameLower.startsWith(" extra"))
+
+                        if (!i.parentId.isNullOrBlank()) {
+                            // Explicit parent
+                            childrenMap.getOrPut(i.parentId!!) { mutableListOf() }.add(i)
+                        } else if (isImplicitExtra && lastRootId != null) {
+                            // Implicit parent fallback for legacy/malformed orders
+                            i.parentId = lastRootId
+                            childrenMap.getOrPut(lastRootId!!) { mutableListOf() }.add(i)
+                        } else {
+                            // Root item
+                            rootItems.add(i)
+                            lastRootId = i.id
+                        }
                     }
 
-                    val idSplit = name.split("|ID|")
-                    if (idSplit.size > 1) {
-                        id = idSplit[1]
-                        name = idSplit[0]
+                    // Verify explicit parents exist, otherwise hoist to root
+                    val validRootIds = rootItems.map { it.id }.toSet()
+                    val orphanParentIds = childrenMap.keys.filter { !validRootIds.contains(it) }
+                    orphanParentIds.forEach { orphanParentId ->
+                        childrenMap.remove(orphanParentId)?.let { rootItems.addAll(it) }
                     }
 
-                    ParsedOrderItem(id, name, note, parentId, oi.quantity)
-                }
-
-                val rootItems = mutableListOf<ParsedOrderItem>()
-                val childrenMap = mutableMapOf<String, MutableList<ParsedOrderItem>>()
-                var lastRootId: String? = null
-
-                parsedItems.forEach { i ->
-                    val nameLower = i.name.lowercase()
-                    val isImplicitExtra = i.parentId.isNullOrBlank() && 
-                        (nameLower.startsWith("extra ") || nameLower.startsWith("toping ") || nameLower.startsWith("? extra") || nameLower.startsWith(" extra"))
-                    
-                    if (!i.parentId.isNullOrBlank()) {
-                        // Explicit parent
-                        childrenMap.getOrPut(i.parentId!!) { mutableListOf() }.add(i)
-                    } else if (isImplicitExtra && lastRootId != null) {
-                        // Implicit parent fallback for legacy/malformed orders
-                        i.parentId = lastRootId
-                        childrenMap.getOrPut(lastRootId!!) { mutableListOf() }.add(i)
-                    } else {
-                        // Root item
-                        rootItems.add(i)
-                        lastRootId = i.id
-                    }
-                }
-
-                // Verify explicit parents exist, otherwise hoist to root
-                val validRootIds = rootItems.map { it.id }.toSet()
-                val orphanParentIds = childrenMap.keys.filter { !validRootIds.contains(it) }
-                orphanParentIds.forEach { orphanParentId ->
-                    childrenMap.remove(orphanParentId)?.let { rootItems.addAll(it) }
+                    rootItems to childrenMap
                 }
 
                 for (oi in rootItems) {
@@ -724,16 +951,30 @@ fun OrderCard(
                                 Text("Batal", color = TextRed, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                             
-                            Button(
-                                onClick = { onStatusChange(order, OrderStatus.COMPLETED) },
-                                modifier = Modifier.weight(1f).height(48.dp),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = TextEmerald),
-                                contentPadding = PaddingValues(horizontal = 4.dp)
-                            ) {
-                                Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Selesai", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            if (order.source == OrderSource.ONLINE && order.status == OrderStatus.PENDING) {
+                                Button(
+                                    onClick = { onAcceptOrder(order) },
+                                    modifier = Modifier.weight(1f).height(48.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6)), // blue-500
+                                    contentPadding = PaddingValues(horizontal = 4.dp)
+                                ) {
+                                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Terima", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            } else {
+                                Button(
+                                    onClick = { onStatusChange(order, OrderStatus.COMPLETED) },
+                                    modifier = Modifier.weight(1f).height(48.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = TextEmerald),
+                                    contentPadding = PaddingValues(horizontal = 4.dp)
+                                ) {
+                                    Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Selesai", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
                             }
                             
                             OutlinedButton(

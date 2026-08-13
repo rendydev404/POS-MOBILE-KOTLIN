@@ -110,15 +110,34 @@ data class OrderDto(
     val isSyncedFromOffline: Boolean? = false
 )
 
+data class MenuItemRefDto(
+    val id: String,
+    val name: String
+)
+
 data class OrderItemDto(
     val id: String?,
     @SerializedName("order_id") val orderId: String?,
-    @SerializedName("menu_item_id") val menuItemId: String,
-    @SerializedName("menu_item_name") val menuItemName: String,
+    @SerializedName("menu_item_id") val menuItemId: String?,
+    @SerializedName("menu_item_name") val menuItemName: String?,
+    @SerializedName("menu_item") val menuItem: MenuItemRefDto? = null,
+    @SerializedName("or_menu_item") val orMenuItem: MenuItemRefDto? = null,
     val quantity: Int,
     @SerializedName("unit_price") val unitPrice: Double,
     val subtotal: Double
-)
+) {
+    val resolvedName: String
+        get() = menuItemName ?: menuItem?.name ?: orMenuItem?.name ?: "Unknown Item"
+
+    /**
+     * [resolvedName] tanpa delimiter penyisipan `|NOTE|`/`|PARENT|`/`|ID|` (lihat
+     * OrderItem.encodedMenuItemName) — dipakai di mana pun nama item ditampilkan
+     * atau diagregasi apa adanya (laporan produk terlaris, tabel histori transaksi),
+     * supaya catatan/parent id tidak ikut nyampur jadi nama produk yang beda-beda.
+     */
+    val displayName: String
+        get() = resolvedName.substringBefore("|NOTE|").substringBefore("|PARENT|").substringBefore("|ID|")
+}
 
 data class ShiftDto(
     val id: String,
@@ -199,11 +218,14 @@ data class AddPettyCashPayload(
     @SerializedName("p_receipt_url") val receiptUrl: String? = null
 )
 
-data class UpsertFcmTokenPayload(
-    @SerializedName("staff_id") val staffId: String,
-    @SerializedName("outlet_id") val outletId: String?,
-    val token: String,
-    val platform: String = "android"
+/**
+ * Argumen RPC `register_fcm_token`. `staff_id` sengaja tidak dikirim: fungsinya
+ * mengambil paksa dari `auth.uid()`, supaya device tidak bisa mendaftarkan diri
+ * atas nama staff lain.
+ */
+data class RegisterFcmTokenPayload(
+    @SerializedName("p_token") val token: String,
+    @SerializedName("p_outlet_id") val outletId: String?
 )
 
 data class TargetProgressDto(
@@ -225,10 +247,6 @@ data class CreateOrderItemPayload(
 data class VoidPettyCashPayload(
     @SerializedName("p_expense_id") val expenseId: String,
     @SerializedName("p_reason") val reason: String
-)
-
-data class ReceiveFundsPayload(
-    @SerializedName("p_topup_id") val topupId: String
 )
 
 data class PettyCashTopupDto(

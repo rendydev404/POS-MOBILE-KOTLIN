@@ -7,6 +7,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material3.*
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.*
@@ -14,6 +15,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.zIndex
+import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -28,7 +31,9 @@ fun POSAdaptiveScaffold(
     onTabSelected: (POSTab) -> Unit,
     outletName: String,
     lowStockCount: Int = 0,
+    isOnline: Boolean = true,
     onLogoutClick: () -> Unit,
+    onPrinterClick: () -> Unit = {},
     content: @Composable () -> Unit
 ) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -52,7 +57,12 @@ fun POSAdaptiveScaffold(
                             },
                             outletName = outletName,
                             lowStockCount = lowStockCount,
+                            isOnline = isOnline,
                             onLogoutClick = onLogoutClick,
+                            onPrinterClick = {
+                                onPrinterClick()
+                                scope.launch { drawerState.close() }
+                            },
                             modifier = Modifier.fillMaxSize()
                         )
                     }
@@ -73,35 +83,87 @@ fun POSAdaptiveScaffold(
                 }
             }
         }
-        WindowWidthSizeClass.Medium -> {
-            // Tablet Portrait: Navigation Rail (Ikon Saja)
+        WindowWidthSizeClass.Medium, WindowWidthSizeClass.Expanded -> {
+            // Tablet: Collapsible Sidebar
+            //
+            // `isSidebarCollapsed` disimpan sebagai MutableState dan TIDAK dibaca di
+            // sini. Dulu dibaca langsung di badan komposabel ini — dan karena
+            // `content()` juga dipanggil di sini, setiap kali sidebar dibuka/tutup
+            // SELURUH isi halaman (Dashboard beserta semua kartu pesanan) ikut
+            // dikomposisi ulang. Pembacaannya sekarang terkurung di [SidebarSection],
+            // sehingga toggle hanya membatalkan sidebar saja.
+            val isSidebarCollapsed = remember {
+                mutableStateOf(windowSizeClass == WindowWidthSizeClass.Medium)
+            }
+
             Row(modifier = Modifier.fillMaxSize()) {
-                POSNavigationRail(
-                    currentTab = currentTab,
-                    onTabSelected = onTabSelected,
-                    lowStockCount = lowStockCount,
-                    onLogoutClick = onLogoutClick
-                )
+                Box(modifier = Modifier.zIndex(1f)) {
+                    SidebarSection(
+                        isCollapsed = isSidebarCollapsed,
+                        currentTab = currentTab,
+                        onTabSelected = onTabSelected,
+                        outletName = outletName,
+                        lowStockCount = lowStockCount,
+                        isOnline = isOnline,
+                        onLogoutClick = onLogoutClick,
+                        onPrinterClick = onPrinterClick
+                    )
+                }
                 Box(modifier = Modifier.weight(1f)) {
                     content()
                 }
             }
         }
-        else -> {
-            // Tablet Landscape / Layar Lebar: Sidebar Penuh
-            Row(modifier = Modifier.fillMaxSize()) {
-                SideNavRail(
-                    currentTab = currentTab,
-                    onTabSelected = onTabSelected,
-                    outletName = outletName,
-                    lowStockCount = lowStockCount,
-                    onLogoutClick = onLogoutClick
-                )
-                Box(modifier = Modifier.weight(1f)) {
-                    content()
-                }
-            }
-        }
+    }
+}
+
+/**
+ * Sidebar beserta tombol toggle-nya.
+ *
+ * Ini satu-satunya tempat `isCollapsed.value` dibaca, jadi menekan toggle hanya
+ * membatalkan komposisi bagian ini — bukan seluruh halaman di sebelahnya.
+ * Tampilannya sama persis dengan sebelumnya.
+ */
+@Composable
+private fun BoxScope.SidebarSection(
+    isCollapsed: MutableState<Boolean>,
+    currentTab: POSTab,
+    onTabSelected: (POSTab) -> Unit,
+    outletName: String,
+    lowStockCount: Int,
+    isOnline: Boolean,
+    onLogoutClick: () -> Unit,
+    onPrinterClick: () -> Unit
+) {
+    val collapsed = isCollapsed.value
+
+    SideNavRail(
+        currentTab = currentTab,
+        onTabSelected = onTabSelected,
+        outletName = outletName,
+        lowStockCount = lowStockCount,
+        isOnline = isOnline,
+        onLogoutClick = onLogoutClick,
+        onPrinterClick = onPrinterClick,
+        isCollapsed = collapsed
+    )
+
+    Box(
+        modifier = Modifier
+            .align(Alignment.CenterEnd)
+            .offset(x = 12.dp)
+            .size(24.dp)
+            .background(ShawarmaOrange, CircleShape)
+            .border(1.dp, CreamBorder, CircleShape)
+            .clickable { isCollapsed.value = !isCollapsed.value },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = if (collapsed) Icons.Default.ChevronRight else Icons.Default.ChevronLeft,
+            contentDescription = "Toggle Sidebar",
+            tint = Color.White,
+            modifier = Modifier.size(16.dp)
+        )
     }
 }
 
@@ -149,75 +211,5 @@ fun POSBottomBar(
                 unselectedTextColor = TextDarkSecondary
             )
         )
-    }
-}
-
-@Composable
-fun POSNavigationRail(
-    currentTab: POSTab,
-    onTabSelected: (POSTab) -> Unit,
-    lowStockCount: Int,
-    onLogoutClick: () -> Unit
-) {
-    NavigationRail(
-        containerColor = CreamSurface,
-        header = {
-            androidx.compose.foundation.Image(
-                painter = androidx.compose.ui.res.painterResource(id = com.sukashawarma.pos.R.mipmap.ic_launcher),
-                contentDescription = "Logo",
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .padding(top = 12.dp, bottom = 8.dp)
-            )
-        },
-        modifier = Modifier.width(80.dp)
-    ) {
-        val railTabs = listOf(
-            Triple(POSTab.DASHBOARD, "Order", Icons.Default.Dashboard),
-            Triple(POSTab.ORDER_MANUAL, "Manual", Icons.Default.AddCircle),
-            Triple(POSTab.MENU_MANAGEMENT, "Menu", Icons.Default.Fastfood),
-            Triple(POSTab.SHIFT_PETTY_CASH, "Shift", Icons.Default.AccountBalanceWallet),
-            Triple(POSTab.REPORTS, "Laporan", Icons.Default.BarChart),
-            Triple(POSTab.STOK_OUTLET, "Stok", Icons.Default.Inventory2)
-        )
-
-        railTabs.forEach { (tab, label, icon) ->
-            NavigationRailItem(
-                icon = {
-                    if (tab == POSTab.STOK_OUTLET && lowStockCount > 0) {
-                        BadgedBox(badge = { Badge(containerColor = MarqueeRed) { Text("$lowStockCount", color = Color.White) } }) {
-                            Icon(icon, contentDescription = label)
-                        }
-                    } else {
-                        Icon(icon, contentDescription = label)
-                    }
-                },
-                label = { Text(label, fontSize = 10.sp, maxLines = 1) },
-                selected = currentTab == tab,
-                onClick = { onTabSelected(tab) },
-                colors = NavigationRailItemDefaults.colors(
-                    selectedIconColor = ShawarmaOrange,
-                    selectedTextColor = ShawarmaOrange,
-                    indicatorColor = ShawarmaOrangeLight,
-                    unselectedIconColor = TextDarkSecondary,
-                    unselectedTextColor = TextDarkSecondary
-                )
-            )
-        }
-
-        Spacer(modifier = Modifier.weight(1f))
-        
-        NavigationRailItem(
-            icon = { Icon(Icons.Default.ExitToApp, contentDescription = "Keluar") },
-            label = { Text("Keluar", fontSize = 10.sp) },
-            selected = false,
-            onClick = onLogoutClick,
-            colors = NavigationRailItemDefaults.colors(
-                unselectedIconColor = MarqueeRed,
-                unselectedTextColor = MarqueeRed
-            )
-        )
-        Spacer(modifier = Modifier.height(16.dp))
     }
 }
