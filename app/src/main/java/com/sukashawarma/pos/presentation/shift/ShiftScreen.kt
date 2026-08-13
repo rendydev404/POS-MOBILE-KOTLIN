@@ -253,53 +253,85 @@ fun ShiftScreen(
         val openShiftInput by viewModel.openShiftInput.collectAsState()
         val pettyCashLocked by viewModel.pettyCashLocked.collectAsState()
 
-        AlertDialog(
-            onDismissRequest = { showOpenShiftDialog = false },
-            title = { Text("Buka Shift", fontWeight = FontWeight.Bold) },
-            text = {
-                Column {
-                    Text("Masukkan Petty Cash.", fontSize = 14.sp)
-                    Spacer(Modifier.height(16.dp))
+        Dialog(onDismissRequest = { showOpenShiftDialog = false }) {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = Color.White,
+                shadowElevation = 6.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(24.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Color(0xFFD1FAE5)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Login, contentDescription = null, tint = Color(0xFF059669), modifier = Modifier.size(24.dp))
+                        }
+                        Spacer(Modifier.width(14.dp))
+                        Text("Buka Shift", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF111827))
+                    }
+
+                    Spacer(Modifier.height(20.dp))
+                    Text("Masukkan Petty Cash untuk memulai shift.", fontSize = 14.sp, color = Color(0xFF6B7280))
+                    Spacer(Modifier.height(12.dp))
+
                     OutlinedTextField(
                         value = openShiftInput,
                         onValueChange = { if (!pettyCashLocked) viewModel.openShiftInput.value = it },
                         readOnly = pettyCashLocked,
-                        label = { Text("PATTY CASH (Rp)") },
+                        label = { Text("Petty Cash (Rp)") },
+                        leadingIcon = { Text("Rp", fontWeight = FontWeight.Bold, color = Color(0xFF9CA3AF), modifier = Modifier.padding(start = 16.dp)) },
                         trailingIcon = {
                             if (pettyCashLocked) {
-                                Icon(Icons.Default.Lock, contentDescription = null, tint = Color.Gray)
+                                Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFF9CA3AF))
                             }
                         },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        shape = RoundedCornerShape(14.dp),
+                        textStyle = LocalTextStyle.current.copy(fontSize = 18.sp, fontWeight = FontWeight.Bold),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color(0xFF10B981),
+                            unfocusedBorderColor = Color(0xFFA7F3D0)
+                        ),
                         modifier = Modifier.fillMaxWidth()
                     )
                     if (pettyCashLocked) {
-                        Spacer(Modifier.height(4.dp))
+                        Spacer(Modifier.height(8.dp))
                         Text(
                             "Mengikuti sisa saldo petty cash dari closing shift sebelumnya. Hubungi SPV/Admin bila nominal ini perlu diubah.",
                             fontSize = 11.sp,
-                            color = Color.Gray
+                            color = Color(0xFF9CA3AF)
                         )
                     }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        viewModel.openShift()
-                        showOpenShiftDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
-                ) {
-                    Text("Buka Shift")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showOpenShiftDialog = false }) {
-                    Text("Batal")
+
+                    Spacer(Modifier.height(24.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedButton(
+                            onClick = { showOpenShiftDialog = false },
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.weight(1f).height(52.dp)
+                        ) {
+                            Text("Batal", fontWeight = FontWeight.Bold)
+                        }
+                        Button(
+                            onClick = {
+                                viewModel.openShift()
+                                showOpenShiftDialog = false
+                            },
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                            modifier = Modifier.weight(1f).height(52.dp)
+                        ) {
+                            Text("Buka Shift", fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
-        )
+        }
     }
 }
 
@@ -809,39 +841,70 @@ fun LedgerItemRow(item: LedgerItem, viewModel: ShiftViewModel) {
 
     if (showVoidDialog && item is LedgerItem.Expense) {
         var reason by remember { mutableStateOf("") }
-        AlertDialog(
-            onDismissRequest = { showVoidDialog = false },
-            title = { Text("Batalkan Pengeluaran", fontWeight = FontWeight.Bold) },
-            text = {
-                Column {
-                    Text("Alasan pembatalan (wajib diisi):")
+        Dialog(onDismissRequest = { showVoidDialog = false }) {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = Color.White,
+                shadowElevation = 6.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(24.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Color(0xFFFEE2E2)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Cancel, contentDescription = null, tint = Color(0xFFDC2626), modifier = Modifier.size(24.dp))
+                        }
+                        Spacer(Modifier.width(14.dp))
+                        Text("Batalkan Pengeluaran", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF111827))
+                    }
+
+                    Spacer(Modifier.height(20.dp))
+                    Text("Alasan pembatalan (wajib diisi):", fontSize = 13.sp, color = Color(0xFF6B7280))
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = reason,
                         onValueChange = { reason = it },
+                        placeholder = { Text("Contoh: salah input nominal") },
+                        shape = RoundedCornerShape(14.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color(0xFFDC2626),
+                            unfocusedBorderColor = Color(0xFFFECACA)
+                        ),
                         modifier = Modifier.fillMaxWidth()
                     )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (reason.isNotBlank()) {
-                            viewModel.voidPettyCash(item.data.id, reason)
-                            showVoidDialog = false
+
+                    Spacer(Modifier.height(24.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedButton(
+                            onClick = { showVoidDialog = false },
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.weight(1f).height(52.dp)
+                        ) {
+                            Text("Tutup", fontWeight = FontWeight.Bold)
                         }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
-                ) {
-                    Text("Batalkan")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showVoidDialog = false }) {
-                    Text("Tutup")
+                        Button(
+                            onClick = {
+                                if (reason.isNotBlank()) {
+                                    viewModel.voidPettyCash(item.data.id, reason)
+                                    showVoidDialog = false
+                                }
+                            },
+                            enabled = reason.isNotBlank(),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
+                            modifier = Modifier.weight(1f).height(52.dp)
+                        ) {
+                            Text("Batalkan", fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
-        )
+        }
     }
 
     if (showReceiptUrl != null) {

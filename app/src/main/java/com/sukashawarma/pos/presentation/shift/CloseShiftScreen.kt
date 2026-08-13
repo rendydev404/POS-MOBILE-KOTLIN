@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.compose.runtime.collectAsState
 import kotlinx.coroutines.delay
 import java.util.*
@@ -145,27 +146,59 @@ fun CloseShiftScreen(
     }
 
     if (showConfirmDialog) {
-        AlertDialog(
-            onDismissRequest = { showConfirmDialog = false },
-            title = { Text("Tutup Shift Sekarang?", fontWeight = FontWeight.Bold) },
-            text = { Text("Setelah ditutup, shift ini tidak dapat menerima transaksi lagi. Apakah Anda yakin uang fisik sudah dihitung dengan benar?") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showConfirmDialog = false
-                        viewModel.closeShift()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
-                ) {
-                    Text("Ya, Tutup Shift")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showConfirmDialog = false }) {
-                    Text("Batal", color = Color.Gray)
+        Dialog(onDismissRequest = { showConfirmDialog = false }) {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = Color.White,
+                shadowElevation = 6.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(24.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Color(0xFFFEE2E2)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, tint = Color(0xFFDC2626), modifier = Modifier.size(24.dp))
+                        }
+                        Spacer(Modifier.width(14.dp))
+                        Text("Tutup Shift Sekarang?", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF111827))
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        "Setelah ditutup, shift ini tidak dapat menerima transaksi lagi. Apakah Anda yakin uang fisik sudah dihitung dengan benar?",
+                        fontSize = 14.sp,
+                        color = Color(0xFF6B7280)
+                    )
+
+                    Spacer(Modifier.height(24.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedButton(
+                            onClick = { showConfirmDialog = false },
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.weight(1f).height(52.dp)
+                        ) {
+                            Text("Batal", fontWeight = FontWeight.Bold)
+                        }
+                        Button(
+                            onClick = {
+                                showConfirmDialog = false
+                                viewModel.closeShift()
+                            },
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                            modifier = Modifier.weight(1f).height(52.dp)
+                        ) {
+                            Text("Ya, Tutup Shift", fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
-        )
+        }
     }
 }
 
