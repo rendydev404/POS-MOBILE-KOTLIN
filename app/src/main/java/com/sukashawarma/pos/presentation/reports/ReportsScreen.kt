@@ -707,9 +707,9 @@ fun LaporanLaciCash(data: AnalyticsData) {
                         } else "Berjalan"
                         
                         val variance = shift.variance ?: 0.0
-                        val expectedPc = 0.0 // not available in ShiftDto currently
-                        val actualPc = 0.0 
-                        val pcVariance = 0.0
+                        val expectedPc = shift.expectedEndingPettyCash ?: 0.0
+                        val actualPc = shift.actualEndingPettyCash ?: 0.0
+                        val pcVariance = actualPc - expectedPc
                         val totalDiff = variance + pcVariance
 
                         Surface(modifier = Modifier.weight(1f), shape = RoundedCornerShape(16.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))) {
@@ -785,7 +785,12 @@ fun LaporanLaciCash(data: AnalyticsData) {
                                         Spacer(Modifier.height(12.dp))
                                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                             Text("STATUS OPERASIONAL", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF9CA3AF))
-                                            Text("Pas (Balance)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4B5563), modifier = Modifier.background(Color(0xFFF3F4F6), RoundedCornerShape(8.dp)).border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 6.dp))
+                                            val (lPc, bPc, fPc, brPc) = when {
+                                                pcVariance == 0.0 -> listOf("Pas (Balance)", Color(0xFFF3F4F6), Color(0xFF4B5563), Color(0xFFE5E7EB))
+                                                pcVariance > 0 -> listOf("Lebih ${formatRupiah(pcVariance)}", Color(0xFFECFDF5), Color(0xFF047857), Color(0xFFA7F3D0))
+                                                else -> listOf("Kurang ${formatRupiah(Math.abs(pcVariance))}", Color(0xFFFEF2F2), Color(0xFFB91C1C), Color(0xFFFECACA))
+                                            }
+                                            Text(lPc as String, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = fPc as Color, modifier = Modifier.background(bPc as Color, RoundedCornerShape(8.dp)).border(1.dp, brPc as Color, RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 6.dp))
                                         }
                                     }
                                 }
