@@ -9,5 +9,7 @@ captures/
 .cxx/
 *.apk
 *.aab
+*.jks
+*.keystore
 .superpowers/
 .worktrees/
