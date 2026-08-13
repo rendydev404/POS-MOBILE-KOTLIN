@@ -13,3 +13,6 @@ captures/
 *.keystore
 .superpowers/
 .worktrees/
+
+# Berisi password keystore release — sengaja lokal saja, jangan commit.
+docs/RELEASE-DAN-AUTO-UPDATE.md
