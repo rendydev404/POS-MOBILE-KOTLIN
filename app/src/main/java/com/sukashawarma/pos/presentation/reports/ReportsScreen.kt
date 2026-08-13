@@ -701,21 +701,26 @@ fun LaporanLaciCash(data: AnalyticsData) {
                         // Postgres/PostgREST balikin timestamp berformat "+00:00" (bukan "Z"),
                         // jadi LocalDateTime.parse polos selalu gagal — pakai JakartaTime yang
                         // sudah menangani semua bentuk offset PostgREST (lihat LedgerItem.parseDate).
-                        val startInstant = com.sukashawarma.pos.domain.gate.JakartaTime.instantOrNull(shift.startTime)
-                        val endInstant = com.sukashawarma.pos.domain.gate.JakartaTime.instantOrNull(shift.endTime)
+                        val zone = com.sukashawarma.pos.domain.gate.JakartaTime.ZONE
                         val indoLocale = Locale("id", "ID")
-                        val dateStr = startInstant
-                            ?.atZone(com.sukashawarma.pos.domain.gate.JakartaTime.ZONE)
-                            ?.format(DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", indoLocale))
-                            ?: "Tanggal Shift"
-                        val startTimeStr = startInstant
-                            ?.atZone(com.sukashawarma.pos.domain.gate.JakartaTime.ZONE)
-                            ?.format(DateTimeFormatter.ofPattern("HH:mm"))
-                            ?: "-"
-                        val endTimeStr = endInstant
-                            ?.atZone(com.sukashawarma.pos.domain.gate.JakartaTime.ZONE)
-                            ?.format(DateTimeFormatter.ofPattern("HH:mm"))
-                            ?: "Berjalan"
+                        val fullFormatter = DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy 'pukul' HH:mm", indoLocale)
+                        val dateOnlyFormatter = DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", indoLocale)
+                        val timeOnlyFormatter = DateTimeFormatter.ofPattern("HH:mm")
+
+                        val startZoned = com.sukashawarma.pos.domain.gate.JakartaTime.instantOrNull(shift.startTime)?.atZone(zone)
+                        val endZoned = com.sukashawarma.pos.domain.gate.JakartaTime.instantOrNull(shift.endTime)?.atZone(zone)
+                        val sameDay = startZoned != null && endZoned != null && startZoned.toLocalDate() == endZoned.toLocalDate()
+
+                        // Shift yang start & selesainya beda hari (mis. hasil koreksi manual di
+                        // database) ditampilkan dengan tanggal lengkap di kedua sisi, bukan cuma
+                        // satu tanggal + dua jam — supaya rentang aslinya tidak terlihat ngawur.
+                        val dateStr = when {
+                            startZoned == null -> "Tanggal Shift"
+                            sameDay -> startZoned.format(dateOnlyFormatter)
+                            else -> "${startZoned.format(fullFormatter)} → ${endZoned?.format(fullFormatter) ?: "Berjalan"} WIB"
+                        }
+                        val startTimeStr = startZoned?.format(timeOnlyFormatter) ?: "-"
+                        val endTimeStr = endZoned?.format(timeOnlyFormatter) ?: "Berjalan"
                         
                         val variance = shift.variance ?: 0.0
                         val expectedPc = shift.expectedEndingPettyCash ?: 0.0
@@ -733,7 +738,9 @@ fun LaporanLaciCash(data: AnalyticsData) {
                                         }
                                         Column {
                                             Text(dateStr, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF78350F))
-                                            Text("$startTimeStr - $endTimeStr WIB", fontSize = 12.sp, color = Color(0xFFB45309))
+                                            if (sameDay) {
+                                                Text("$startTimeStr - $endTimeStr WIB", fontSize = 12.sp, color = Color(0xFFB45309))
+                                            }
                                         }
                                     }
                                     val (label, bg, fg, border) = when {
@@ -750,7 +757,7 @@ fun LaporanLaciCash(data: AnalyticsData) {
                                     Column(modifier = Modifier.weight(1f).background(Color(0xFFF9FAFB), RoundedCornerShape(12.dp)).border(1.dp, Color(0xFFF3F4F6), RoundedCornerShape(12.dp)).padding(16.dp)) {
                                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                             Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, tint = Color(0xFF9CA3AF), modifier = Modifier.size(16.dp))
-                                            Text("UANG LACI (SALES)", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF374151))
+                                            Text("PENJUALAN CASH (SALES)", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF374151))
                                         }
                                         Spacer(Modifier.height(16.dp))
                                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -766,7 +773,7 @@ fun LaporanLaciCash(data: AnalyticsData) {
                                         HorizontalDivider(color = Color(0xFFE5E7EB))
                                         Spacer(Modifier.height(12.dp))
                                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                            Text("STATUS UANG LACI", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF9CA3AF))
+                                            Text("STATUS Penjualan Cash", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF9CA3AF))
                                             val (l, b, f, br) = when {
                                                 variance == 0.0 -> listOf("Pas (Balance)", Color(0xFFF3F4F6), Color(0xFF4B5563), Color(0xFFE5E7EB))
                                                 variance > 0 -> listOf("Lebih ${formatRupiah(variance)}", Color(0xFFECFDF5), Color(0xFF047857), Color(0xFFA7F3D0))
@@ -795,7 +802,7 @@ fun LaporanLaciCash(data: AnalyticsData) {
                                         HorizontalDivider(color = Color(0xFFE5E7EB))
                                         Spacer(Modifier.height(12.dp))
                                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                            Text("Patty Cash", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF9CA3AF))
+                                            Text("PATTY CASH", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF9CA3AF))
                                             val (lPc, bPc, fPc, brPc) = when {
                                                 pcVariance == 0.0 -> listOf("Pas (Balance)", Color(0xFFF3F4F6), Color(0xFF4B5563), Color(0xFFE5E7EB))
                                                 pcVariance > 0 -> listOf("Lebih ${formatRupiah(pcVariance)}", Color(0xFFECFDF5), Color(0xFF047857), Color(0xFFA7F3D0))
