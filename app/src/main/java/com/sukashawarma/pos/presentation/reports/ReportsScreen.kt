@@ -26,6 +26,7 @@ import com.sukashawarma.pos.presentation.theme.*
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -697,14 +698,24 @@ fun LaporanLaciCash(data: AnalyticsData) {
             } else {
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     data.shifts.forEach { shift ->
-                        val dateStr = try {
-                            val dt = LocalDateTime.parse(shift.startTime?.substringBefore("Z") ?: "")
-                            dt.format(DateTimeFormatter.ofPattern("d MMMM yyyy"))
-                        } catch(e:Exception) { "Tanggal Shift" }
-                        val startTimeStr = try { LocalDateTime.parse(shift.startTime?.substringBefore("Z") ?: "").format(DateTimeFormatter.ofPattern("HH:mm")) } catch(e:Exception) { "" }
-                        val endTimeStr = if (shift.endTime != null) {
-                            try { LocalDateTime.parse(shift.endTime.substringBefore("Z")).format(DateTimeFormatter.ofPattern("HH:mm")) } catch(e:Exception) { "" }
-                        } else "Berjalan"
+                        // Postgres/PostgREST balikin timestamp berformat "+00:00" (bukan "Z"),
+                        // jadi LocalDateTime.parse polos selalu gagal — pakai JakartaTime yang
+                        // sudah menangani semua bentuk offset PostgREST (lihat LedgerItem.parseDate).
+                        val startInstant = com.sukashawarma.pos.domain.gate.JakartaTime.instantOrNull(shift.startTime)
+                        val endInstant = com.sukashawarma.pos.domain.gate.JakartaTime.instantOrNull(shift.endTime)
+                        val indoLocale = Locale("id", "ID")
+                        val dateStr = startInstant
+                            ?.atZone(com.sukashawarma.pos.domain.gate.JakartaTime.ZONE)
+                            ?.format(DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", indoLocale))
+                            ?: "Tanggal Shift"
+                        val startTimeStr = startInstant
+                            ?.atZone(com.sukashawarma.pos.domain.gate.JakartaTime.ZONE)
+                            ?.format(DateTimeFormatter.ofPattern("HH:mm"))
+                            ?: "-"
+                        val endTimeStr = endInstant
+                            ?.atZone(com.sukashawarma.pos.domain.gate.JakartaTime.ZONE)
+                            ?.format(DateTimeFormatter.ofPattern("HH:mm"))
+                            ?: "Berjalan"
                         
                         val variance = shift.variance ?: 0.0
                         val expectedPc = shift.expectedEndingPettyCash ?: 0.0
@@ -721,8 +732,8 @@ fun LaporanLaciCash(data: AnalyticsData) {
                                             Icon(Icons.Default.CalendarToday, contentDescription = null, tint = Color(0xFFB45309), modifier = Modifier.size(16.dp))
                                         }
                                         Column {
-                                            Text("Shift $dateStr", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF78350F))
-                                            Text("$startTimeStr - $endTimeStr", fontSize = 12.sp, color = Color(0xFFB45309))
+                                            Text(dateStr, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF78350F))
+                                            Text("$startTimeStr - $endTimeStr WIB", fontSize = 12.sp, color = Color(0xFFB45309))
                                         }
                                     }
                                     val (label, bg, fg, border) = when {
@@ -768,7 +779,7 @@ fun LaporanLaciCash(data: AnalyticsData) {
                                     Column(modifier = Modifier.weight(1f).background(Color(0xFFF9FAFB), RoundedCornerShape(12.dp)).border(1.dp, Color(0xFFF3F4F6), RoundedCornerShape(12.dp)).padding(16.dp)) {
                                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                             Icon(Icons.Default.Money, contentDescription = null, tint = Color(0xFF9CA3AF), modifier = Modifier.size(16.dp))
-                                            Text("DANA OPERASIONAL", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF374151))
+                                            Text("Patty Cash", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF374151))
                                         }
                                         Spacer(Modifier.height(16.dp))
                                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -784,7 +795,7 @@ fun LaporanLaciCash(data: AnalyticsData) {
                                         HorizontalDivider(color = Color(0xFFE5E7EB))
                                         Spacer(Modifier.height(12.dp))
                                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                            Text("STATUS OPERASIONAL", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF9CA3AF))
+                                            Text("Patty Cash", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF9CA3AF))
                                             val (lPc, bPc, fPc, brPc) = when {
                                                 pcVariance == 0.0 -> listOf("Pas (Balance)", Color(0xFFF3F4F6), Color(0xFF4B5563), Color(0xFFE5E7EB))
                                                 pcVariance > 0 -> listOf("Lebih ${formatRupiah(pcVariance)}", Color(0xFFECFDF5), Color(0xFF047857), Color(0xFFA7F3D0))

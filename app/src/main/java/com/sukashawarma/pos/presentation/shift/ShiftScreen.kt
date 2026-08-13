@@ -258,13 +258,13 @@ fun ShiftScreen(
             title = { Text("Buka Shift", fontWeight = FontWeight.Bold) },
             text = {
                 Column {
-                    Text("Masukkan Dana Operasional (Petty Cash).", fontSize = 14.sp)
+                    Text("Masukkan Petty Cash.", fontSize = 14.sp)
                     Spacer(Modifier.height(16.dp))
                     OutlinedTextField(
                         value = openShiftInput,
                         onValueChange = { if (!pettyCashLocked) viewModel.openShiftInput.value = it },
                         readOnly = pettyCashLocked,
-                        label = { Text("Dana Operasional (Rp)") },
+                        label = { Text("Patty Cash (Rp)") },
                         trailingIcon = {
                             if (pettyCashLocked) {
                                 Icon(Icons.Default.Lock, contentDescription = null, tint = Color.Gray)
