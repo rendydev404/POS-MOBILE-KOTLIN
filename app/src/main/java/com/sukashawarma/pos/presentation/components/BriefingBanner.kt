@@ -27,11 +27,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.sukashawarma.pos.data.remote.SupabaseClient
 import com.sukashawarma.pos.data.remote.dto.OwnerMessageDto
 import com.sukashawarma.pos.data.remote.dto.TargetProgressDto
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.util.*
@@ -59,17 +57,16 @@ class BriefingViewModel : ViewModel() {
     fun setOutlet(outletId: String) {
         if (currentOutletId != outletId) {
             currentOutletId = outletId
-            startPolling()
+            startObserving()
         }
     }
 
-    private fun startPolling() {
-        viewModelScope.launch {
-            while (isActive && currentOutletId.isNotEmpty()) {
-                fetchData()
-                delay(60_000) // Poll every 60 seconds
-            }
-        }
+    private fun startObserving() {
+        // Realtime (POSRealtimeService lewat websocket Supabase) sudah meng-emit
+        // targetRefreshEvent/orderSyncEvent/ownerMessageRefreshEvent setiap ada
+        // perubahan, termasuk saat koneksi baru tersambung kembali — jadi cukup
+        // sekali muat di sini, tanpa loop poll berkala.
+        viewModelScope.launch { fetchData() }
         viewModelScope.launch {
             com.sukashawarma.pos.data.remote.GlobalEventBus.ownerMessageRefreshEvent.collect {
                 if (currentOutletId.isNotEmpty()) {

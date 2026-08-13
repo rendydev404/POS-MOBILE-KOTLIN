@@ -264,7 +264,7 @@ fun ShiftScreen(
                         value = openShiftInput,
                         onValueChange = { if (!pettyCashLocked) viewModel.openShiftInput.value = it },
                         readOnly = pettyCashLocked,
-                        label = { Text("Patty Cash (Rp)") },
+                        label = { Text("PATTY CASH (Rp)") },
                         trailingIcon = {
                             if (pettyCashLocked) {
                                 Icon(Icons.Default.Lock, contentDescription = null, tint = Color.Gray)
