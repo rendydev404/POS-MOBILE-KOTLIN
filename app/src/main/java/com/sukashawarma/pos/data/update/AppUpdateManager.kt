@@ -18,13 +18,23 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 import java.io.File
 
 /**
  * Distribusi app ini lewat WhatsApp, bukan Play Store — jadi tidak ada update
- * otomatis bawaan. Ini pengganti minimalnya: cek manifest versi di
- * `global_settings` (key `app_update`, lihat AppUpdateManifest), lalu kalau ada
- * yang lebih baru, download APK-nya dan minta sistem memasangnya.
+ * otomatis bawaan. Ini pengganti minimalnya: manifest versi terbaru disimpan di
+ * `global_settings` (key `app_update`, lihat AppUpdateManifest); begitu ada
+ * versi baru, APK-nya di-download dan sistem diminta memasangnya.
+ *
+ * Deteksinya SENGAJA bukan polling. `global_settings` ada di publikasi
+ * `supabase_realtime` (lihat migrasi 20300103000009), dan
+ * [OrderRealtimeManager] sudah subscribe ke tabel itu lewat WebSocket yang
+ * sama dipakai untuk pesanan/petty cash. Jadi begitu baris app_update di-update
+ * di server, [handleRealtimePayload] menerima push-nya langsung tanpa app
+ * perlu bertanya berkala. Satu-satunya REST call ([checkForUpdate]) hanya
+ * dipanggil SEKALI saat login, untuk menangkap update yang terbit persis saat
+ * device sedang mati/offline (realtime cuma jalan selama socket tersambung).
  *
  * Cara mem-publish update baru: build APK, upload ke storage manapun yang bisa
  * diakses lewat URL HTTPS langsung (mis. bucket Supabase Storage), lalu upsert
@@ -40,33 +50,70 @@ object AppUpdateManager {
     private val _downloadProgress = MutableStateFlow(0)
     val downloadProgress = _downloadProgress.asStateFlow()
 
+    /** Sumber kebenaran tunggal: diisi dari [checkForUpdate] (sekali, saat login)
+     *  ATAU dari [handleRealtimePayload] (push, tiap kali server berubah). */
+    private val _availableUpdate = MutableStateFlow<AppUpdateManifest?>(null)
+    val availableUpdate = _availableUpdate.asStateFlow()
+
     private var downloadId: Long = -1L
     private var pendingManifest: AppUpdateManifest? = null
     private var receiverRegistered = false
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    suspend fun checkForUpdate(): AppUpdateManifest? {
-        return try {
+    /** Satu-satunya tempat REST dipanggil — sekali per login, bukan loop berkala. */
+    suspend fun checkForUpdate() {
+        try {
             val res = SupabaseClient.api.getAppUpdateInfo()
-            val manifest = res.body()?.firstOrNull()?.value ?: return null
-            if (manifest.versionCode > BuildConfig.VERSION_CODE) manifest else null
+            val manifest = res.body()?.firstOrNull()?.value ?: return
+            applyIfNewer(manifest)
         } catch (e: Exception) {
             e.printStackTrace()
-            null
+        }
+    }
+
+    /** Dipanggil POSRealtimeService saat menerima event postgres_changes untuk
+     *  tabel global_settings — payload sudah berisi baris penuh, jadi tidak
+     *  perlu REST call tambahan sama sekali. */
+    fun handleRealtimePayload(record: JSONObject) {
+        if (record.optString("key") != "app_update") return
+        val v = record.optJSONObject("value") ?: return
+        val manifest = AppUpdateManifest(
+            versionCode = v.optInt("version_code"),
+            versionName = v.optString("version_name"),
+            apkUrl = v.optString("apk_url"),
+            notes = if (v.isNull("notes")) null else v.optString("notes").ifBlank { null },
+            mandatory = v.optBoolean("mandatory", false)
+        )
+        applyIfNewer(manifest)
+    }
+
+    private fun applyIfNewer(manifest: AppUpdateManifest) {
+        if (manifest.versionCode > BuildConfig.VERSION_CODE) {
+            _availableUpdate.value = manifest
         }
     }
 
     fun startDownload(context: Context, manifest: AppUpdateManifest) {
         if (_downloadState.value == DownloadState.DOWNLOADING) return
         pendingManifest = manifest
-        _downloadState.value = DownloadState.DOWNLOADING
-        _downloadProgress.value = 0
-
-        registerReceiver(context)
 
         val updatesDir = File(context.getExternalFilesDir(null), "updates").apply { mkdirs() }
         val destFile = File(updatesDir, "suka-shawarma-${manifest.versionCode}.apk")
+
+        // App sempat restart setelah download-nya kelar sebelumnya — file APK ini
+        // sudah lengkap di disk, tidak perlu unduh ulang. Ditandai lewat prefs
+        // (bukan sekadar file ada) supaya download yang putus di tengah jalan
+        // tidak dikira sudah selesai lalu gagal saat dipasang.
+        if (destFile.exists() && isMarkedComplete(context, manifest.versionCode)) {
+            _downloadProgress.value = 100
+            _downloadState.value = DownloadState.READY_TO_INSTALL
+            return
+        }
         if (destFile.exists()) destFile.delete()
+
+        _downloadState.value = DownloadState.DOWNLOADING
+        _downloadProgress.value = 0
+        registerReceiver(context)
 
         val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
         val request = DownloadManager.Request(Uri.parse(manifest.apkUrl))
@@ -103,6 +150,8 @@ object AppUpdateManager {
                         downloading = false
                         if (status == DownloadManager.STATUS_FAILED) {
                             _downloadState.value = DownloadState.FAILED
+                        } else {
+                            pendingManifest?.let { markComplete(context, it.versionCode) }
                         }
                     }
                 }
@@ -116,9 +165,22 @@ object AppUpdateManager {
         override fun onReceive(context: Context, intent: Intent) {
             val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
             if (id != downloadId) return
+            pendingManifest?.let { markComplete(context, it.versionCode) }
             _downloadProgress.value = 100
             _downloadState.value = DownloadState.READY_TO_INSTALL
         }
+    }
+
+    private const val PREFS_NAME = "app_update_prefs"
+
+    private fun markComplete(context: Context, versionCode: Int) {
+        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean("downloaded_$versionCode", true).apply()
+    }
+
+    private fun isMarkedComplete(context: Context, versionCode: Int): Boolean {
+        return context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean("downloaded_$versionCode", false)
     }
 
     private fun registerReceiver(context: Context) {

@@ -124,6 +124,12 @@ class OrderRealtimeManager(
                             put("schema", "public")
                             put("table", "order_items")
                         })
+                        // Deteksi versi APK baru tanpa polling — lihat AppUpdateManager.
+                        put(JSONObject().apply {
+                            put("event", "*")
+                            put("schema", "public")
+                            put("table", "global_settings")
+                        })
                     })
                 })
                 channelToken = SessionTokenHolder.accessToken

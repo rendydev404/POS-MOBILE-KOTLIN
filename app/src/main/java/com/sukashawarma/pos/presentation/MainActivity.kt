@@ -113,12 +113,28 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                // Distribusi app ini lewat WhatsApp (bukan Play Store) — cek versi
-                // terbaru sendiri tiap kali kasir buka app. Lihat AppUpdateManager.
-                var updateManifest by remember { mutableStateOf<com.sukashawarma.pos.data.remote.dto.AppUpdateManifest?>(null) }
+                // Distribusi app ini lewat WhatsApp (bukan Play Store). Deteksi update
+                // TIDAK polling: begitu login, cek sekali (menangkap update yang terbit
+                // saat device offline), lalu push realtime (lewat WebSocket yang sama
+                // dipakai untuk pesanan) yang menangani sisanya selama app berjalan.
+                // Lihat AppUpdateManager.
+                val updateManifest by com.sukashawarma.pos.data.update.AppUpdateManager.availableUpdate.collectAsState()
                 LaunchedEffect(activeSession) {
                     if (activeSession != null) {
-                        updateManifest = com.sukashawarma.pos.data.update.AppUpdateManager.checkForUpdate()
+                        com.sukashawarma.pos.data.update.AppUpdateManager.checkForUpdate()
+                    }
+                }
+
+                // Begitu ada versi baru terdeteksi (dari cek awal ATAU push realtime),
+                // langsung unduh diam-diam di latar belakang — kasir cuma perlu tap
+                // "Pasang Sekarang" saat filenya sudah siap, mirip Play Store.
+                val appContext = applicationContext
+                LaunchedEffect(updateManifest) {
+                    val manifest = updateManifest ?: return@LaunchedEffect
+                    if (com.sukashawarma.pos.data.update.AppUpdateManager.downloadState.value ==
+                        com.sukashawarma.pos.data.update.AppUpdateManager.DownloadState.IDLE
+                    ) {
+                        com.sukashawarma.pos.data.update.AppUpdateManager.startDownload(appContext, manifest)
                     }
                 }
 
@@ -239,7 +255,12 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
-                    updateManifest?.let { manifest ->
+                    // Dismiss cuma menyembunyikan dialog untuk versi ini — download di
+                    // latar belakang tetap jalan, jadi begitu siap tinggal dipasang.
+                    var dismissedVersionCode by remember { mutableStateOf<Int?>(null) }
+
+                    if (updateManifest != null && updateManifest?.versionCode != dismissedVersionCode) {
+                        val manifest = updateManifest!!
                         val downloadState by com.sukashawarma.pos.data.update.AppUpdateManager.downloadState.collectAsState()
                         val downloadProgress by com.sukashawarma.pos.data.update.AppUpdateManager.downloadProgress.collectAsState()
 
@@ -247,7 +268,7 @@ class MainActivity : ComponentActivity() {
                             manifest = manifest,
                             downloadState = downloadState,
                             downloadProgress = downloadProgress,
-                            onDismiss = { updateManifest = null },
+                            onDismiss = { dismissedVersionCode = manifest.versionCode },
                             onStartDownload = {
                                 if (com.sukashawarma.pos.data.update.AppUpdateManager.canRequestInstall(context)) {
                                     com.sukashawarma.pos.data.update.AppUpdateManager.startDownload(context, manifest)

@@ -168,6 +168,9 @@ class POSRealtimeService : Service() {
                 GlobalEventBus.bypassRequestEvent.tryEmit(Unit)
             } else if (table == "petty_cash_topups" || table == "petty_cash_expenses") {
                 GlobalEventBus.pettyCashEvent.tryEmit(Unit)
+            } else if (table == "global_settings") {
+                // Deteksi update APK lewat push realtime, bukan polling — lihat AppUpdateManager.
+                com.sukashawarma.pos.data.update.AppUpdateManager.handleRealtimePayload(record)
             } else if (table == "cancellation_requests") {
                 val orderId = record.optString("order_id")
                 val status = record.optString("status")
