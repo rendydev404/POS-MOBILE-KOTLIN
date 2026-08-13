@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Refresh
@@ -78,9 +79,16 @@ fun SettingsScreen(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Icon(Icons.Default.Print, contentDescription = null, tint = AmberPrimary)
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(AmberPrimary.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.Print, contentDescription = null, tint = AmberPrimary, modifier = Modifier.size(20.dp))
+                    }
                     Text(
                         text = "Pengaturan Printer Thermal (Bluetooth)",
                         style = MaterialTheme.typography.headlineMedium,
@@ -138,9 +146,9 @@ fun SettingsScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { viewModel.selectPrinter(mac) },
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (isSelected) AmberPrimary.copy(alpha = 0.15f) else SlateCard,
-                            border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, AmberPrimary) else null
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isSelected) AmberPrimary.copy(alpha = 0.12f) else SlateCard,
+                            border = if (isSelected) androidx.compose.foundation.BorderStroke(1.5.dp, AmberPrimary) else androidx.compose.foundation.BorderStroke(1.dp, SlateBorder)
                         ) {
                             Row(
                                 modifier = Modifier
@@ -150,16 +158,35 @@ fun SettingsScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.Bluetooth, contentDescription = null, tint = if (isSelected) AmberPrimary else TextMuted)
-                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .background(
+                                                if (isSelected) AmberPrimary.copy(alpha = 0.2f) else SlateBorder.copy(alpha = 0.4f),
+                                                RoundedCornerShape(10.dp)
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(Icons.Default.Bluetooth, contentDescription = null, tint = if (isSelected) AmberPrimary else TextMuted, modifier = Modifier.size(18.dp))
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
                                     Column {
-                                        Text(text = name, style = MaterialTheme.typography.bodyLarge, color = TextPrimary)
+                                        Text(text = name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                                         Text(text = mac, style = MaterialTheme.typography.bodySmall, color = TextMuted)
                                     }
                                 }
 
                                 if (isSelected) {
-                                    Text("DIPILIH", style = MaterialTheme.typography.bodyMedium, color = StatusCompleted, fontWeight = FontWeight.Bold)
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier
+                                            .background(StatusCompleted.copy(alpha = 0.15f), RoundedCornerShape(20.dp))
+                                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                                    ) {
+                                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = StatusCompleted, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("DIPILIH", style = MaterialTheme.typography.labelSmall, color = StatusCompleted, fontWeight = FontWeight.Bold)
+                                    }
                                 }
                             }
                         }
@@ -205,9 +232,16 @@ fun SettingsScreen(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Icon(Icons.Default.Tablet, contentDescription = null, tint = AmberPrimary)
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(AmberPrimary.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.Tablet, contentDescription = null, tint = AmberPrimary, modifier = Modifier.size(20.dp))
+                    }
                     Text(
                         text = "Pairing Tablet Self-Order (Kiosk)",
                         style = MaterialTheme.typography.headlineMedium,
