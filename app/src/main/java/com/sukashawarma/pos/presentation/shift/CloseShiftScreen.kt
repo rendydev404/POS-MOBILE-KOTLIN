@@ -77,7 +77,7 @@ fun CloseShiftScreen(
                 Icon(Icons.Default.Warning, contentDescription = "Warning", tint = Color(0xFFF59E0B), modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "Belum Waktunya Tutup Shift. Sesuai aturan, penutupan petty cash (shift) hanya dapat dilakukan mulai jam 22:00 malam hingga 06:00 pagi (khusus outlet tes tgl 12: jam 16:00). Silakan kembali lagi nanti.",
+                    text = "Belum Waktunya Tutup Shift. Sesuai aturan, penutupan petty cash (shift) hanya dapat dilakukan mulai jam 22:00 malam hingga 06:00 pagi. Silakan kembali lagi nanti.",
                     color = Color(0xFF92400E),
                     fontSize = 14.sp
                 )

@@ -287,27 +287,25 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
 
     val isClosingAllowed = MutableStateFlow(true)
     
+    // Outlet tes ini juga dikecualikan dari trigger check_shift_closing_time di DB
+    // (lihat supabase/migrations/20260813_shift_closing_time_test_outlet_bypass.sql),
+    // jadi bisa tutup shift kapan saja tanpa perlu diutak-atik per tanggal lagi.
+    private val TEST_OUTLET_ID = "eb174b2b-ff69-47eb-97af-b6c824d3ce4a"
+
     fun checkTimeRestriction() {
+        val isTestOutlet = currentOutletId.value == TEST_OUTLET_ID
+        if (isTestOutlet) {
+            isClosingAllowed.value = true
+            return
+        }
         try {
             val cal = Calendar.getInstance(TimeZone.getTimeZone("Asia/Jakarta"))
             val hour = cal.get(Calendar.HOUR_OF_DAY)
-            val day = cal.get(Calendar.DAY_OF_MONTH)
-            val isTestOutlet = currentOutletId.value == "eb174b2b-ff69-47eb-97af-b6c824d3ce4a"
-            if (isTestOutlet && day == 12) {
-                isClosingAllowed.value = hour >= 16 || hour < 6
-            } else {
-                isClosingAllowed.value = hour >= 22 || hour < 6
-            }
+            isClosingAllowed.value = hour >= 22 || hour < 6
         } catch (e: Exception) {
             val cal = Calendar.getInstance()
             val hour = cal.get(Calendar.HOUR_OF_DAY)
-            val day = cal.get(Calendar.DAY_OF_MONTH)
-            val isTestOutlet = currentOutletId.value == "eb174b2b-ff69-47eb-97af-b6c824d3ce4a"
-            if (isTestOutlet && day == 12) {
-                isClosingAllowed.value = hour >= 16 || hour < 6
-            } else {
-                isClosingAllowed.value = hour >= 22 || hour < 6
-            }
+            isClosingAllowed.value = hour >= 22 || hour < 6
         }
     }
 
@@ -323,13 +321,7 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
         }
         
         if (!isClosingAllowed.value) {
-            val isTestOutlet = currentOutletId.value == "eb174b2b-ff69-47eb-97af-b6c824d3ce4a"
-            val cal = Calendar.getInstance(TimeZone.getTimeZone("Asia/Jakarta"))
-            if (isTestOutlet && cal.get(Calendar.DAY_OF_MONTH) == 12) {
-                errorMessage.value = "Penutupan shift hanya dapat dilakukan antara jam 16:00 hingga 06:00."
-            } else {
-                errorMessage.value = "Penutupan shift hanya dapat dilakukan antara jam 22:00 hingga 06:00."
-            }
+            errorMessage.value = "Penutupan shift hanya dapat dilakukan antara jam 22:00 hingga 06:00."
             return
         }
 
