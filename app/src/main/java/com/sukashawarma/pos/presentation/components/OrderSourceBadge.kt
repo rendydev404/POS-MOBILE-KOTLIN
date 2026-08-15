@@ -55,20 +55,21 @@ fun normalizeChannelId(id: String?): String {
 fun getOrderSourceInfo(source: String, channel: String?): Triple<String, Color, @Composable (Color) -> Unit> {
     // Endorse disimpan sebagai source POS dengan channel "endorse", jadi dicek lebih dulu
     // agar tidak jatuh ke badge "POS Kasir".
-    if (normalizeChannelId(channel) == "endorse") {
+    val normalizedChannel = normalizeChannelId(channel)
+    if (normalizedChannel == "endorse") {
         return Triple("Endorse", Color(0xFFDB2777), { c -> Icon(Icons.Rounded.ThumbUp, null, tint = c, modifier = Modifier.size(12.dp)) })
     }
+    // Kanal ojol dicek duluan terlepas dari `source`, karena kasir bisa input manual
+    // pesanan TikTok/GoFood/dll lewat POS tapi channel-nya tetap kanal ojol tsb.
+    when (normalizedChannel) {
+        "gofood" -> return Triple("GoFood", Color(0xFF00AA13), { Image(painterResource(R.drawable.ic_gofood), null, modifier = Modifier.size(12.dp)) })
+        "shopeefood" -> return Triple("ShopeeFood", Color(0xFFEE4D2D), { Image(painterResource(R.drawable.ic_shopeefood), null, modifier = Modifier.size(12.dp)) })
+        "grabfood" -> return Triple("GrabFood", Color(0xFF00B14F), { GrabFoodMark(size = 12.dp) })
+        "tiktokgo", "tiktok", "tiktok_go" -> return Triple("TikTok Go", Color(0xFF000000), { Image(painterResource(R.drawable.ic_tiktokgo), null, modifier = Modifier.size(12.dp)) })
+        "website" -> return Triple("Website Online", Color(0xFF2563EB), { c -> Icon(Icons.Rounded.Language, null, tint = c, modifier = Modifier.size(12.dp)) })
+        "food_apps" -> return Triple("Food Apps", Color(0xFFEA580C), { c -> Icon(Icons.Rounded.Language, null, tint = c, modifier = Modifier.size(12.dp)) })
+    }
     if (source.uppercase() == "ONLINE") {
-        if (channel != null) {
-            val normalizedChannel = normalizeChannelId(channel)
-            when (normalizedChannel) {
-                "gofood" -> return Triple("GoFood", Color(0xFF00AA13), { Image(painterResource(R.drawable.ic_gofood), null, modifier = Modifier.size(12.dp)) })
-                "shopeefood" -> return Triple("ShopeeFood", Color(0xFFEE4D2D), { Image(painterResource(R.drawable.ic_shopeefood), null, modifier = Modifier.size(12.dp)) })
-                "grabfood" -> return Triple("GrabFood", Color(0xFF00B14F), { Image(painterResource(R.drawable.ic_grabfood), null, modifier = Modifier.size(12.dp)) })
-                "tiktokgo" -> return Triple("TikTok Go", Color(0xFF000000), { Image(painterResource(R.drawable.ic_tiktokgo), null, modifier = Modifier.size(12.dp)) })
-                "website" -> return Triple("Website Online", Color(0xFF2563EB), { c -> Icon(Icons.Rounded.Language, null, tint = c, modifier = Modifier.size(12.dp)) })
-            }
-        }
         return Triple("Website Online", Color(0xFF2563EB), { c -> Icon(Icons.Rounded.Language, null, tint = c, modifier = Modifier.size(12.dp)) })
     } else if (source.uppercase() == "KIOSK") {
         return Triple("Kiosk", Color(0xFF8B5CF6), { c -> Icon(Icons.Rounded.PointOfSale, null, tint = c, modifier = Modifier.size(12.dp)) })

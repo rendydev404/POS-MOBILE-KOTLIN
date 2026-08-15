@@ -40,6 +40,33 @@ for (const [, id, label, bg, fg, , logoPath] of src.matchAll(entryRe)) {
     process.exit(1)
   }
 
+  // Grab memakai wordmark horizontal dengan detail garis tipis. Memaksanya ke
+  // glyph 16/28 di dalam lingkaran membuat tinggi huruf tinggal 2-3 px pada
+  // badge native. Pertahankan rasio wordmark dan gunakan warna brand langsung.
+  if (id === 'grabfood') {
+    writeFileSync(
+      `${outDir}/${file}`,
+      `<!-- ${label}. Wordmark dari sumber POS web.
+     Viewport lebar menjaga detail huruf tetap terbaca pada badge 12-20dp. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="32dp"
+    android:height="16dp"
+    android:viewportWidth="24"
+    android:viewportHeight="12">
+    <group android:translateY="-6">
+        <path
+            android:fillColor="${bg}"
+            android:pathData="${logoPath}" />
+    </group>
+</vector>
+`,
+      'utf8'
+    )
+    console.log(`${file} <- ${label} wide wordmark (${bg})`)
+    written++
+    continue
+  }
+
   writeFileSync(
     `${outDir}/${file}`,
     `<!-- ${label}. Dibuat oleh scripts/gen-channel-icons.mjs dari
