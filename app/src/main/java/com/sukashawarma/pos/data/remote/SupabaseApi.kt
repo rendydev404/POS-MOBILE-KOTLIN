@@ -307,12 +307,13 @@ interface SupabaseApi {
         @Body payload: CreateCancellationRequestPayload
     ): Response<List<CancellationRequestResponse>>
     
-    // Web POS API Endpoints (https://pos.sukashawarma.com)
-    // Panduan dipublikasi oleh server web dari `system_guides`, karena RLS tabel
-    // tersebut sengaja tidak dibuka langsung ke klien native/web.
-    @GET
+    // system_guides — SELECT RLS sudah public (USING (true)), dikonfirmasi lewat
+    // query langsung 2026-08-15; tidak perlu proxy lewat pos-kasir sama sekali.
+    @GET("rest/v1/system_guides")
     suspend fun getSystemGuides(
-        @Url url: String
+        @Query("system_code") systemCode: String = "eq.pos",
+        @Query("select") select: String = "id,category,title,content_html,image_url,sort_order",
+        @Query("order") order: String = "category.asc,sort_order.asc"
     ): Response<List<SystemGuideDto>>
 
     @GET

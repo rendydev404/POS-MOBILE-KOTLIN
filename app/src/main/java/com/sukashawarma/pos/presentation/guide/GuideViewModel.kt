@@ -24,7 +24,7 @@ class GuideViewModel(application: Application) : AndroidViewModel(application) {
         isLoading.value = true
         errorMessage.value = null
         try {
-            val response = api.getSystemGuides("https://pos.sukashawarma.com/api/admin/guides")
+            val response = api.getSystemGuides()
             if (!response.isSuccessful) {
                 errorMessage.value = "Panduan belum dapat dimuat. Coba lagi."
                 return@launch
