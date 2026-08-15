@@ -350,6 +350,7 @@ interface SupabaseApi {
     @POST
     suspend fun notifyOnlineOrderDone(
         @Url url: String,
+        @Header("Authorization") authorization: String,
         @Body payload: Map<String, String>
     ): Response<ResponseBody>
 

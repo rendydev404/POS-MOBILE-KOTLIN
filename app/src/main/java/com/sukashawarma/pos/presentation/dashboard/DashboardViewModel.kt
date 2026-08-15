@@ -383,17 +383,18 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     ) {
                         try {
                             val notifyRes = api.notifyOnlineOrderDone(
-                                url = "$WEB_POS_API_BASE/api/orders/notify-online-done",
-                                payload = mapOf("order_id" to order.id)
+                                url = "https://qntuhtkujpwudcpudwbj.supabase.co/functions/v1/kasir-order-done",
+                                authorization = "Bearer ${com.sukashawarma.pos.data.remote.SessionTokenHolder.accessToken}",
+                                payload = mapOf("pos_order_id" to order.id)
                             )
                             if (!notifyRes.isSuccessful) {
                                 android.util.Log.e(
                                     "DashboardViewModel",
-                                    "notify-online-done gagal untuk order ${order.id}: HTTP ${notifyRes.code()}"
+                                    "kasir-order-done gagal untuk order ${order.id}: HTTP ${notifyRes.code()}"
                                 )
                             }
                         } catch (e: Exception) {
-                            android.util.Log.e("DashboardViewModel", "Gagal memanggil notify-online-done", e)
+                            android.util.Log.e("DashboardViewModel", "Gagal memanggil kasir-order-done", e)
                         }
                     }
                 }
@@ -403,10 +404,6 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 e.printStackTrace()
             }
         }
-    }
-
-    companion object {
-        private const val WEB_POS_API_BASE = "https://pos.sukashawarma.com"
     }
 
     val printStatusMessage = MutableStateFlow<String?>(null)
