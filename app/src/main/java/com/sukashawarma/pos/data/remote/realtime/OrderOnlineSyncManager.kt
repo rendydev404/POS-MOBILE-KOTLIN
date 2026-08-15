@@ -31,7 +31,7 @@ class OrderOnlineSyncManager(
     // Dulu lewat pos-kasir (proxy ke DB via Next.js API route) — sekarang langsung
     // ke Edge Function di project Order-Online sendiri, supaya native tidak
     // berhenti menerima order website kalau pos-kasir sedang down.
-    private val ORDER_ONLINE_FUNCTIONS_BASE = "$SS_ORDER_URL/functions/v1"
+    private val ORDER_ONLINE_FUNCTIONS_BASE = com.sukashawarma.pos.data.remote.OrderOnlineEndpoints.FUNCTIONS_BASE
     
     private val knownOrders = mutableSetOf<String>()
     private val inFlightPulls = mutableSetOf<String>()

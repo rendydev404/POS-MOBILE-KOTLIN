@@ -374,27 +374,35 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     // channel="website" di DB justru dipakai tab "Order Website (Backup)" (order
                     // yang diketik manual kasir, source='manual', TANPA external_order_id), yang
                     // seharusnya memang tidak memicu WA ini. Guard channel=="website" itu malah
-                    // mematikan notifikasi untuk order website asli. Server (notify-online-done)
-                    // sudah menyaring dengan benar lewat `order.source==='online' &&
+                    // mematikan notifikasi untuk order website asli. Edge Function
+                    // kasir-order-done sudah menyaring dengan benar lewat `order.source==='online' &&
                     // order.external_order_id` — jadi cukup jaga di source==ONLINE saja di sini,
                     // biar tetap ikut GoFood/GrabFood/dst (server men-skip yang tidak relevan).
                     if (order.source == com.sukashawarma.pos.domain.model.OrderSource.ONLINE &&
                         newStatus == OrderStatus.COMPLETED
                     ) {
-                        try {
-                            val notifyRes = api.notifyOnlineOrderDone(
-                                url = "https://qntuhtkujpwudcpudwbj.supabase.co/functions/v1/kasir-order-done",
-                                authorization = "Bearer ${com.sukashawarma.pos.data.remote.SessionTokenHolder.accessToken}",
-                                payload = mapOf("pos_order_id" to order.id)
+                        val token = com.sukashawarma.pos.data.remote.SessionTokenHolder.accessToken
+                        if (token == null) {
+                            android.util.Log.e(
+                                "DashboardViewModel",
+                                "Tidak bisa panggil kasir-order-done: sesi kasir tidak punya access token"
                             )
-                            if (!notifyRes.isSuccessful) {
-                                android.util.Log.e(
-                                    "DashboardViewModel",
-                                    "kasir-order-done gagal untuk order ${order.id}: HTTP ${notifyRes.code()}"
+                        } else {
+                            try {
+                                val notifyRes = api.notifyOnlineOrderDone(
+                                    url = "${com.sukashawarma.pos.data.remote.OrderOnlineEndpoints.FUNCTIONS_BASE}/kasir-order-done",
+                                    authorization = "Bearer $token",
+                                    payload = mapOf("pos_order_id" to order.id)
                                 )
+                                if (!notifyRes.isSuccessful) {
+                                    android.util.Log.e(
+                                        "DashboardViewModel",
+                                        "kasir-order-done gagal untuk order ${order.id}: HTTP ${notifyRes.code()}"
+                                    )
+                                }
+                            } catch (e: Exception) {
+                                android.util.Log.e("DashboardViewModel", "Gagal memanggil kasir-order-done", e)
                             }
-                        } catch (e: Exception) {
-                            android.util.Log.e("DashboardViewModel", "Gagal memanggil kasir-order-done", e)
                         }
                     }
                 }

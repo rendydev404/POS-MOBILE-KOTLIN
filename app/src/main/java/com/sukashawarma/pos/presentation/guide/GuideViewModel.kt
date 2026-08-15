@@ -29,6 +29,8 @@ class GuideViewModel(application: Application) : AndroidViewModel(application) {
                 errorMessage.value = "Panduan belum dapat dimuat. Coba lagi."
                 return@launch
             }
+            // Query sudah sort server-side (order=category.asc,sort_order.asc); sortWith
+            // ini cuma jaga-jaga tie-break kalau ada sortOrder null.
             _guides.value = response.body().orEmpty().sortedWith(
                 compareBy<SystemGuideDto> { it.category }.thenBy { it.sortOrder ?: Int.MAX_VALUE }
             )
@@ -36,7 +38,7 @@ class GuideViewModel(application: Application) : AndroidViewModel(application) {
                 selectedCategory.value = _guides.value.firstOrNull()?.category.orEmpty()
             }
         } catch (_: Exception) {
-            errorMessage.value = "Tidak dapat menghubungi server panduan."
+            errorMessage.value = "Panduan belum dapat dimuat. Coba lagi."
         } finally {
             isLoading.value = false
         }

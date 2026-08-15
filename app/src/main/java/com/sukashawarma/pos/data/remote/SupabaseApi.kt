@@ -344,9 +344,10 @@ interface SupabaseApi {
         @Header("Authorization") auth: String
     ): Response<ResponseBody>
 
-    // Diteruskan saat order website online ditandai Selesai — pos-kasir web yang
-    // memutuskan (source/external_order_id) lalu meneruskan ke Edge Function
-    // order-system supaya WA "pesanan siap diambil" terkirim ke customer.
+    // Dipanggil langsung oleh native saat order website online ditandai Selesai,
+    // dengan pos_order_id dan access token sesi kasir sendiri — Edge Function
+    // kasir-order-done di project Order-Online yang me-resolve external_order_id
+    // dan mengirim WA "pesanan siap diambil" ke customer.
     @POST
     suspend fun notifyOnlineOrderDone(
         @Url url: String,

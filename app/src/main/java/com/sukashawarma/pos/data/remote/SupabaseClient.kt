@@ -17,8 +17,14 @@ object SupabaseClient {
     // (auth.uid()-based policies) applies exactly like the web app. Falls back to the
     // anon key itself pre-login, i.e. same as an unauthenticated web visitor.
     private val authInterceptor = Interceptor { chain ->
-        val bearer = SessionTokenHolder.accessToken ?: ANON_KEY
         val original = chain.request()
+        // Header ini cuma buat host project POS sendiri — kalau dipaksa ke semua host,
+        // header Authorization/apikey yang sengaja di-set pemanggil buat project lain
+        // (misal Edge Function Order-Online) akan tertimpa diam-diam.
+        if (original.url.host != "khpkoreaaucvyqfhynfq.supabase.co") {
+            return@Interceptor chain.proceed(original)
+        }
+        val bearer = SessionTokenHolder.accessToken ?: ANON_KEY
         val requestBuilder = original.newBuilder()
             .header("apikey", ANON_KEY)
             .header("Authorization", "Bearer $bearer")
@@ -56,7 +62,7 @@ object SupabaseClient {
         .addInterceptor(authInterceptor)
         .authenticator(tokenAuthenticator)
         .addInterceptor(HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
+            level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BODY else HttpLoggingInterceptor.Level.NONE
         })
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
