@@ -1,53 +1,78 @@
 package com.sukashawarma.pos.presentation.settings
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.sukashawarma.pos.data.bluetooth.BluetoothPrinterManager
-import com.sukashawarma.pos.data.local.PrinterPrefs
+import com.sukashawarma.pos.data.remote.SupabaseClient
+import com.sukashawarma.pos.data.remote.dto.UpsertKioskSettingPayload
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import okhttp3.RequestBody.Companion.toRequestBody
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
-    private val printerManager = BluetoothPrinterManager
-
-    // Pair<name, macAddress> — only devices already paired via Android Bluetooth settings.
-    val bluetoothDevices = MutableStateFlow<List<Pair<String, String>>>(emptyList())
-    val selectedPrinterMac = MutableStateFlow(PrinterPrefs.getSelectedMac() ?: "")
-    val isTestingPrinter = MutableStateFlow(false)
-    val printerStatusMessage = MutableStateFlow<String?>(null)
-
     val currentOutletName = MutableStateFlow("")
+    val coverUrl = MutableStateFlow<String?>(null)
+    val isUploadingCover = MutableStateFlow(false)
+    val coverMessage = MutableStateFlow<String?>(null)
 
-    init {
-        refreshPairedDevices()
+    fun setOutlet(outletId: String) {
+        if (currentOutletName.value == outletId) return
+        currentOutletName.value = outletId
+        loadCover()
     }
 
-    fun refreshPairedDevices() {
-        bluetoothDevices.value = printerManager.getPairedDevices()
-    }
-
-    fun selectPrinter(mac: String) {
-        selectedPrinterMac.value = mac
-        PrinterPrefs.setSelectedMac(mac)
-    }
-
-    fun testPrinterConnection() {
-        val mac = selectedPrinterMac.value
-        if (mac.isBlank()) {
-            printerStatusMessage.value = "Pilih printer dulu."
-            return
+    private fun loadCover() = viewModelScope.launch {
+        val outletId = currentOutletName.value
+        if (outletId.isBlank()) return@launch
+        try {
+            coverUrl.value = SupabaseClient.api.getOutletKioskSetting(
+                outletIdFilter = "eq.$outletId",
+                keyFilter = "eq.cover_image_url"
+            ).body()?.firstOrNull()?.value
+        } catch (_: Exception) {
+            coverMessage.value = "Gagal memuat cover kiosk."
         }
-        viewModelScope.launch {
-            isTestingPrinter.value = true
-            printerStatusMessage.value = null
-            val connected = printerManager.ensureConnected(mac)
-            printerStatusMessage.value = if (connected) {
-                "Berhasil terhubung ke printer."
-            } else {
-                "Gagal terhubung. Pastikan printer menyala & sudah di-pairing di pengaturan Bluetooth Android."
+    }
+
+    fun uploadCover(uri: Uri) = viewModelScope.launch {
+        val outletId = currentOutletName.value
+        if (outletId.isBlank()) return@launch
+        isUploadingCover.value = true
+        coverMessage.value = null
+        try {
+            val resolver = getApplication<Application>().contentResolver
+            val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
+                ?: error("File tidak dapat dibaca")
+            require(bytes.size <= 5 * 1024 * 1024) { "Ukuran gambar maksimal 5 MB." }
+            val contentType = resolver.getType(uri)
+                ?.takeIf { it in setOf("image/jpeg", "image/png", "image/webp") }
+                ?: error("Gunakan gambar JPG, PNG, atau WebP.")
+            val extension = when (contentType) {
+                "image/png" -> "png"
+                "image/webp" -> "webp"
+                else -> "jpg"
             }
-            isTestingPrinter.value = false
+            val path = "kiosk-assets/cover_${outletId}_${System.currentTimeMillis()}.$extension"
+            check(
+                SupabaseClient.api.uploadPaymentProof(
+                    path,
+                    contentType,
+                    file = bytes.toRequestBody()
+                ).isSuccessful
+            ) { "Upload cover gagal." }
+            val url = "${SupabaseClient.BASE_URL}storage/v1/object/public/$path"
+            check(
+                SupabaseClient.api.upsertKioskSetting(
+                    payload = UpsertKioskSettingPayload(outletId, "cover_image_url", url)
+                ).isSuccessful
+            ) { "Gagal menyimpan cover." }
+            coverUrl.value = url
+            coverMessage.value = "Cover kiosk berhasil diperbarui."
+        } catch (error: Exception) {
+            coverMessage.value = error.message ?: "Gagal mengunggah cover kiosk."
+        } finally {
+            isUploadingCover.value = false
         }
     }
 }

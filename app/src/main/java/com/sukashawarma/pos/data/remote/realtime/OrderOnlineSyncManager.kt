@@ -24,7 +24,6 @@ class OrderOnlineSyncManager(
 ) {
     private var webSocket: WebSocket? = null
     private var heartbeatJob: Job? = null
-    private var pollingJob: Job? = null
     private val refCounter = AtomicInteger(1)
     
     private val SS_ORDER_URL = "https://qntuhtkujpwudcpudwbj.supabase.co"
@@ -44,7 +43,10 @@ class OrderOnlineSyncManager(
             override fun onOpen(webSocket: WebSocket, response: OkResponse) {
                 joinChannel(webSocket)
                 startHeartbeat(webSocket)
-                startPolling()
+                // Satu sinkronisasi awal untuk menangkap status yang berubah selama
+                // socket putus; sisanya murni event-driven lewat postgres_changes,
+                // bukan polling berkala.
+                syncActiveOrderStatuses()
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -94,20 +96,6 @@ class OrderOnlineSyncManager(
         }
     }
     
-    private fun startPolling() {
-        pollingJob?.cancel()
-        pollingJob = scope.launch {
-            // Initial sync
-            syncActiveOrderStatuses()
-            
-            // Poll every 10 seconds like Web POS
-            while (isActive) {
-                delay(10_000)
-                syncActiveOrderStatuses()
-            }
-        }
-    }
-
     private fun scheduleReconnect() {
         scope.launch {
             delay(5_000)
@@ -172,7 +160,6 @@ class OrderOnlineSyncManager(
 
     fun disconnect() {
         heartbeatJob?.cancel()
-        pollingJob?.cancel()
         webSocket?.close(1000, "bye")
         webSocket = null
     }

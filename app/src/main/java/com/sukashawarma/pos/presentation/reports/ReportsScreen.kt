@@ -16,7 +16,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -25,6 +24,8 @@ import com.sukashawarma.pos.data.remote.dto.OrderDto
 import com.sukashawarma.pos.presentation.theme.*
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.Instant
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -40,10 +41,11 @@ fun ReportsScreen(
     val channel by viewModel.channelFilter.collectAsState()
     val payment by viewModel.paymentFilter.collectAsState()
     val status by viewModel.statusFilter.collectAsState()
+    val customStartDate by viewModel.customStartDate.collectAsState()
+    val customEndDate by viewModel.customEndDate.collectAsState()
+    val customDateError by viewModel.customDateError.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val isOnline by com.sukashawarma.pos.data.remote.NetworkMonitor.isOnline.collectAsState()
-
-    val context = LocalContext.current
 
     LazyColumn(
         modifier = modifier
@@ -58,12 +60,14 @@ fun ReportsScreen(
                 channel = channel,
                 payment = payment,
                 status = status,
+                customStartDate = customStartDate,
+                customEndDate = customEndDate,
+                customDateError = customDateError,
                 onRangeChanged = { viewModel.updateRange(it) },
+                onCustomDateChanged = { start, end -> viewModel.updateCustomDate(start, end) },
                 onChannelChanged = { viewModel.updateFilters(it, payment, status) },
                 onPaymentChanged = { viewModel.updateFilters(channel, it, status) },
-                onStatusChanged = { viewModel.updateFilters(channel, payment, it) },
-                onExport = { viewModel.exportToPdf(context) },
-                exportDisabled = analytics.totalOrders == 0
+                onStatusChanged = { viewModel.updateFilters(channel, payment, it) }
             )
         }
 
@@ -105,32 +109,54 @@ fun HeaderAndFilters(
     channel: String,
     payment: String,
     status: String,
+    customStartDate: String,
+    customEndDate: String,
+    customDateError: String?,
     onRangeChanged: (DateRange) -> Unit,
+    onCustomDateChanged: (String, String) -> Unit,
     onChannelChanged: (String) -> Unit,
     onPaymentChanged: (String) -> Unit,
-    onStatusChanged: (String) -> Unit,
-    onExport: () -> Unit,
-    exportDisabled: Boolean
+    onStatusChanged: (String) -> Unit
 ) {
-    Row(
+    Column(
         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Column {
-            Text("Laporan & Analitik Cabang", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF111827))
-            Text("Insight bisnis Anda secara real-time", fontSize = 12.sp, color = Color(0xFF6B7280))
-        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text("Laporan & Analitik Cabang", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF111827))
+                Text("Insight bisnis Anda secara real-time", fontSize = 12.sp, color = Color(0xFF6B7280))
+            }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             FilterDropdown(
                 selected = when (channel) {
                     "all" -> "Semua Channel"
                     "food_apps" -> "Semua Food Apps"
                     "offline" -> "POS Kasir"
+                    "website" -> "Website Online"
+                    "endorse" -> "Endorse"
+                    "gofood" -> "GoFood"
+                    "grabfood" -> "GrabFood"
+                    "shopeefood" -> "ShopeeFood"
+                    "tiktokgo" -> "TikTok Go"
                     else -> channel.capitalize()
                 },
-                options = listOf("Semua Channel" to "all", "Semua Food Apps" to "food_apps", "POS Kasir" to "offline", "GoFood" to "gofood", "GrabFood" to "grabfood"),
+                options = listOf(
+                    "Semua Channel" to "all",
+                    "Semua Food Apps" to "food_apps",
+                    "POS Kasir" to "offline",
+                    "Website Online" to "website",
+                    "Endorse" to "endorse",
+                    "GoFood" to "gofood",
+                    "GrabFood" to "grabfood",
+                    "ShopeeFood" to "shopeefood",
+                    "TikTok Go" to "tiktokgo"
+                ),
                 onSelect = { onChannelChanged(it) }
             )
             
@@ -157,27 +183,84 @@ fun HeaderAndFilters(
                 onSelect = { onStatusChanged(it) }
             )
 
-            FilterDropdown(
-                selected = range.label,
-                options = DateRange.values().map { it.label to it.name },
-                onSelect = { name -> onRangeChanged(DateRange.valueOf(name)) }
-            )
+                FilterDropdown(
+                    selected = range.label,
+                    options = DateRange.values().map { it.label to it.name },
+                    onSelect = { name -> onRangeChanged(DateRange.valueOf(name)) }
+                )
+            }
+        }
 
-            Button(
-                onClick = onExport,
-                enabled = !exportDisabled,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1)),
-                shape = RoundedCornerShape(20.dp),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                modifier = Modifier.height(36.dp)
+        if (range == DateRange.CUSTOM) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Cetak Laporan", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                ReportDatePickerField(
+                    label = "Tanggal mulai",
+                    date = customStartDate.toReportLocalDateOrNull(),
+                    onDatePicked = { date -> onCustomDateChanged(date.toString(), customEndDate) },
+                    modifier = Modifier.weight(1f)
+                )
+                ReportDatePickerField(
+                    label = "Tanggal akhir",
+                    date = customEndDate.toReportLocalDateOrNull(),
+                    onDatePicked = { date -> onCustomDateChanged(customStartDate, date.toString()) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            customDateError?.let { error ->
+                Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
             }
         }
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ReportDatePickerField(
+    label: String,
+    date: LocalDate?,
+    onDatePicked: (LocalDate) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var showDialog by remember { mutableStateOf(false) }
+    Surface(
+        modifier = modifier.clickable { showDialog = true },
+        shape = RoundedCornerShape(10.dp),
+        color = Color.White,
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(Icons.Default.CalendarMonth, contentDescription = null, modifier = Modifier.size(18.dp), tint = ShawarmaOrange)
+            Column {
+                Text(label, fontSize = 10.sp, color = Color(0xFF9CA3AF))
+                Text(date?.format(DateTimeFormatter.ofPattern("dd MMM yyyy", Locale("id", "ID"))) ?: "Pilih tanggal", fontSize = 13.sp, color = Color(0xFF374151), fontWeight = FontWeight.Medium)
+            }
+        }
+    }
+    if (showDialog) {
+        val state = rememberDatePickerState(initialSelectedDateMillis = date?.atStartOfDay(ZoneOffset.UTC)?.toInstant()?.toEpochMilli())
+        DatePickerDialog(
+            onDismissRequest = { showDialog = false },
+            confirmButton = {
+                TextButton(enabled = state.selectedDateMillis != null, onClick = {
+                    state.selectedDateMillis?.let { onDatePicked(Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()) }
+                    showDialog = false
+                }) { Text("Pilih") }
+            },
+            dismissButton = { TextButton(onClick = { showDialog = false }) { Text("Batal") } }
+        ) { DatePicker(state = state) }
+    }
+}
+
+private fun String.toReportLocalDateOrNull(): LocalDate? =
+    runCatching { LocalDate.parse(this) }.getOrNull()
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -696,8 +779,12 @@ fun LaporanLaciCash(data: AnalyticsData) {
                     )
                 }
             } else {
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    data.shifts.forEach { shift ->
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    contentPadding = PaddingValues(end = 4.dp)
+                ) {
+                    items(data.shifts) { shift ->
                         // Postgres/PostgREST balikin timestamp berformat "+00:00" (bukan "Z"),
                         // jadi LocalDateTime.parse polos selalu gagal — pakai JakartaTime yang
                         // sudah menangani semua bentuk offset PostgREST (lihat LedgerItem.parseDate).
@@ -728,7 +815,11 @@ fun LaporanLaciCash(data: AnalyticsData) {
                         val pcVariance = actualPc - expectedPc
                         val totalDiff = variance + pcVariance
 
-                        Surface(modifier = Modifier.weight(1f), shape = RoundedCornerShape(16.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))) {
+                        Surface(
+                            modifier = Modifier.widthIn(min = 360.dp, max = 460.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
+                        ) {
                             Column {
                                 // Header
                                 Row(modifier = Modifier.fillMaxWidth().background(Color(0xFFFFFBEB)).border(1.dp, Color(0xFFFEF3C7)).padding(20.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -737,7 +828,14 @@ fun LaporanLaciCash(data: AnalyticsData) {
                                             Icon(Icons.Default.CalendarToday, contentDescription = null, tint = Color(0xFFB45309), modifier = Modifier.size(16.dp))
                                         }
                                         Column {
-                                            Text(dateStr, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF78350F))
+                                            Text(
+                                                dateStr,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp,
+                                                color = Color(0xFF78350F),
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
                                             if (sameDay) {
                                                 Text("$startTimeStr - $endTimeStr WIB", fontSize = 12.sp, color = Color(0xFFB45309))
                                             }

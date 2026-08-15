@@ -122,13 +122,12 @@ class OrderRealtimeManager(
                         put(JSONObject().apply {
                             put("event", "*")
                             put("schema", "public")
-                            put("table", "order_items")
+                            put("table", "shifts")
                         })
-                        // Deteksi versi APK baru tanpa polling — lihat AppUpdateManager.
                         put(JSONObject().apply {
                             put("event", "*")
                             put("schema", "public")
-                            put("table", "global_settings")
+                            put("table", "order_items")
                         })
                     })
                 })

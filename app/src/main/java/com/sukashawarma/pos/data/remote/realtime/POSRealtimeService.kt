@@ -166,11 +166,10 @@ class POSRealtimeService : Service() {
                 GlobalEventBus.targetRefreshEvent.tryEmit(Unit)
             } else if (table == "bypass_requests") {
                 GlobalEventBus.bypassRequestEvent.tryEmit(Unit)
-            } else if (table == "petty_cash_topups" || table == "petty_cash_expenses") {
+            } else if (table == "petty_cash_topups" || table == "petty_cash_expenses" || table == "shifts") {
+                // Shift yang dibuka/ditutup oleh perangkat lain harus langsung
+                // memperbarui full-screen blocker, seperti subscription web.
                 GlobalEventBus.pettyCashEvent.tryEmit(Unit)
-            } else if (table == "global_settings") {
-                // Deteksi update APK lewat push realtime, bukan polling — lihat AppUpdateManager.
-                com.sukashawarma.pos.data.update.AppUpdateManager.handleRealtimePayload(record)
             } else if (table == "cancellation_requests") {
                 val orderId = record.optString("order_id")
                 val status = record.optString("status")
@@ -197,6 +196,9 @@ class POSRealtimeService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Service dapat hidup saat Activity tidak ada; cek ini juga memicu
+        // download melalui AppUpdateManager tanpa menunggu UI dikomposisi.
+        com.sukashawarma.pos.data.update.AppUpdateManager.checkForUpdateAsync()
         val outletId = intent?.getStringExtra(EXTRA_OUTLET_ID)
         if (!outletId.isNullOrBlank() && outletId != currentOutletId) {
             currentOutletId = outletId

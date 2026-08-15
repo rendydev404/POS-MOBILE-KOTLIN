@@ -1,5 +1,6 @@
 package com.sukashawarma.pos.data.local.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -41,6 +42,7 @@ data class SyncQueueEntity(
     val actionType: String,
 
     /** id baris data yang diubah (mis. orders.id). Dipakai untuk menjaga urutan per-entitas. */
+    @ColumnInfo(defaultValue = "")
     val entityId: String,
 
     /**
@@ -48,16 +50,20 @@ data class SyncQueueEntity(
      * (create order, set status) berbentuk "$actionType:$entityId" sehingga
      * mutasi berulang menimpa baris antrian lama alih-alih menumpuk.
      */
+    @ColumnInfo(defaultValue = "")
     val idempotencyKey: String,
 
     val payloadJson: String,
 
     /** Nama [SyncState]: PENDING (menunggu/berulang) atau FAILED (ditolak server). */
+    @ColumnInfo(defaultValue = "PENDING")
     val status: String = SyncState.PENDING.name,
 
+    @ColumnInfo(defaultValue = "0")
     val attemptCount: Int = 0,
 
     /** Epoch millis paling awal boleh dicoba lagi (backoff). 0 = boleh sekarang. */
+    @ColumnInfo(defaultValue = "0")
     val nextAttemptAt: Long = 0,
 
     val lastError: String? = null,

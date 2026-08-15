@@ -4,9 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -20,7 +17,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sukashawarma.pos.domain.model.Order
@@ -41,6 +40,8 @@ fun DashboardScreen(
     viewModel: DashboardViewModel,
     printerViewModel: com.sukashawarma.pos.presentation.printer.BluetoothPrinterViewModel,
     windowSizeClass: WindowWidthSizeClass = WindowWidthSizeClass.Expanded,
+    newOrderButtonColorHex: String = "#E67E22",
+    newOrderButtonLabel: String = "Pesanan Baru",
     onNewOrderClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -65,12 +66,17 @@ fun DashboardScreen(
 
     var activeSourceFilter by remember { mutableStateOf("Semua") }
     var preparingSubTab by remember { mutableStateOf("Antrean") }
+    var boardNow by remember { mutableStateOf(System.currentTimeMillis()) }
     var completedSearchQuery by remember { mutableStateOf("") }
     val printStatusMessage by viewModel.printStatusMessage.collectAsState()
 
     val pagerState = rememberPagerState(pageCount = { 3 })
     val coroutineScope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
+    val newOrderButtonColor = remember(newOrderButtonColorHex) {
+        runCatching { Color(android.graphics.Color.parseColor(newOrderButtonColorHex)) }
+            .getOrDefault(TwViolet600)
+    }
 
     LaunchedEffect(printStatusMessage) {
         printStatusMessage?.let { msg ->
@@ -88,6 +94,15 @@ fun DashboardScreen(
                 kotlinx.coroutines.delay(15000)
                 viewModel.syncOrdersFromServer(currentOutletId)
             }
+        }
+    }
+
+    // Sama seperti web: waktu berjalan harus memindahkan pesanan Terjadwal ke
+    // Antrean secara otomatis saat release_time tercapai, tanpa menunggu refetch.
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(30_000)
+            boardNow = System.currentTimeMillis()
         }
     }
 
@@ -149,16 +164,17 @@ fun DashboardScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // + Pesanan Baru Button (Matching Primary Orange Button in Screenshot)
+                    // Warna/label berasal dari runtime config dan dapat berubah
+                    // realtime tanpa mengunduh atau memasang APK baru.
                     Button(
                         onClick = onNewOrderClick,
-                        colors = ButtonDefaults.buttonColors(containerColor = ShawarmaOrange),
+                        colors = ButtonDefaults.buttonColors(containerColor = newOrderButtonColor),
                         shape = RoundedCornerShape(24.dp),
                         modifier = Modifier.height(44.dp)
                     ) {
                         Icon(Icons.Default.AddCircle, contentDescription = null, tint = Color.White)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Pesanan Baru", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text(newOrderButtonLabel, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
                     }
 
                     // PENDAPATAN LUNAS Pill Card (Matching Screenshot)
@@ -277,6 +293,11 @@ fun DashboardScreen(
                     }
                 }
             }
+
+            val (queuedPreparing, scheduledPreparing) = remember(filteredPreparing, boardNow) {
+                com.sukashawarma.pos.domain.usecase.PreparingOrderClassifier.split(filteredPreparing, boardNow)
+            }
+            val visiblePreparing = if (preparingSubTab == "Terjadwal") scheduledPreparing else queuedPreparing
             
             val filteredCompleted = remember(completedOrders, activeSourceFilter) {
                 completedOrders.filter { order ->
@@ -296,8 +317,8 @@ fun DashboardScreen(
                     badgeCount = filteredPending.size,
                     emptyMessage = "Tidak ada pesanan tertunda\nPesanan baru akan muncul otomatis di sini."
                 ) {
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        items(filteredPending) { order ->
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        filteredPending.forEach { order ->
                             OrderCard(
                                 order = order,
                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
@@ -345,10 +366,19 @@ fun DashboardScreen(
                     hasSubTabs = true,
                     subTabState = preparingSubTab,
                     onSubTabChange = { preparingSubTab = it },
-                    emptyMessage = "Tidak ada antrean masak\nDapur sedang santai, pesanan aktif akan muncul di sini."
+                    subTabCounts = mapOf(
+                        "Antrean" to queuedPreparing.size,
+                        "Terjadwal" to scheduledPreparing.size
+                    ),
+                    contentCount = visiblePreparing.size,
+                    emptyMessage = if (preparingSubTab == "Terjadwal") {
+                        "Tidak ada pesanan terjadwal\nPesanan pre-order akan ditahan di sini sebelum masuk antrean."
+                    } else {
+                        "Tidak ada antrean masak\nDapur sedang santai, pesanan aktif akan muncul di sini."
+                    }
                 ) {
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        items(filteredPreparing) { order ->
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        visiblePreparing.forEach { order ->
                             OrderCard(
                                 order = order,
                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
@@ -392,9 +422,9 @@ fun DashboardScreen(
                     onSearchQueryChange = { completedSearchQuery = it },
                     emptyMessage = "Belum ada pesanan selesai hari ini"
                 ) {
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         val itemsToShow = filteredCompleted.filter { completedSearchQuery.isEmpty() || it.orderNumber.toString().contains(completedSearchQuery) }
-                        items(itemsToShow) { order ->
+                        itemsToShow.forEach { order ->
                             OrderCard(
                                 order = order,
                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
@@ -435,16 +465,17 @@ fun DashboardScreen(
                 val availableWidth = maxWidth
 
                 if (availableWidth >= 480.dp) {
-                    // 3 Kolom Penuh untuk Tablet, dengan scroll per kolom
-                    Row(
+                    // 3 Kolom Penuh untuk Tablet. Papan digulung bersama (bukan per kolom)
+                    // supaya tiap kartu bisa memanjang ke bawah sesuai banyaknya orderan.
+                    EqualHeightBoardRow(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            .verticalScroll(rememberScrollState())
+                            .padding(bottom = 12.dp)
                     ) {
-                        Box(modifier = Modifier.fillMaxHeight().weight(1f)) { column1() }
-                        Box(modifier = Modifier.fillMaxHeight().weight(1f)) { column2() }
-                        Box(modifier = Modifier.fillMaxHeight().weight(1f)) { column3() }
+                        column1()
+                        column2()
+                        column3()
                     }
                 } else {
                     // Mobile / Layar Sempit: Pager dengan Swipeable Tabs
@@ -468,7 +499,12 @@ fun DashboardScreen(
                             state = pagerState,
                             modifier = Modifier.fillMaxSize()
                         ) { page ->
-                            Box(modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp)) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .verticalScroll(rememberScrollState())
+                                    .padding(horizontal = 4.dp)
+                            ) {
                                 when (page) {
                                     0 -> column1()
                                     1 -> column2()
@@ -477,6 +513,48 @@ fun DashboardScreen(
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Measures all board columns once to find the tallest content, then measures
+ * every column again at that exact height. This works with the board's shared
+ * vertical scroll, where intrinsic row sizing alone does not propagate height
+ * to sibling cards.
+ */
+@Composable
+private fun EqualHeightBoardRow(
+    modifier: Modifier = Modifier,
+    spacing: androidx.compose.ui.unit.Dp = 12.dp,
+    content: @Composable () -> Unit
+) {
+    Layout(modifier = modifier, content = content) { measurables, constraints ->
+        if (measurables.isEmpty()) {
+            layout(0, 0) {}
+        } else {
+            val spacingPx = spacing.roundToPx()
+            val totalSpacing = spacingPx * (measurables.size - 1)
+            val rowWidth = constraints.maxWidth
+            val columnWidth = ((rowWidth - totalSpacing) / measurables.size).coerceAtLeast(0)
+            // A child may only be measured once per layout pass. Query intrinsic
+            // height first, then do the single real measurement at the shared size.
+            val tallestHeight = measurables.maxOf { it.maxIntrinsicHeight(columnWidth) }
+            val equalHeightConstraints = Constraints(
+                minWidth = columnWidth,
+                maxWidth = columnWidth,
+                minHeight = tallestHeight,
+                maxHeight = tallestHeight
+            )
+            val placeables = measurables.map { it.measure(equalHeightConstraints) }
+
+            layout(rowWidth, tallestHeight) {
+                var x = 0
+                placeables.forEach { placeable ->
+                    placeable.placeRelative(x = x, y = 0)
+                    x += columnWidth + spacingPx
                 }
             }
         }
@@ -492,6 +570,8 @@ private fun BoardColumn(
     hasSubTabs: Boolean = false,
     subTabState: String = "Antrean",
     onSubTabChange: (String) -> Unit = {},
+    subTabCounts: Map<String, Int> = emptyMap(),
+    contentCount: Int = badgeCount,
     hasSearchBar: Boolean = false,
     searchQuery: String = "",
     onSearchQueryChange: (String) -> Unit = {},
@@ -565,14 +645,24 @@ private fun BoardColumn(
                                 .padding(vertical = 6.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                text = "$tab 0",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isSelected) ShawarmaOrange else TextDarkSecondary,
-                                maxLines = 1,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = tab,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) ShawarmaOrange else TextDarkSecondary,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "${subTabCounts[tab] ?: 0}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TwRed600,
+                                    maxLines = 1
+                                )
+                            }
                         }
                     }
                 }
@@ -597,7 +687,7 @@ private fun BoardColumn(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            if (badgeCount == 0) {
+            if (contentCount == 0) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()

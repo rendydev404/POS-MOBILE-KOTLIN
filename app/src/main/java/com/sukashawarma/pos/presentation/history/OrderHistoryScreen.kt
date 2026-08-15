@@ -40,7 +40,6 @@ import com.sukashawarma.pos.data.remote.dto.OrderItemDto
 import com.sukashawarma.pos.domain.usecase.OrderStatusFilter
 import com.sukashawarma.pos.presentation.reports.FilterDropdown
 import com.sukashawarma.pos.presentation.theme.*
-import kotlinx.coroutines.delay
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -75,18 +74,6 @@ fun OrderHistoryScreen(
     LaunchedEffect(selectedTab, dateFilter, statusFilter, paymentMethodFilter, channelFilter, customStart, customEnd) {
         if (selectedTab == 0) {
             if (dateFilter != "custom" || (customStart != null && customEnd != null)) {
-                viewModel.fetchOrderHistory()
-            }
-        }
-    }
-
-    // Histori sudah realtime lewat GlobalEventBus.orderSyncEvent (OrderHistoryViewModel init) —
-    // loop ini cuma jaring pengaman kalau event realtime sempat terlewat, sama seperti
-    // pola 30 detik yang dipakai DashboardViewModel.restartStockAlerts untuk stok.
-    LaunchedEffect(selectedTab, dateFilter) {
-        if (selectedTab == 0 && dateFilter == "today") {
-            while (true) {
-                delay(30000)
                 viewModel.fetchOrderHistory()
             }
         }
@@ -864,16 +851,6 @@ private fun OrderRow(
 
                         Spacer(modifier = Modifier.weight(1f))
 
-                        Button(
-                            onClick = { /* Print Receipt */ },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5)),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                        ) {
-                            Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Cetak Struk", fontSize = 12.sp)
-                        }
                     }
                 }
             }

@@ -1,281 +1,156 @@
 package com.sukashawarma.pos.presentation.settings
 
-import android.Manifest
-import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bluetooth
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Print
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Tablet
-import androidx.compose.material3.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.sukashawarma.pos.presentation.theme.*
+import coil.compose.AsyncImage
+import com.sukashawarma.pos.presentation.theme.AmberPrimary
+import com.sukashawarma.pos.presentation.theme.SlateBorder
+import com.sukashawarma.pos.presentation.theme.SlateCard
+import com.sukashawarma.pos.presentation.theme.SlateSurface
+import com.sukashawarma.pos.presentation.theme.TextMuted
+import com.sukashawarma.pos.presentation.theme.TextPrimary
+import com.sukashawarma.pos.presentation.theme.TextSecondary
 
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel,
     modifier: Modifier = Modifier
 ) {
-    val printerDevices by viewModel.bluetoothDevices.collectAsState()
-    val selectedMac by viewModel.selectedPrinterMac.collectAsState()
-    val isTestingPrinter by viewModel.isTestingPrinter.collectAsState()
-    val printerStatusMessage by viewModel.printerStatusMessage.collectAsState()
-
-    // Tanpa izin Bluetooth runtime (Android 12+), getPairedDevices() diam-diam
-    // mengembalikan list kosong — layar terlihat "belum ada printer" padahal
-    // sebenarnya izinnya yang belum diberikan. Minta izin dulu lalu refresh.
-    var hasBluetoothPermission by remember { mutableStateOf(false) }
-    val permissionsToRequest = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
-    } else {
-        arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
-    }
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-        hasBluetoothPermission = result.values.all { it }
-        if (hasBluetoothPermission) viewModel.refreshPairedDevices()
-    }
-    DisposableEffect(Unit) {
-        permissionLauncher.launch(permissionsToRequest)
-        onDispose { }
+    val coverUrl by viewModel.coverUrl.collectAsState()
+    val isUploadingCover by viewModel.isUploadingCover.collectAsState()
+    val coverMessage by viewModel.coverMessage.collectAsState()
+    val coverPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let(viewModel::uploadCover)
     }
 
-    Row(
+    Surface(
         modifier = modifier
             .fillMaxSize()
             .padding(12.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+        shape = RoundedCornerShape(12.dp),
+        color = SlateSurface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, SlateBorder)
     ) {
-        // LEFT 50%: Bluetooth Thermal Printer Driver Setup
-        Surface(
+        Column(
             modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight(),
-            shape = RoundedCornerShape(12.dp),
-            color = SlateSurface,
-            border = androidx.compose.foundation.BorderStroke(1.dp, SlateBorder)
+                .fillMaxSize()
+                .padding(16.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp)
+            androidx.compose.foundation.layout.Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(AmberPrimary.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .background(AmberPrimary.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Default.Print, contentDescription = null, tint = AmberPrimary, modifier = Modifier.size(20.dp))
-                    }
-                    Text(
-                        text = "Pengaturan Printer Thermal (Bluetooth)",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
+                    Icon(
+                        Icons.Default.Tablet,
+                        contentDescription = null,
+                        tint = AmberPrimary,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
-
-                Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider(color = SlateBorder)
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Perangkat Bluetooth Ter-pairing:", style = MaterialTheme.typography.titleMedium, color = TextSecondary)
-                    IconButton(onClick = { viewModel.refreshPairedDevices() }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Muat ulang", tint = AmberPrimary)
-                    }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-
-                if (printerDevices.isEmpty()) {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp),
-                        color = SlateCard
-                    ) {
-                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                if (hasBluetoothPermission) Icons.Default.Info else Icons.Default.Bluetooth,
-                                contentDescription = null,
-                                tint = TextMuted
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                if (hasBluetoothPermission) {
-                                    "Belum ada printer ter-pairing. Pairing printer dulu lewat Pengaturan Bluetooth Android, lalu tekan refresh."
-                                } else {
-                                    "Izin Bluetooth belum diberikan. Terima izin yang diminta, lalu tekan refresh untuk memuat printer ter-pairing."
-                                },
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = TextSecondary
-                            )
-                        }
-                    }
-                }
-
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    printerDevices.forEach { (name, mac) ->
-                        val isSelected = mac == selectedMac
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { viewModel.selectPrinter(mac) },
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (isSelected) AmberPrimary.copy(alpha = 0.12f) else SlateCard,
-                            border = if (isSelected) androidx.compose.foundation.BorderStroke(1.5.dp, AmberPrimary) else androidx.compose.foundation.BorderStroke(1.dp, SlateBorder)
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(12.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(36.dp)
-                                            .background(
-                                                if (isSelected) AmberPrimary.copy(alpha = 0.2f) else SlateBorder.copy(alpha = 0.4f),
-                                                RoundedCornerShape(10.dp)
-                                            ),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(Icons.Default.Bluetooth, contentDescription = null, tint = if (isSelected) AmberPrimary else TextMuted, modifier = Modifier.size(18.dp))
-                                    }
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Column {
-                                        Text(text = name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                                        Text(text = mac, style = MaterialTheme.typography.bodySmall, color = TextMuted)
-                                    }
-                                }
-
-                                if (isSelected) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier
-                                            .background(StatusCompleted.copy(alpha = 0.15f), RoundedCornerShape(20.dp))
-                                            .padding(horizontal = 10.dp, vertical = 5.dp)
-                                    ) {
-                                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = StatusCompleted, modifier = Modifier.size(14.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("DIPILIH", style = MaterialTheme.typography.labelSmall, color = StatusCompleted, fontWeight = FontWeight.Bold)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Button(
-                    onClick = { viewModel.testPrinterConnection() },
-                    enabled = selectedMac.isNotBlank() && !isTestingPrinter,
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = AmberPrimary)
-                ) {
-                    if (isTestingPrinter) {
-                        CircularProgressIndicator(color = SlateBackground, modifier = Modifier.size(20.dp))
-                    } else {
-                        Text("TES KONEKSI PRINTER", color = SlateBackground, fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                printerStatusMessage?.let { msg ->
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(msg, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
-                }
+                Text(
+                    text = "Tampilan Layar Kiosk",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
             }
-        }
 
-        // RIGHT 50%: Kiosk Pairing (belum tersedia di versi native)
-        Surface(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight(),
-            shape = RoundedCornerShape(12.dp),
-            color = SlateSurface,
-            border = androidx.compose.foundation.BorderStroke(1.dp, SlateBorder)
-        ) {
-            Column(
+            Spacer(modifier = Modifier.height(16.dp))
+            HorizontalDivider(color = SlateBorder)
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                "Gambar Cover Cabang",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary
+            )
+            Spacer(Modifier.height(8.dp))
+            Surface(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp)
+                    .fillMaxWidth()
+                    .height(190.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = SlateCard
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .background(AmberPrimary.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
-                        contentAlignment = Alignment.Center
+                if (coverUrl.isNullOrBlank()) {
+                    Column(
+                        Modifier.fillMaxSize(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
                     ) {
-                        Icon(Icons.Default.Tablet, contentDescription = null, tint = AmberPrimary, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Default.Image, null, tint = TextMuted, modifier = Modifier.size(36.dp))
+                        Spacer(Modifier.height(8.dp))
+                        Text("Belum ada gambar cover", color = TextSecondary)
                     }
-                    Text(
-                        text = "Pairing Tablet Self-Order (Kiosk)",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
+                } else {
+                    AsyncImage(
+                        model = coverUrl,
+                        contentDescription = "Preview cover kiosk",
+                        modifier = Modifier.fillMaxSize()
                     )
                 }
-
-                Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider(color = SlateBorder)
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    color = SlateCard
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            "Belum tersedia di versi native ini.",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            "Generate kode/QR pairing kiosk butuh operasi admin (reset password akun kiosk) yang hanya boleh dijalankan di server, bukan di aplikasi kasir. " +
-                                "Untuk sekarang, pairing tablet kiosk tetap dilakukan lewat Portal Web.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = TextSecondary
-                        )
-                    }
+            }
+            Spacer(Modifier.height(12.dp))
+            Button(
+                onClick = { coverPicker.launch("image/*") },
+                enabled = !isUploadingCover,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (isUploadingCover) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                } else {
+                    Text("UPLOAD GAMBAR COVER")
                 }
             }
+            coverMessage?.let {
+                Text(
+                    it,
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "JPG, PNG, atau WebP (maks. 5 MB). Cover tampil fullscreen pada kiosk cabang ini; rasio 16:9 direkomendasikan.",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextMuted
+            )
         }
     }
 }

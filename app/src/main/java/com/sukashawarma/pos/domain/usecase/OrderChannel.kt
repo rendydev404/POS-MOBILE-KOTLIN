@@ -17,13 +17,15 @@ object OrderChannel {
     const val ALL = "all"
     const val OFFLINE = "offline"
     const val FOOD_APPS = "food_apps"
+    const val ENDORSE = "endorse"
+    const val WEBSITE = "website"
 
     /**
-     * Pesanan kasir di tempat. `null` termasuk di sini — lihat [includesNull].
-     * `endorse` ikut di sini karena diinput dari kasir juga; sebelum kolomnya diisi
-     * pesanan endorse tersimpan `null` dan sudah terhitung offline, jadi tetap ikut.
+     * Pesanan kasir di tempat. `null` termasuk di sini — lihat [includesNull]
+     * untuk kompatibilitas pesanan lama yang belum memiliki kanal.
      */
-    private val OFFLINE_VALUES = listOf("pos", "endorse")
+    private val OFFLINE_VALUES = listOf("pos")
+    private val ENDORSE_VALUES = listOf(ENDORSE)
 
     private val GOFOOD = listOf("gofood")
     private val GRABFOOD = listOf("grabfood")
@@ -32,7 +34,7 @@ object OrderChannel {
     /** Semua ejaan TikTok yang pernah masuk ke kolom `channel`. */
     private val TIKTOK = listOf("tiktokgo", "tiktok", "tiktok_go")
 
-    private val WEBSITE = listOf("website")
+    private val WEBSITE_VALUES = listOf(WEBSITE)
 
     /**
      * Seluruh kanal ojol, termasuk nilai generik `'food_apps'` untuk pesanan yang
@@ -53,7 +55,8 @@ object OrderChannel {
         "grabfood" -> GRABFOOD
         "shopeefood" -> SHOPEEFOOD
         "tiktokgo", "tiktok", "tiktok_go" -> TIKTOK
-        "website" -> WEBSITE
+        ENDORSE -> ENDORSE_VALUES
+        WEBSITE -> WEBSITE_VALUES
         else -> listOf(key)
     }
 

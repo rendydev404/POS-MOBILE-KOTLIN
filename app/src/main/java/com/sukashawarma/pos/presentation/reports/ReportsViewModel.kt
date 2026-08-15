@@ -9,7 +9,6 @@ import com.sukashawarma.pos.data.remote.NetworkMonitor
 import com.sukashawarma.pos.data.remote.SupabaseClient
 import com.sukashawarma.pos.data.remote.dto.OrderDto
 import com.sukashawarma.pos.data.remote.dto.OrderItemDto
-import com.sukashawarma.pos.data.remote.dto.RevenueSummaryPayload
 import com.sukashawarma.pos.data.remote.dto.ShiftDto
 import com.sukashawarma.pos.domain.usecase.OrderChannel
 import com.sukashawarma.pos.domain.usecase.OrderStatusFilter
@@ -20,8 +19,9 @@ import com.sukashawarma.pos.domain.usecase.RevenueCalculator
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
@@ -67,6 +67,8 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
     val selectedRange = MutableStateFlow(DateRange.TODAY)
     val customStartDate = MutableStateFlow("")
     val customEndDate = MutableStateFlow("")
+    private val _customDateError = MutableStateFlow<String?>(null)
+    val customDateError = _customDateError.asStateFlow()
 
     val channelFilter = MutableStateFlow("all")
     val paymentFilter = MutableStateFlow("all")
@@ -87,21 +89,20 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
 
     /** Pengamat Room yang sedang aktif; dipasang ulang saat rentang/filter berubah. */
     private var localComputeJob: Job? = null
+    /** Satu request manual/awal yang sedang berjalan; request terbaru menang. */
+    private var reportRefreshJob: Job? = null
 
 
     init {
         viewModelScope.launch {
-            // Pembatalan yang disetujui owner mengubah angka laporan — ikut realtime.
-            com.sukashawarma.pos.data.remote.GlobalEventBus.orderSyncEvent.collect {
-                loadRealReportData()
-            }
-        }
-        viewModelScope.launch {
-            // Tutup shift (dan top-up/pengeluaran petty cash) mengubah kartu
-            // "Laporan Laci Cash" — tanpa ini datanya baru muncul setelah ada
-            // event pesanan lain yang kebetulan lewat.
-            com.sukashawarma.pos.data.remote.GlobalEventBus.pettyCashEvent.collect {
-                loadRealReportData()
+            // Satu subscription WebSocket pusat mengalirkan perubahan pesanan dan
+            // shift. collectLatest membatalkan fetch lama saat beberapa perubahan
+            // tiba beruntun, sehingga tidak ada polling maupun request bertumpuk.
+            merge(
+                com.sukashawarma.pos.data.remote.GlobalEventBus.orderSyncEvent,
+                com.sukashawarma.pos.data.remote.GlobalEventBus.pettyCashEvent
+            ).collectLatest {
+                refreshReportData()
             }
         }
     }
@@ -115,7 +116,11 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
 
     fun updateRange(range: DateRange) {
         selectedRange.value = range
+        _customDateError.value = null
         if (range != DateRange.CUSTOM) {
+            observeLocalOrders()
+            loadRealReportData()
+        } else if (customStartDate.value.toLocalDateOrNull() != null && customEndDate.value.toLocalDateOrNull() != null) {
             observeLocalOrders()
             loadRealReportData()
         }
@@ -124,7 +129,14 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
     fun updateCustomDate(start: String, end: String) {
         customStartDate.value = start
         customEndDate.value = end
-        if (start.isNotEmpty() && end.isNotEmpty()) {
+        val startDate = start.toLocalDateOrNull()
+        val endDate = end.toLocalDateOrNull()
+        _customDateError.value = when {
+            startDate == null || endDate == null -> "Pilih tanggal mulai dan tanggal akhir."
+            endDate.isBefore(startDate) -> "Tanggal akhir harus sama atau setelah tanggal mulai."
+            else -> null
+        }
+        if (_customDateError.value == null) {
             observeLocalOrders()
             loadRealReportData()
         }
@@ -149,29 +161,29 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
         customEnd = customEndDate.value.toLocalDateOrNull()
     )
 
-    /** Daftar kanal yang cocok dengan [channelFilter], atau null bila semua kanal. */
-    private fun channelsOrNull(): List<String>? = OrderChannel.valuesFor(channelFilter.value)
-
-    private fun includeNullChannel(): Boolean = OrderChannel.includesNull(channelFilter.value)
-
     fun loadRealReportData() {
+        reportRefreshJob?.cancel()
+        reportRefreshJob = viewModelScope.launch { refreshReportData() }
+    }
+
+    private suspend fun refreshReportData() {
         val outletId = _currentOutletId.value
         if (outletId.isEmpty()) return
 
-        viewModelScope.launch {
-            _isLoading.value = true
-            try {
-                val range = resolveRange()
-                if (NetworkMonitor.isOnline.value) {
-                    loadFromServer(outletId, range)
-                } else {
-                    loadFromLocalCache(outletId, range)
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            } finally {
-                _isLoading.value = false
+        _isLoading.value = true
+        try {
+            val range = resolveRange()
+            if (NetworkMonitor.isOnline.value) {
+                loadFromServer(outletId, range)
+            } else {
+                loadFromLocalCache(outletId, range)
             }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            e.printStackTrace()
+        } finally {
+            _isLoading.value = false
         }
     }
 
@@ -321,50 +333,6 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
     private fun matchesStatusFilter(dto: OrderDto): Boolean =
         statusFilter.value == "all" || dto.status == statusFilter.value
 
-    fun exportToPdf(context: android.content.Context) {
-        viewModelScope.launch {
-            try {
-                val data = analyticsData.value
-                val pdfDocument = android.graphics.pdf.PdfDocument()
-                val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(595, 842, 1).create()
-                val page = pdfDocument.startPage(pageInfo)
-                val canvas = page.canvas
-                val paint = android.graphics.Paint()
-
-                paint.textSize = 24f
-                paint.isFakeBoldText = true
-                canvas.drawText("Laporan Analitik Performa", 50f, 50f, paint)
-
-                paint.textSize = 16f
-                paint.isFakeBoldText = false
-                canvas.drawText("Omzet Kotor: Rp ${String.format("%,.0f", data.grossRevenue)}", 50f, 100f, paint)
-                canvas.drawText("Pesanan Sukses: ${data.totalOrders}", 50f, 130f, paint)
-
-                var y = 170f
-                paint.isFakeBoldText = true
-                canvas.drawText("Distribusi Pembayaran", 50f, y, paint)
-                paint.isFakeBoldText = false
-                y += 30f
-                data.paymentBreakdown.forEach { (method, stats) ->
-                    canvas.drawText("${method.uppercase()}: ${stats.count} pesanan (Rp ${String.format("%,.0f", stats.revenue)})", 50f, y, paint)
-                    y += 30f
-                }
-
-                pdfDocument.finishPage(page)
-
-                val downloadsDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
-                val file = java.io.File(downloadsDir, "Laporan_POS_${System.currentTimeMillis()}.pdf")
-                pdfDocument.writeTo(java.io.FileOutputStream(file))
-                pdfDocument.close()
-
-                android.widget.Toast.makeText(context, "PDF berhasil diexport ke Downloads", android.widget.Toast.LENGTH_LONG).show()
-            } catch (e: Exception) {
-                e.printStackTrace()
-                android.widget.Toast.makeText(context, "Gagal export PDF", android.widget.Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
     private fun String.toLocalDateOrNull(): LocalDate? =
         try { if (isBlank()) null else LocalDate.parse(this) } catch (e: Exception) { null }
 
@@ -407,7 +375,7 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
             orderItems = orderItems,
             notes = null,
             paymentProofUrl = localPaymentProofPath,
-            cashierName = null,
+            cashierName = cashierName,
             cancellationReason = null,
             voidReason = null,
             isSyncedFromOffline = isSyncedFromOffline

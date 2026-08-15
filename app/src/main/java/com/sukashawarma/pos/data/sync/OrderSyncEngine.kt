@@ -47,12 +47,35 @@ class OrderSyncEngine(
                     amountReceived = entity.amountReceived,
                     changeAmount = entity.changeAmount,
                     createdAt = createdAtIso,
-                    channel = entity.channel
+                    channel = entity.channel,
+                    pickupTime = entity.effectiveReleaseTime.takeIf { it > 0L }?.let {
+                        DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(it + 20 * 60_000L))
+                    },
+                    releaseTime = entity.effectiveReleaseTime.takeIf { it > 0L }?.let {
+                        DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(it))
+                    }
                 )
 
                 val orderRes = api.createOrder(payload)
-                if (!orderRes.isSuccessful || orderRes.body().isNullOrEmpty()) {
+                if (!orderRes.isSuccessful) {
+                    val errorBody = orderRes.errorBody()?.string().orEmpty()
+                    if (orderRes.code() == 409 || errorBody.contains("duplicate key", ignoreCase = true)) {
+                        // Percobaan sebelumnya sebenarnya sukses di server, cuma responsnya
+                        // gagal diterima klien — tanpa ini, retry akan tabrak unique constraint
+                        // id yang sama terus-menerus dan order tampak "OFFLINE" selamanya.
+                        orderDao.markSynced(entity.id, entity.orderNumber)
+                        syncedCount++
+                        continue
+                    }
+                    android.util.Log.e(
+                        "OrderSyncEngine",
+                        "Gagal sync order ${entity.id}: HTTP ${orderRes.code()} $errorBody"
+                    )
                     continue // leave syncState != SYNCED, retry next pass
+                }
+                if (orderRes.body().isNullOrEmpty()) {
+                    android.util.Log.e("OrderSyncEngine", "Sync order ${entity.id} sukses tapi body kosong")
+                    continue
                 }
                 val serverOrderNumber = orderRes.body()!!.first().orderNumber
 

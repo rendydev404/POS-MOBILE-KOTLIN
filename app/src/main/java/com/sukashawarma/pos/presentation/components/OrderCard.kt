@@ -342,8 +342,10 @@ fun OrderCard(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        val timeText = "dipesan $timeAgoStr"
+                        val cashierText = if (!order.cashierName.isNullOrBlank()) " • kasir: ${order.cashierName}" else ""
                         Text(
-                            text = "dipesan $timeAgoStr",
+                            text = timeText + cashierText,
                             color = TextSlate,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium

@@ -60,6 +60,7 @@ val TwPurple50 = Color(0xFFFAF5FF)
 val TwPurple500 = Color(0xFFA855F7)
 val TwPurple600 = Color(0xFF9333EA)
 val TwPurple700 = Color(0xFF7E22CE)
+val TwViolet600 = Color(0xFF7C3AED)
 
 val TwRed50 = Color(0xFFFEF2F2)
 val TwRed100 = Color(0xFFFEE2E2)

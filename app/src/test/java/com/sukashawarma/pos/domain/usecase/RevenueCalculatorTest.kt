@@ -141,6 +141,7 @@ class RevenueCalculatorTest {
         customerReceiptPrinted = false,
         cancellationStatus = null,
         cancellationUserName = null,
-        createdAt = 0L
+        createdAt = 0L,
+        cashierName = null
     )
 }

@@ -83,6 +83,15 @@ class OrderFilterTest {
     }
 
     @Test
+    fun `website dan endorse dapat difilter terpisah dari pos kasir`() {
+        assertTrue(OrderChannel.matches(OrderChannel.WEBSITE, "website"))
+        assertTrue(OrderChannel.matches(OrderChannel.ENDORSE, "endorse"))
+        assertFalse(OrderChannel.matches(OrderChannel.OFFLINE, "endorse"))
+        assertEquals("channel.in.(website)", OrderChannel.postgrestCondition(OrderChannel.WEBSITE))
+        assertEquals("channel.in.(endorse)", OrderChannel.postgrestCondition(OrderChannel.ENDORSE))
+    }
+
+    @Test
     fun `offline dan food apps tidak pernah tumpang tindih`() {
         val kanalNyata = listOf(null, "pos", "food_apps", "gofood", "grabfood", "shopeefood", "tiktok", "tiktokgo")
         kanalNyata.forEach { ch ->
