@@ -31,6 +31,10 @@
          minta izin sendiri untuk pasang APK update yang di-download dari dalam
          aplikasi. Lihat AppUpdateManager. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Android 12+: izinkan PackageInstaller melakukan self-update tanpa
+         konfirmasi user ketika semua syarat platform terpenuhi. Permission ini
+         protectionLevel=normal; OS tetap dapat meminta tindakan user sebagai fallback. -->
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
 
     <!-- Hardware Feature Declarations -->
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
@@ -72,6 +76,14 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".data.update.UpdateInstallResultActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <service
             android:name=".data.notification.POSFirebaseMessagingService"

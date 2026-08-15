@@ -29,5 +29,11 @@ class POSApplication : Application() {
         SessionPrefs.init(this)
         NetworkMonitor.init(this)
         NotificationChannels.createChannels(this)
+        com.sukashawarma.pos.data.update.AppUpdateManager.initialize(this)
+        com.sukashawarma.pos.data.update.UpdateRealtimeManager.start()
+        // Menangkap update bahkan sebelum kasir login. Jalur realtime tetap yang
+        // utama; cek satu kali saat proses lahir menjadi fallback ketika event
+        // terbit saat device mati atau socket belum tersambung.
+        com.sukashawarma.pos.data.update.AppUpdateManager.checkForUpdateAsync()
     }
 }
