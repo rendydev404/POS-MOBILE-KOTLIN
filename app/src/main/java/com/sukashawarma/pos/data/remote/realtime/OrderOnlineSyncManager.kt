@@ -28,7 +28,10 @@ class OrderOnlineSyncManager(
     
     private val SS_ORDER_URL = "https://qntuhtkujpwudcpudwbj.supabase.co"
     private val SS_ORDER_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFudHVodGt1anB3dWRjcHVkd2JqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyNTMyNjcsImV4cCI6MjA5NDgyOTI2N30.X2pjS2ont0ekVVc71HLacM2I49aLeypLRRgoPQV6OTw"
-    private val WEB_POS_API_BASE = "https://pos.sukashawarma.com"
+    // Dulu lewat pos-kasir (proxy ke DB via Next.js API route) — sekarang langsung
+    // ke Edge Function di project Order-Online sendiri, supaya native tidak
+    // berhenti menerima order website kalau pos-kasir sedang down.
+    private val ORDER_ONLINE_FUNCTIONS_BASE = "$SS_ORDER_URL/functions/v1"
     
     private val knownOrders = mutableSetOf<String>()
     private val inFlightPulls = mutableSetOf<String>()
@@ -132,7 +135,8 @@ class OrderOnlineSyncManager(
         scope.launch {
             try {
                 val res = SupabaseClient.api.pullOnlineOrder(
-                    url = "$WEB_POS_API_BASE/api/orders/pull-online",
+                    url = "$ORDER_ONLINE_FUNCTIONS_BASE/pull-online-order",
+                    auth = "Bearer $SS_ORDER_KEY",
                     payload = mapOf("external_order_id" to externalOrderId)
                 )
                 if (res.isSuccessful) {
@@ -150,7 +154,8 @@ class OrderOnlineSyncManager(
         scope.launch {
             try {
                 SupabaseClient.api.syncActiveOrders(
-                    url = "$WEB_POS_API_BASE/api/orders/sync-active"
+                    url = "$ORDER_ONLINE_FUNCTIONS_BASE/sync-active-orders",
+                    auth = "Bearer $SS_ORDER_KEY"
                 )
             } catch (e: Exception) {
                 e.printStackTrace()

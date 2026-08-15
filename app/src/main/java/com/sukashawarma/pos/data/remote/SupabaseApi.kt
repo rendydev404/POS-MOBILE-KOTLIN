@@ -334,12 +334,14 @@ interface SupabaseApi {
     @POST
     suspend fun pullOnlineOrder(
         @Url url: String,
+        @Header("Authorization") auth: String,
         @Body payload: Map<String, String>
     ): Response<ResponseBody>
-    
+
     @POST
     suspend fun syncActiveOrders(
-        @Url url: String
+        @Url url: String,
+        @Header("Authorization") auth: String
     ): Response<ResponseBody>
 
     // Diteruskan saat order website online ditandai Selesai — pos-kasir web yang
