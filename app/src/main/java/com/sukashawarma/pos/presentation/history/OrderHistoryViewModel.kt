@@ -246,12 +246,20 @@ class OrderHistoryViewModel(application: Application) : AndroidViewModel(applica
     fun updateOrderStatus(orderId: String, status: String) {
         viewModelScope.launch {
             try {
+                // Order Website tidak pernah dapat cashier_name saat dibuat (dibuat oleh
+                // customer, bukan kasir) — dicatat di sini, saat kasir yang menekan
+                // Tandai Selesai, sama seperti fix di DashboardViewModel.updateOrderStatus.
+                val cashierName = com.sukashawarma.pos.data.local.SessionPrefs.getUsername()
+                val patch = mutableMapOf(
+                    "status" to status,
+                    "updated_at" to java.time.Instant.now().toString()
+                )
+                if (!cashierName.isNullOrBlank()) {
+                    patch["cashier_name"] = cashierName
+                }
                 val response = api.updateOrderStatus(
                     orderIdFilter = "eq.$orderId",
-                    patch = mapOf(
-                        "status" to status,
-                        "updated_at" to java.time.Instant.now().toString()
-                    )
+                    patch = patch
                 )
                 if (response.isSuccessful) {
                     fetchOrderHistory()
@@ -357,7 +365,7 @@ class OrderHistoryViewModel(application: Application) : AndroidViewModel(applica
             orderItems = orderItems,
             notes = null,
             paymentProofUrl = localPaymentProofPath,
-            cashierName = null,
+            cashierName = cashierName,
             cancellationReason = null,
             voidReason = null,
             isSyncedFromOffline = isSyncedFromOffline

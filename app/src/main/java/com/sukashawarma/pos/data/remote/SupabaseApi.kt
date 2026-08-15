@@ -80,6 +80,13 @@ interface SupabaseApi {
         @Query("select") select: String = "key,value,outlet_id"
     ): Response<List<KioskSettingDto>>
 
+    @GET("rest/v1/kiosk_settings")
+    suspend fun getOutletKioskSetting(
+        @Query("outlet_id") outletIdFilter: String,
+        @Query("key") keyFilter: String,
+        @Query("select") select: String = "key,value,outlet_id"
+    ): Response<List<KioskSettingDto>>
+
     @GET("rest/v1/global_settings")
     suspend fun getGlobalSettings(
         @Query("key") keyFilter: String = "eq.print_layout",
@@ -93,6 +100,12 @@ interface SupabaseApi {
         @Query("key") keyFilter: String = "eq.app_update",
         @Query("select") select: String = "key,value"
     ): Response<List<AppUpdateSettingDto>>
+
+    @GET("rest/v1/global_settings")
+    suspend fun getNativeRuntimeConfig(
+        @Query("key") keyFilter: String = "eq.native_runtime_config",
+        @Query("select") select: String = "key,value"
+    ): Response<List<NativeRuntimeSettingDto>>
 
     // Upsert one kiosk_settings row (bestseller/upsell/recommendation/unavailable/etc. list for
     // one outlet+key). Contract only in sub-project A — B is the first caller.
@@ -207,6 +220,11 @@ interface SupabaseApi {
     @POST("rest/v1/rpc/pos_revenue_summary_guarded")
     suspend fun getRevenueSummary(@Body payload: RevenueSummaryPayload): Response<RevenueSummaryDto>
 
+    // Dipanggil sekali per promo yang benar-benar dipakai order (bukan per item) —
+    // lihat POSManualOrderViewModel.submitOrder. Row-locked di server, aman dari race.
+    @POST("rest/v1/rpc/increment_promo_usage")
+    suspend fun incrementPromoUsage(@Body payload: IncrementPromoUsagePayload): Response<Void>
+
     @POST("rest/v1/rpc/get_my_target_progress")
     suspend fun getMyTargetProgress(@Body payload: Map<String, String> = emptyMap()): Response<List<TargetProgressDto>>
 
@@ -290,6 +308,28 @@ interface SupabaseApi {
     ): Response<List<CancellationRequestResponse>>
     
     // Web POS API Endpoints (https://pos.sukashawarma.com)
+    // Panduan dipublikasi oleh server web dari `system_guides`, karena RLS tabel
+    // tersebut sengaja tidak dibuka langsung ke klien native/web.
+    @GET
+    suspend fun getSystemGuides(
+        @Url url: String
+    ): Response<List<SystemGuideDto>>
+
+    @GET
+    suspend fun getKioskAccounts(@Url url: String): Response<KioskAccountsResponse>
+
+    @POST
+    suspend fun generateKioskQr(
+        @Url url: String,
+        @Body payload: Map<String, String>
+    ): Response<KioskQrResponse>
+
+    @POST
+    suspend fun logoutKiosk(
+        @Url url: String,
+        @Body payload: Map<String, String>
+    ): Response<ResponseBody>
+
     @POST
     suspend fun pullOnlineOrder(
         @Url url: String,
@@ -299,6 +339,15 @@ interface SupabaseApi {
     @POST
     suspend fun syncActiveOrders(
         @Url url: String
+    ): Response<ResponseBody>
+
+    // Diteruskan saat order website online ditandai Selesai — pos-kasir web yang
+    // memutuskan (source/external_order_id) lalu meneruskan ke Edge Function
+    // order-system supaya WA "pesanan siap diambil" terkirim ke customer.
+    @POST
+    suspend fun notifyOnlineOrderDone(
+        @Url url: String,
+        @Body payload: Map<String, String>
     ): Response<ResponseBody>
 
     @POST

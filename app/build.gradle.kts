@@ -15,7 +15,15 @@ val localProps = Properties().apply {
     if (f.exists()) f.inputStream().use { load(it) }
 }
 val releaseStoreFile = localProps.getProperty("RELEASE_STORE_FILE")
-val hasReleaseSigning = !releaseStoreFile.isNullOrBlank() && rootProject.file(releaseStoreFile).exists()
+val releaseSigningProperties = listOf(
+    "RELEASE_STORE_FILE",
+    "RELEASE_STORE_PASSWORD",
+    "RELEASE_KEY_ALIAS",
+    "RELEASE_KEY_PASSWORD"
+)
+val hasReleaseSigning = releaseSigningProperties.all { key ->
+    !localProps.getProperty(key).isNullOrBlank()
+} && !releaseStoreFile.isNullOrBlank() && rootProject.file(releaseStoreFile).isFile
 
 android {
     namespace = "com.sukashawarma.pos"
@@ -25,8 +33,8 @@ android {
         applicationId = "com.sukashawarma.pos"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 48
+        versionName = "1.0.47"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -51,11 +59,12 @@ android {
 
     buildTypes {
         release {
-            // Tanpa local.properties berisi keystore (mis. clone baru di mesin lain),
-            // fallback ke debug signing supaya build tetap jalan buat development —
-            // TAPI APK hasilnya TIDAK BOLEH dipakai untuk rilis (lihat AppUpdateManager:
-            // update lewat WA butuh signature yang sama terus-menerus).
-            signingConfig = if (hasReleaseSigning) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
+            // APK rilis wajib memakai keystore permanen yang sama agar Android
+            // menerima update tanpa uninstall. Task release diblokir di bawah
+            // bila konfigurasi signing belum lengkap; debug build tetap tersedia.
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -100,6 +109,22 @@ android {
     }
 }
 
+// Hentikan task release sebelum ada artefak unsigned/debug-signed yang berisiko
+// terdistribusi. Pemeriksaan task graph tidak mengganggu build variant debug.
+gradle.taskGraph.whenReady {
+    val requestsReleaseArtifact = allTasks.any { task ->
+        task.name.contains("release", ignoreCase = true)
+    }
+    if (requestsReleaseArtifact && !hasReleaseSigning) {
+        throw GradleException(
+            "Release build diblokir: lengkapi RELEASE_STORE_FILE, " +
+                "RELEASE_STORE_PASSWORD, RELEASE_KEY_ALIAS, dan " +
+                "RELEASE_KEY_PASSWORD di local.properties serta pastikan " +
+                "keystore release tersedia. Jangan memakai debug signing untuk APK rilis."
+        )
+    }
+}
+
 dependencies {
     // AndroidX & Core
     implementation("androidx.core:core-ktx:1.12.0")
@@ -132,8 +157,17 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
+    // File-by-file APK delta (Google Archive Patcher, maintained Apache-2.0 fork).
+    // Only the patch crosses the network; the signed APK is reconstructed and
+    // SHA-256 verified locally before PackageInstaller sees it.
+    // 3.0.0 targets Java 8/Android. 3.0.1 was published as Java 21 bytecode.
+    implementation("com.eidu:archive-patcher:3.0.0")
+
     // Image Loading (Coil for Compose)
     implementation("io.coil-kt:coil-compose:2.5.0")
+
+    // QR pairing kiosk dirender lokal; tautan login tidak dikirim ke layanan QR pihak ketiga.
+    implementation("com.google.zxing:core:3.5.3")
 
     // Firebase Cloud Messaging (push notifications for background/killed-app orders)
     implementation(platform("com.google.firebase:firebase-bom:33.1.2"))

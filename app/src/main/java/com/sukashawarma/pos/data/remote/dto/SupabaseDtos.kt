@@ -71,13 +71,35 @@ data class UpsertKioskSettingPayload(
     val value: String
 )
 
+/** Konten `system_guides` yang disajikan oleh API POS web untuk semua klien. */
+data class SystemGuideDto(
+    val id: String,
+    val category: String,
+    val title: String,
+    @SerializedName("content_html") val contentHtml: String,
+    @SerializedName("image_url") val imageUrl: String?,
+    @SerializedName("sort_order") val sortOrder: Int?
+)
+
+data class KioskAccountDto(val id: String, val username: String?)
+data class KioskAccountsResponse(val accounts: List<KioskAccountDto>?)
+data class KioskQrResponse(@SerializedName("action_link") val actionLink: String?)
+
 data class PromoDto(
     val id: String,
     @SerializedName("outlet_id") val outletId: String,
+    @SerializedName("promo_name") val promoName: String?,
     val scope: String?,
+    @SerializedName("menu_item_id") val menuItemId: String?,
     @SerializedName("discount_type") val discountType: String?,
     @SerializedName("discount_value") val discountValue: Double?,
-    @SerializedName("is_active") val isActive: Boolean?
+    @SerializedName("min_purchase") val minPurchase: Double?,
+    @SerializedName("is_active") val isActive: Boolean?,
+    @SerializedName("usage_limit") val usageLimit: Int?,
+    @SerializedName("current_usage") val currentUsage: Int?,
+    @SerializedName("start_date") val startDate: String?,
+    @SerializedName("end_date") val endDate: String?,
+    @SerializedName("apply_to_food_apps") val applyToFoodApps: Boolean?
 )
 
 // Mirrors the real `orders` table columns (see supabase/migrations) — it has no
@@ -103,6 +125,8 @@ data class OrderDto(
     val channel: String?,
     @SerializedName("order_items") val orderItems: List<OrderItemDto>?,
     val notes: String? = null,
+    @SerializedName("pickup_time") val pickupTime: String? = null,
+    @SerializedName("release_time") val releaseTime: String? = null,
     @SerializedName("payment_proof_url") val paymentProofUrl: String? = null,
     @SerializedName("cashier_name") val cashierName: String? = null,
     @SerializedName("cancellation_reason") val cancellationReason: String? = null,
@@ -187,7 +211,10 @@ data class CreateOrderPayload(
     @SerializedName("created_at") val createdAt: String,
     // Food Apps/Website channel this order came in on (null for walk-in/endorse) —
     // column already read back via OrderDto.channel, so writing it is safe.
-    val channel: String? = null
+    val channel: String? = null,
+    @SerializedName("pickup_time") val pickupTime: String? = null,
+    @SerializedName("release_time") val releaseTime: String? = null,
+    @SerializedName("cashier_name") val cashierName: String? = null
 )
 
 // ── RPC request/response payloads (rest/v1/rpc/*) ──────────────────────────
@@ -242,6 +269,11 @@ data class CreateOrderItemPayload(
     val quantity: Int,
     @SerializedName("unit_price") val unitPrice: Double,
     val subtotal: Double
+)
+
+data class IncrementPromoUsagePayload(
+    @SerializedName("p_promo_id") val promoId: String,
+    @SerializedName("p_increment_amount") val incrementAmount: Int = 1
 )
 
 data class VoidPettyCashPayload(
@@ -395,9 +427,50 @@ data class AppUpdateManifest(
     @SerializedName("version_code") val versionCode: Int,
     @SerializedName("version_name") val versionName: String,
     @SerializedName("apk_url") val apkUrl: String,
+    @SerializedName("apk_sha256") val apkSha256: String? = null,
+    @SerializedName("apk_size_bytes") val apkSizeBytes: Long? = null,
+    val delta: AppUpdateDelta? = null,
+    val deltas: List<AppUpdateDelta> = emptyList(),
     val notes: String? = null,
     val mandatory: Boolean = false
 )
+
+fun AppUpdateManifest.deltaFor(baseVersionCode: Int): AppUpdateDelta? =
+    deltas.firstOrNull { it.baseVersionCode == baseVersionCode }
+        ?: delta?.takeIf { it.baseVersionCode == baseVersionCode }
+
+data class AppUpdateDelta(
+    @SerializedName("base_version_code") val baseVersionCode: Int,
+    @SerializedName("patch_url") val patchUrl: String,
+    @SerializedName("patch_sha256") val patchSha256: String,
+    @SerializedName("patch_size_bytes") val patchSizeBytes: Long
+)
+
+data class NativeRuntimeSettingDto(
+    val key: String,
+    val value: NativeRuntimeConfig?
+)
+
+/**
+ * Bagian UI/config yang boleh berubah realtime tanpa mengganti APK. Field baru
+ * dapat ditambahkan bertahap; default menjaga kompatibilitas versi lama.
+ */
+data class NativeRuntimeConfig(
+    @SerializedName("new_order_button_color") val newOrderButtonColor: String = "#E67E22",
+    @SerializedName("new_order_button_label") val newOrderButtonLabel: String = "Pesanan Baru",
+    @SerializedName("new_order_button_colors_by_version")
+    val newOrderButtonColorsByVersion: Map<String, String> = mapOf(
+        "6" to "#DC2626",
+        "7" to "#16A34A",
+        "8" to "#16A34A",
+        "9" to "#16A34A",
+        "10" to "#E67E22",
+        "11" to "#E67E22"
+    )
+) {
+    fun newOrderButtonColorFor(versionCode: Int): String =
+        newOrderButtonColorsByVersion[versionCode.toString()] ?: newOrderButtonColor
+}
 
 data class CustomerLayoutDto(
     val paperWidth: Int = 58,

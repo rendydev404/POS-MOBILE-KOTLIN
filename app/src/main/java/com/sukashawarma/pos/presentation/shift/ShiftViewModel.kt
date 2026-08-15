@@ -52,8 +52,13 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
     private val database = (application as POSApplication).database
     private val orderDao = database.orderDao()
 
-    // Status topup yang dianggap sudah masuk laci petty cash (mirror web SUDAH_DI_LACI).
-    private val SUDAH_DI_LACI = listOf("completed", "approved", "approved_by_finance", "forwarded_by_leader")
+    // Status topup yang dianggap sudah masuk laci petty cash — mirror persis
+    // SUDAH_DI_LACI di apps/pos-kasir/app/kasir/shift/page.tsx. Sebelumnya native
+    // ikut menghitung "approved_by_finance" sebagai sudah masuk laci, padahal itu
+    // baru tahap finance ACC/mencairkan ke Leader/Area Manager — dana belum benar-benar
+    // sampai ke outlet sampai leader_forward_funds (status forwarded_by_leader).
+    // Itu sebabnya saldo & "Uang Masuk" naik duluan sebelum statusnya benar-benar selesai.
+    private val SUDAH_DI_LACI = listOf("completed", "approved", "forwarded_by_leader")
 
     val currentOutletId = MutableStateFlow("")
     val activeShift = MutableStateFlow<ShiftDto?>(null)
@@ -86,6 +91,13 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
     val navigateToReports: SharedFlow<Unit> = _navigateToReports.asSharedFlow()
 
     val isShiftOpen = MutableStateFlow(false)
+    /**
+     * False until the server has successfully answered the first shift query for
+     * the selected outlet. Keeping the POS usable on a transient fetch failure
+     * mirrors the web blocker, which assumes an active shift until it knows
+     * otherwise.
+     */
+    val isShiftStateReady = MutableStateFlow(false)
     val isLoading = MutableStateFlow(false)
     val errorMessage = MutableStateFlow<String?>(null)
     val successMessage = MutableStateFlow<String?>(null)
@@ -106,7 +118,11 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setOutlet(outletId: String) {
+        if (currentOutletId.value == outletId && isShiftStateReady.value) return
         currentOutletId.value = outletId
+        activeShift.value = null
+        isShiftOpen.value = true
+        isShiftStateReady.value = false
         loadRealShiftData()
     }
     
@@ -129,6 +145,7 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
                     
                     activeShift.value = openShift
                     isShiftOpen.value = openShift != null
+                    isShiftStateReady.value = true
 
                     if (openShift != null) {
                         pettyCashLocked.value = false
@@ -266,7 +283,12 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun openShift() {
+    fun openShift(isOnline: Boolean = true) {
+        if (!isOnline) {
+            clearMessages()
+            errorMessage.value = "Anda harus online untuk membuka shift."
+            return
+        }
         val outletId = currentOutletId.value
         val starting = openShiftInput.value.toDoubleOrNull()
         if (outletId.isBlank() || starting == null || starting < 0) {

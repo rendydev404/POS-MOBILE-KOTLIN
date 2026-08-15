@@ -1,5 +1,6 @@
 package com.sukashawarma.pos.data.local.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -36,6 +37,7 @@ data class LocalOrderEntity(
     val cancellationUserName: String?,
     val createdAt: Long,
     /** Nama [SyncState]. Menggantikan kolom isPendingSync yang lama. */
+    @ColumnInfo(defaultValue = "SYNCED")
     val syncState: String = SyncState.SYNCED.name,
     /**
      * Daftar kolom yang diubah kasir dan BELUM naik ke server, dipisah koma
@@ -43,9 +45,14 @@ data class LocalOrderEntity(
      * tidak boleh ditimpa oleh data tarikan server — inilah bentuk konkret
      * aturan "data transaksi kasir lokal menang".
      */
+    @ColumnInfo(defaultValue = "")
     val dirtyFields: String = "",
     val channel: String? = null,
+    @ColumnInfo(defaultValue = "0")
     val isSyncedFromOffline: Boolean = false,
     val localPaymentProofPath: String? = null,
-    val notes: String? = null
+    val notes: String? = null,
+    @ColumnInfo(defaultValue = "0")
+    val effectiveReleaseTime: Long = 0L,
+    val cashierName: String? = null
 )

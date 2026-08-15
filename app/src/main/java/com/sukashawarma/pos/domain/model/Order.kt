@@ -63,5 +63,11 @@ data class Order(
     val isOffline: Boolean = false,
     val isSyncedFromOffline: Boolean = false,
     val channel: String? = null,
-    val notes: String? = null
+    val notes: String? = null,
+    /** Waktu order dilepas ke antrean dapur; 0 berarti order langsung masuk antrean. */
+    val effectiveReleaseTime: Long = 0L,
+    /** Tidak dikirim ke server — hanya dipakai lokal untuk memanggil RPC
+     *  `increment_promo_usage` per promo yang benar-benar dipakai order ini. */
+    val appliedPromoIds: Set<String> = emptySet(),
+    val cashierName: String? = null
 )

@@ -22,6 +22,12 @@ object SupabaseClient {
         val requestBuilder = original.newBuilder()
             .header("apikey", ANON_KEY)
             .header("Authorization", "Bearer $bearer")
+            // Tanpa versi di User-Agent, log server tidak dapat membuktikan APK
+            // mana yang sudah aktif di tablet setelah self-update.
+            .header(
+                "User-Agent",
+                "SukaShawarmaPOS/${BuildConfig.VERSION_NAME} (Android ${android.os.Build.VERSION.SDK_INT})"
+            )
         
         if (original.header("Content-Type") == null) {
             requestBuilder.header("Content-Type", "application/json")

@@ -19,5 +19,11 @@ data class Promo(
     val discountType: DiscountType,
     val discountValue: Double,
     val minPurchase: Double? = null,
-    val isActive: Boolean = true
+    val isActive: Boolean = true,
+    val usageLimit: Int? = null,
+    val currentUsage: Int = 0,
+    /** Epoch millis, absolute instants — null means unbounded on that side. */
+    val startDate: Long? = null,
+    val endDate: Long? = null,
+    val applyToFoodApps: Boolean = false
 )

@@ -733,13 +733,36 @@ fun LedgerItemRow(item: LedgerItem, viewModel: ShiftViewModel) {
                 }
                 is LedgerItem.Topup -> {
                     val top = item.data
-                    val isPending = top.status == "pending" || top.status.startsWith("forwarded")
+                    // Mirror persis labelStatus map di apps/pos-kasir/app/kasir/shift/page.tsx —
+                    // sebelumnya native cuma punya 3 kotak (pending/ditolak/selesai) padahal
+                    // alurnya 8 tahap (Leader -> Area Manager -> Finance -> balik ke outlet),
+                    // jadi hampir semua tahap menengah salah kaprah tampil "Menunggu Review".
+                    // Label "Dana dipegang Leader/Area Manager" di approved_by_finance sengaja
+                    // menyebut keduanya (bukan pilih salah satu seperti web) karena native belum
+                    // menarik data region/requires_korlap_review outlet untuk membedakannya.
                     val isRejected = top.status == "rejected"
+                    val isDone = top.status == "forwarded_by_leader" || top.status == "completed" || top.status == "approved"
+                    val isInFlight = !isRejected && !isDone
+                    val statusLabel = when (top.status) {
+                        "pending" -> "⏳ Menunggu Review Leader"
+                        "forwarded_to_area_manager" -> "⏳ Menunggu Review Area Manager"
+                        "forwarded_to_finance" -> "⏳ Menunggu Pencairan Finance"
+                        "approved_by_finance" -> "🟢 Dana dipegang Leader/Area Manager"
+                        "forwarded_by_finance" -> "🟢 Dana dipegang Area Manager"
+                        "forwarded_by_area_manager" -> "🟢 Dana dipegang Leader"
+                        "rejected" -> "❌ Ditolak"
+                        else -> "✅ Selesai"
+                    }
+                    val statusColor = when {
+                        isRejected -> Color(0xFFEF4444)
+                        isInFlight -> Color(0xFFF59E0B)
+                        else -> Color(0xFF3B82F6)
+                    }
                     Box(
                         Modifier.size(44.dp).clip(RoundedCornerShape(8.dp))
                             .background(
                                 when {
-                                    isPending -> Color(0xFFFFFBEB)
+                                    isInFlight -> Color(0xFFFFFBEB)
                                     isRejected -> Color(0xFFF3F4F6)
                                     else -> Color(0xFFEFF6FF)
                                 }
@@ -747,10 +770,10 @@ fun LedgerItemRow(item: LedgerItem, viewModel: ShiftViewModel) {
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            Icons.Default.South, 
-                            null, 
+                            Icons.Default.South,
+                            null,
                             tint = when {
-                                isPending -> Color(0xFFF59E0B)
+                                isInFlight -> Color(0xFFF59E0B)
                                 isRejected -> Color.Gray
                                 else -> Color(0xFF3B82F6)
                             }
@@ -760,17 +783,9 @@ fun LedgerItemRow(item: LedgerItem, viewModel: ShiftViewModel) {
                     Column {
                         Text("Top Up Petty Cash", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         Text(
-                            when {
-                                isPending -> "⏳ Menunggu Review"
-                                isRejected -> "❌ Ditolak"
-                                else -> "✅ Selesai"
-                            }, 
-                            color = when {
-                                isPending -> Color(0xFFF59E0B)
-                                isRejected -> Color(0xFFEF4444)
-                                else -> Color(0xFF3B82F6)
-                            }, 
-                            fontSize = 11.sp, 
+                            statusLabel,
+                            color = statusColor,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(formatTime(top.createdAt), color = Color.Gray, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))

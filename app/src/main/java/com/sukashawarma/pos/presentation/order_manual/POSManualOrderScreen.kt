@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.RestaurantMenu
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.StickyNote2
@@ -51,6 +52,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
@@ -106,27 +108,14 @@ fun POSManualOrderScreen(
     val visibleItems = remember(menuItemsState, selectedCatId, searchQuery, mode, channel) {
         viewModel.visibleItems()
     }
-    val totals = remember(cartLines, promoSubsidy, channel, mode) { viewModel.cartTotals() }
+    val activePromosState by viewModel.activePromos.collectAsState()
+    // activePromosState wajib jadi key di sini — tanpa ini, remember tidak tahu
+    // harus hitung ulang saat promo berubah realtime lewat WebSocket (cartLines dkk
+    // tidak ikut berubah, jadi totalnya diam-diam basi sampai ada trigger lain).
+    val totals = remember(cartLines, promoSubsidy, channel, mode, activePromosState) { viewModel.cartTotals() }
+    val promoEntries = remember(activePromosState) { viewModel.promoStatusEntries() }
 
     val context = LocalContext.current
-    val imagePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri?.let {
-            try {
-                val inputStream = context.contentResolver.openInputStream(it)
-                val bytes = inputStream?.readBytes()
-                inputStream?.close()
-                if (bytes != null) {
-                    val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.DEFAULT)
-                    viewModel.handleScanImage("data:image/jpeg;base64,$base64")
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-    }
-    
-    val isScanningReceipt by viewModel.isScanningReceipt.collectAsState()
-    
     val connectionStatus by printerViewModel.connectionStatus.collectAsState()
     val isPrinterConnected = connectionStatus == com.sukashawarma.pos.presentation.printer.ConnectionStatus.CONNECTED
     var showPrinterDialog by remember { mutableStateOf(false) }
@@ -143,69 +132,108 @@ fun POSManualOrderScreen(
             onBackClick = onBackClick
         )
 
-        OrderModeTabRow(mode = mode, onModeSelected = { viewModel.switchMode(it) })
-
-        // InfoBanner removed to save space
-
-        Row(
+        // Breakpoint dari mockup review: kartu grid dan panel keranjang sama-sama
+        // menyesuaikan lebar layar, bukan cuma kartunya yang membesar sendirian.
+        BoxWithConstraints(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(horizontal = 12.dp, vertical = 4.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                if (mode == OrderMode.ONLINE) {
-                    ChannelSelector(selectedChannel = channel, onSelect = { viewModel.selectChannel(it) })
-                }
+            val isSmall = maxWidth < 700.dp
+            val cardMinSize = if (maxWidth < 1100.dp) 140.dp else 150.dp
+            val cardGap = if (maxWidth < 1100.dp) 12.dp else 14.dp
+            val cartWidth = when {
+                isSmall -> null
+                maxWidth < 1100.dp -> 300.dp
+                else -> 340.dp
+            }
 
-                SearchAndCategoryCard(
-                    searchQuery = searchQuery,
-                    onSearchChange = { viewModel.searchQuery.value = it },
-                    categories = categories,
-                    selectedCatId = selectedCatId,
-                    onCategorySelected = { viewModel.selectedCategoryId.value = it },
-                    onScanReceiptClick = { imagePickerLauncher.launch("image/*") }
-                )
+            val menuColumn: @Composable () -> Unit = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OrderModeTabRow(mode = mode, onModeSelected = { viewModel.switchMode(it) })
 
-                if (isLoading || isScanningReceipt) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = TwAmber500)
+                    if (mode == OrderMode.ONLINE) {
+                        ChannelSelector(selectedChannel = channel, onSelect = { viewModel.selectChannel(it) })
                     }
-                } else {
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 120.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        items(visibleItems, key = { it.id }) { item ->
-                            val disabled = viewModel.isDisabled(item)
-                            MenuItemCard(
-                                menuItem = item,
-                                displayPrice = viewModel.priceFor(item),
-                                cartQty = viewModel.cartQuantityFor(item.id),
-                                disabled = disabled,
-                                onClick = { if (!disabled) viewModel.onMenuItemClick(item) }
-                            )
+
+                    SearchAndCategoryCard(
+                        categories = categories,
+                        selectedCatId = selectedCatId,
+                        onCategorySelected = { viewModel.selectedCategoryId.value = it }
+                    )
+
+                    if (isLoading) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().height(200.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(color = TwAmber500)
+                        }
+                    } else if (isSmall) {
+                        // Grid manual 2-kolom yang tinggi totalnya mengikuti isi, supaya
+                        // bisa ikut digulung satu kolom bersama panel keranjang di bawahnya
+                        // (LazyVerticalGrid butuh tinggi terbatas dan akan memotong sisa item
+                        // kalau dipaksa muat di dalam Column yang sudah bisa di-scroll).
+                        Column(verticalArrangement = Arrangement.spacedBy(cardGap)) {
+                            visibleItems.chunked(2).forEach { rowItems ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(cardGap)
+                                ) {
+                                    rowItems.forEach { item ->
+                                        val disabled = viewModel.isDisabled(item)
+                                        val promoEntry = viewModel.promoStatusForMenuItem(item.id, activePromosState)
+                                        Box(modifier = Modifier.weight(1f)) {
+                                            MenuItemCard(
+                                                menuItem = item,
+                                                displayPrice = viewModel.priceFor(item),
+                                                discountedPrice = promoEntry?.takeIf { it.status == PromoStatus.ACTIVE }?.let { viewModel.discountedPriceFor(item, it.promo) },
+                                                promoEntry = promoEntry,
+                                                scheduleLabel = promoEntry?.takeIf { it.status == PromoStatus.SCHEDULED }?.let { viewModel.scheduleLabelShort(it.promo) },
+                                                cartQty = viewModel.cartQuantityFor(item.id),
+                                                disabled = disabled,
+                                                onClick = { if (!disabled) viewModel.onMenuItemClick(item) }
+                                            )
+                                        }
+                                    }
+                                    if (rowItems.size == 1) {
+                                        Box(modifier = Modifier.weight(1f))
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        LazyVerticalGrid(
+                            columns = GridCells.Adaptive(minSize = cardMinSize),
+                            verticalArrangement = Arrangement.spacedBy(cardGap),
+                            horizontalArrangement = Arrangement.spacedBy(cardGap),
+                            contentPadding = PaddingValues(vertical = 4.dp),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            items(visibleItems, key = { it.id }) { item ->
+                                val disabled = viewModel.isDisabled(item)
+                                val promoEntry = viewModel.promoStatusForMenuItem(item.id, activePromosState)
+                                MenuItemCard(
+                                    menuItem = item,
+                                    displayPrice = viewModel.priceFor(item),
+                                    discountedPrice = promoEntry?.takeIf { it.status == PromoStatus.ACTIVE }?.let { viewModel.discountedPriceFor(item, it.promo) },
+                                    promoEntry = promoEntry,
+                                    scheduleLabel = promoEntry?.takeIf { it.status == PromoStatus.SCHEDULED }?.let { viewModel.scheduleLabelShort(it.promo) },
+                                    cartQty = viewModel.cartQuantityFor(item.id),
+                                    disabled = disabled,
+                                    onClick = { if (!disabled) viewModel.onMenuItemClick(item) }
+                                )
+                            }
                         }
                     }
                 }
             }
 
-            // Kolomnya yang di-scroll, bukan isi panel: card keranjang memanjang ke bawah
-            // mengikuti jumlah varian menu, lalu seluruh card digeser saat di-scroll.
-            Column(
-                modifier = Modifier
-                    .width(360.dp)
-                    .fillMaxHeight()
-                    .verticalScroll(rememberScrollState())
-            ) {
+            val cartColumn: @Composable (Modifier) -> Unit = { cartModifier ->
                 CartPanel(
                     viewModel = viewModel,
                     mode = mode,
@@ -217,9 +245,42 @@ fun POSManualOrderScreen(
                     cashInput = cashInput,
                     cartLines = cartLines,
                     totals = totals,
+                    promoEntries = promoEntries,
                     isSubmitting = isSubmitting,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = cartModifier.fillMaxWidth()
                 )
+            }
+
+            if (isSmall) {
+                // Layar sempit: keranjang pindah ke bawah grid, satu kolom yang di-scroll
+                // bersama — bukan dua area dengan scroll sendiri-sendiri yang saling rebutan ruang.
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    menuColumn()
+                    cartColumn(Modifier)
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(modifier = Modifier.weight(1f).fillMaxHeight()) { menuColumn() }
+
+                    // Kolomnya yang di-scroll, bukan isi panel: card keranjang memanjang ke bawah
+                    // mengikuti jumlah varian menu, lalu seluruh card digeser saat di-scroll.
+                    Column(
+                        modifier = Modifier
+                            .width(cartWidth!!)
+                            .fillMaxHeight()
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        cartColumn(Modifier)
+                    }
+                }
             }
         }
     }
@@ -346,31 +407,46 @@ private fun OrderModeTabRow(mode: OrderMode, onModeSelected: (OrderMode) -> Unit
         Triple(OrderMode.ENDORSE, "Endorse", Icons.Filled.ThumbUp)
     )
     Surface(
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
         shape = RoundedCornerShape(12.dp),
         color = TwGray100
     ) {
-        Row(modifier = Modifier.padding(4.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
             tabs.forEach { (m, label, icon) ->
                 val selected = m == mode
                 val activeColor = if (m == OrderMode.WEBSITE) TwBlue600 else TwAmber600
                 Surface(
-                    modifier = Modifier.clickable { onModeSelected(m) },
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .clickable { onModeSelected(m) },
                     shape = RoundedCornerShape(8.dp),
                     color = if (selected) Color.White else Color.Transparent,
                     shadowElevation = if (selected) 2.dp else 0.dp
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.Center
                     ) {
                         Icon(icon, contentDescription = null, tint = if (selected) activeColor else TwGray500, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             label,
                             color = if (selected) activeColor else TwGray500,
                             fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.bodySmall
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -424,7 +500,6 @@ private fun ChannelSelector(selectedChannel: String?, onSelect: (String) -> Unit
     val logos = mapOf(
         "gofood" to R.drawable.ic_gofood,
         "shopeefood" to R.drawable.ic_shopeefood,
-        "grabfood" to R.drawable.ic_grabfood,
         "tiktokgo" to R.drawable.ic_tiktokgo
     )
 
@@ -443,7 +518,9 @@ private fun ChannelSelector(selectedChannel: String?, onSelect: (String) -> Unit
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                logos[ch.id]?.let { resId ->
+                if (ch.id == "grabfood") {
+                    com.sukashawarma.pos.presentation.components.GrabFoodMark(size = 20.dp)
+                } else logos[ch.id]?.let { resId ->
                     Image(
                         painter = painterResource(id = resId),
                         contentDescription = ch.label,
@@ -463,36 +540,19 @@ private fun ChannelSelector(selectedChannel: String?, onSelect: (String) -> Unit
 
 @Composable
 private fun SearchAndCategoryCard(
-    searchQuery: String,
-    onSearchChange: (String) -> Unit,
     categories: List<Category>,
     selectedCatId: String,
-    onCategorySelected: (String) -> Unit,
-    onScanReceiptClick: () -> Unit
+    onCategorySelected: (String) -> Unit
 ) {
-    Row(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        LazyRow(
-            modifier = Modifier.weight(1f),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            item {
-                CategoryChip(label = "Semua", selected = selectedCatId.isEmpty(), onClick = { onCategorySelected("") })
-            }
-            items(categories) { cat ->
-                CategoryChip(label = cat.name, selected = cat.id == selectedCatId, onClick = { onCategorySelected(cat.id) })
-            }
+    LazyRow(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        item {
+            CategoryChip(label = "Semua", selected = selectedCatId.isEmpty(), onClick = { onCategorySelected("") })
         }
-        
-        Spacer(modifier = Modifier.width(8.dp))
-        
-        IconButton(
-            onClick = onScanReceiptClick,
-            modifier = Modifier
-                .size(40.dp)
-                .background(TwAmber50, RoundedCornerShape(10.dp))
-                .border(1.dp, TwAmber400, RoundedCornerShape(10.dp))
-        ) {
-            Icon(Icons.Default.PhotoCamera, contentDescription = "Scan Nota AI", tint = TwAmber600, modifier = Modifier.size(20.dp))
+        items(categories) { cat ->
+            CategoryChip(label = cat.name, selected = cat.id == selectedCatId, onClick = { onCategorySelected(cat.id) })
         }
     }
 }
@@ -520,6 +580,9 @@ private fun CategoryChip(label: String, selected: Boolean, onClick: () -> Unit) 
 private fun MenuItemCard(
     menuItem: MenuItem,
     displayPrice: Double,
+    discountedPrice: Double? = null,
+    promoEntry: PromoStatusEntry? = null,
+    scheduleLabel: String? = null,
     cartQty: Int,
     disabled: Boolean,
     onClick: () -> Unit
@@ -545,14 +608,14 @@ private fun MenuItemCard(
                             .build(),
                         contentDescription = menuItem.name,
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxWidth().height(80.dp)
+                        modifier = Modifier.fillMaxWidth().height(110.dp)
                     )
                 } else {
                     Box(
-                        modifier = Modifier.fillMaxWidth().height(80.dp).background(TwGray50),
+                        modifier = Modifier.fillMaxWidth().height(110.dp).background(TwGray50),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Default.RestaurantMenu, contentDescription = null, tint = TwGray300, modifier = Modifier.size(32.dp))
+                        Icon(Icons.Default.RestaurantMenu, contentDescription = null, tint = TwGray300, modifier = Modifier.size(36.dp))
                     }
                 }
                 if (disabled) {
@@ -572,6 +635,22 @@ private fun MenuItemCard(
                         }
                     }
                 }
+                if (promoEntry != null && (promoEntry.status == PromoStatus.ACTIVE || promoEntry.status == PromoStatus.SCHEDULED)) {
+                    val isLive = promoEntry.status == PromoStatus.ACTIVE
+                    Surface(
+                        modifier = Modifier.align(Alignment.TopStart).padding(6.dp),
+                        color = if (isLive) TwRed500 else TwPurple500,
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text(
+                            if (isLive) "PROMO" else "TERJADWAL",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
                 if (cartQty > 0) {
                     Box(
                         modifier = Modifier
@@ -588,7 +667,7 @@ private fun MenuItemCard(
                 }
             }
 
-            Column(modifier = Modifier.padding(8.dp)) {
+            Column(modifier = Modifier.padding(12.dp)) {
                 Text(
                     text = menuItem.name,
                     style = MaterialTheme.typography.labelMedium,
@@ -598,13 +677,45 @@ private fun MenuItemCard(
                     maxLines = 2,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Rp ${String.format("%,.0f", displayPrice)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (disabled) TwGray400 else TwAmber600,
-                    fontWeight = FontWeight.Bold
-                )
+                Spacer(modifier = Modifier.height(6.dp))
+                if (discountedPrice != null) {
+                    Text(
+                        text = "Rp ${String.format("%,.0f", displayPrice)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TwGray400,
+                        textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough
+                    )
+                    Text(
+                        text = "Rp ${String.format("%,.0f", discountedPrice)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TwRed600,
+                        fontWeight = FontWeight.Bold
+                    )
+                } else {
+                    Text(
+                        text = "Rp ${String.format("%,.0f", displayPrice)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (disabled) TwGray400 else TwAmber600,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                if (scheduleLabel != null) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.Schedule,
+                            contentDescription = null,
+                            tint = TwPurple600,
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(
+                            text = scheduleLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TwPurple600
+                        )
+                    }
+                }
             }
         }
     }
@@ -622,6 +733,7 @@ private fun CartPanel(
     cashInput: String,
     cartLines: List<CartLine>,
     totals: CartTotals,
+    promoEntries: List<PromoStatusEntry>,
     isSubmitting: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -630,6 +742,8 @@ private fun CartPanel(
     }
     val activeChannel = normalizeChannel(if (mode == OrderMode.WEBSITE) "website" else channel)
     val needsPromoSubsidy = activeChannel != null && activeChannel in PROMO_SUBSIDY_CHANNELS
+    var showPromoDialog by remember { mutableStateOf(false) }
+    val activePromoCount = promoEntries.count { it.status == PromoStatus.ACTIVE }
 
     Surface(
         modifier = modifier,
@@ -652,6 +766,27 @@ private fun CartPanel(
                         )
                     }
                 }
+                Spacer(modifier = Modifier.weight(1f))
+                if (promoEntries.isNotEmpty()) {
+                    Surface(
+                        color = if (activePromoCount > 0) TwEmerald50 else TwGray100,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, if (activePromoCount > 0) TwEmerald100 else TwGray200),
+                        shape = RoundedCornerShape(20.dp),
+                        modifier = Modifier.clickable { showPromoDialog = true }
+                    ) {
+                        Text(
+                            if (activePromoCount > 0) "🏷️ $activePromoCount Promo Aktif" else "🏷️ Info Promo",
+                            color = if (activePromoCount > 0) TwEmerald700 else TwGray600,
+                            fontWeight = FontWeight.Medium,
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        )
+                    }
+                }
+            }
+
+            if (showPromoDialog) {
+                PromoInfoDialog(entries = promoEntries, onDismiss = { showPromoDialog = false })
             }
 
             Divider(color = TwGray100, modifier = Modifier.padding(vertical = 12.dp))
@@ -818,7 +953,11 @@ private fun CartPanel(
                 }
                 if (totals.discount > 0) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Diskon", style = MaterialTheme.typography.bodyMedium, color = TwRed600)
+                        Text(
+                            if (totals.appliedPromoNames.isNotEmpty()) "Diskon (${totals.appliedPromoNames.joinToString(", ")})" else "Diskon",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TwRed600
+                        )
                         Text("-Rp ${String.format("%,.0f", totals.discount)}", style = MaterialTheme.typography.bodyMedium, color = TwRed600)
                     }
                 }
@@ -879,6 +1018,63 @@ private fun CartPanel(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(buttonLabel, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
             }
+        }
+    }
+}
+
+/** Daftar promo yang ter-load untuk outlet ini beserta statusnya — supaya kasir bisa
+ *  langsung lihat kalau promo yang admin buat baru "terjadwal" atau sudah kadaluarsa,
+ *  alih-alih menduga-duga kenapa diskon tidak muncul di keranjang. */
+@Composable
+private fun PromoInfoDialog(entries: List<PromoStatusEntry>, onDismiss: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(16.dp), color = Color.White) {
+            Column(modifier = Modifier.padding(20.dp).widthIn(max = 360.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text("Info Promo Outlet", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TwGray900, modifier = Modifier.weight(1f))
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Filled.Close, contentDescription = "Tutup", tint = TwGray500)
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                if (entries.isEmpty()) {
+                    Text("Belum ada promo yang di-setting untuk outlet ini.", style = MaterialTheme.typography.bodyMedium, color = TwGray500)
+                } else {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 400.dp).verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        entries.forEach { entry -> PromoStatusRow(entry) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PromoStatusRow(entry: PromoStatusEntry) {
+    val (bg, border, textColor) = when (entry.status) {
+        PromoStatus.ACTIVE -> Triple(TwEmerald50, TwEmerald100, TwEmerald700)
+        PromoStatus.SCHEDULED -> Triple(TwBlue50, TwBlue100, TwBlue600)
+        PromoStatus.EXPIRED, PromoStatus.QUOTA_EXCEEDED, PromoStatus.INACTIVE -> Triple(TwGray50, TwGray200, TwGray500)
+    }
+    Surface(
+        color = bg,
+        border = androidx.compose.foundation.BorderStroke(1.dp, border),
+        shape = RoundedCornerShape(10.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            Text(entry.promo.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = TwGray900)
+            val discountLabel = when (entry.promo.discountType) {
+                DiscountType.PERCENTAGE -> "Diskon ${entry.promo.discountValue.toInt()}%"
+                DiscountType.NOMINAL -> "Diskon Rp ${String.format("%,.0f", entry.promo.discountValue)}"
+            }
+            val scopeLabel = if (entry.promo.scope == PromoScope.GLOBAL) "seluruh order" else "menu tertentu"
+            Text("$discountLabel · $scopeLabel", style = MaterialTheme.typography.labelSmall, color = TwGray500)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(entry.statusLabel, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium, color = textColor)
         }
     }
 }

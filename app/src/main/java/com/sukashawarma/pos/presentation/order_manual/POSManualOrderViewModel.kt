@@ -49,7 +49,16 @@ data class CartTotals(
     val discount: Double,
     val promoSubsidyAmount: Double,
     val total: Double,
-    val missingAmount: Double? = null
+    val missingAmount: Double? = null,
+    val appliedPromoNames: List<String> = emptyList()
+)
+
+enum class PromoStatus { ACTIVE, SCHEDULED, EXPIRED, QUOTA_EXCEEDED, INACTIVE }
+
+data class PromoStatusEntry(
+    val promo: Promo,
+    val status: PromoStatus,
+    val statusLabel: String
 )
 
 /**
@@ -72,6 +81,9 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
     private val api = SupabaseClient.api
     private val repository = (application as POSApplication).menuRepository
     private val gson = Gson()
+    /** Channel WebSocket `outlet_promos` — begitu admin ubah promo di website, ini
+     *  memicu fetch ulang seketika. Tidak ada polling di jalur ini sama sekali. */
+    private var promoRealtime: com.sukashawarma.pos.data.remote.realtime.PromoRealtimeManager? = null
 
     val currentOutletId = MutableStateFlow("")
     val currentOutletName = MutableStateFlow("")
@@ -126,6 +138,7 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                 .flatMapLatest { outletId ->
                     // Also fetch promos for this outlet asynchronously
                     fetchActivePromos(outletId)
+                    connectPromoRealtime(outletId)
                     repository.snapshot(outletId)
                 }
                 .collect { snapshot ->
@@ -138,6 +151,29 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                     isLoading.value = false
                 }
         }
+    }
+
+    /** Begitu admin ubah promo di website, event WebSocket ini memicu fetch ulang
+     *  seketika — bukan polling — supaya kasir tidak perlu logout/masuk ulang. */
+    private fun connectPromoRealtime(outletId: String) {
+        if (promoRealtime == null) {
+            promoRealtime = com.sukashawarma.pos.data.remote.realtime.PromoRealtimeManager(
+                SupabaseClient.okHttpClient,
+                viewModelScope
+            ).apply {
+                onPromoChanged = {
+                    fetchActivePromos(currentOutletId.value)
+                    com.sukashawarma.pos.data.remote.GlobalEventBus.promoEvent.tryEmit(Unit)
+                }
+            }
+        }
+        promoRealtime?.connect(outletId)
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        promoRealtime?.disconnect()
+        promoRealtime = null
     }
 
     private fun fetchActivePromos(outletId: String) {
@@ -160,12 +196,18 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                         com.sukashawarma.pos.domain.model.Promo(
                             id = dto.id,
                             outletId = dto.outletId,
-                            name = "Promo (ID: ${dto.id.take(4)})", // Placeholder since Dto lacks name
+                            name = dto.promoName ?: "Promo (ID: ${dto.id.take(4)})",
                             scope = scope,
-                            menuItemId = null, // Backend handles item mapping differently if needed
+                            menuItemId = dto.menuItemId,
                             discountType = type,
                             discountValue = dto.discountValue ?: 0.0,
-                            isActive = dto.isActive ?: false
+                            minPurchase = dto.minPurchase,
+                            isActive = dto.isActive ?: false,
+                            usageLimit = dto.usageLimit,
+                            currentUsage = dto.currentUsage ?: 0,
+                            startDate = dto.startDate?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() },
+                            endDate = dto.endDate?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() },
+                            applyToFoodApps = dto.applyToFoodApps ?: false
                         )
                     }
                     activePromos.value = mappedPromos
@@ -333,15 +375,32 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
      *  entirely (page.tsx:434-437). */
     private val directAddCategoryHints = listOf("drink", "minuman", "topping")
 
+    /** Baris "polos" untuk menuItemId ini: tanpa catatan/extra/pilihan paket, dan tidak
+     *  punya anak (extra) yang menempel — satu-satunya bentuk baris yang aman digabung,
+     *  karena baris dengan catatan/extra berbeda bisa mewakili konfigurasi yang berbeda. */
+    private fun findPlainLine(menuItemId: String): CartLine? =
+        cartLines.value.firstOrNull { line ->
+            line.menuItemId == menuItemId &&
+                line.parentId == null &&
+                line.note.isBlank() &&
+                line.packageChoices.isEmpty() &&
+                cartLines.value.none { it.parentId == line.cartItemId }
+        }
+
     fun onMenuItemClick(item: MenuItem) {
         val categoryName = categories.value.find { it.id == item.categoryId }?.name.orEmpty().lowercase()
         if (directAddCategoryHints.any { categoryName.contains(it) }) {
-            cartLines.value = cartLines.value + CartLine(
-                menuItemId = item.id,
-                name = item.name,
-                unitPrice = priceFor(item),
-                quantity = 1
-            )
+            val existing = findPlainLine(item.id)
+            if (existing != null) {
+                setLineQuantity(existing.cartItemId, existing.quantity + 1)
+            } else {
+                cartLines.value = cartLines.value + CartLine(
+                    menuItemId = item.id,
+                    name = item.name,
+                    unitPrice = priceFor(item),
+                    quantity = 1
+                )
+            }
             return
         }
         selectedMenu.value = item
@@ -410,6 +469,17 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
             )
         }
 
+        // Tambahan polos (tanpa catatan/extra/paket) digabung ke baris yang sudah ada
+        // di keranjang alih-alih bikin baris baru — quantity-nya saja yang naik.
+        if (note.isBlank() && choices.isEmpty() && extraLines.isEmpty()) {
+            val existing = findPlainLine(menu.id)
+            if (existing != null) {
+                setLineQuantity(existing.cartItemId, existing.quantity + qty)
+                closeItemModal()
+                return
+            }
+        }
+
         cartLines.value = cartLines.value + parentLine + extraLines
         closeItemModal()
     }
@@ -445,14 +515,17 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
         val items = cartLines.value.map {
             OrderItem(menuItemId = it.menuItemId, name = it.name, quantity = it.quantity, unitPrice = it.unitPrice, subtotal = it.subtotal)
         }
-        val calc = calculateCartUseCase.execute(items, activePromos.value)
+        val activeChannel = if (mode.value == OrderMode.WEBSITE) "website" else channel.value
+        val calc = calculateCartUseCase.execute(items, activePromos.value, activeChannel)
         val subsidy = promoSubsidyAmount()
-        
-        // Calculate missing amount for promo
+
+        // Hint: nearest global promo the cart hasn't reached min_purchase for yet.
         var missingAmount: Double? = null
-        val activePromo = activePromos.value.firstOrNull()
-        if (activePromo != null && activePromo.minPurchase != null && calc.subtotal > 0 && calc.subtotal < activePromo.minPurchase) {
-            missingAmount = activePromo.minPurchase - calc.subtotal
+        val nearGlobalPromo = activePromos.value
+            .filter { it.isActive && it.scope == PromoScope.GLOBAL && it.minPurchase != null }
+            .minByOrNull { it.minPurchase!! }
+        if (nearGlobalPromo != null && calc.subtotal > 0 && calc.subtotal < nearGlobalPromo.minPurchase!!) {
+            missingAmount = nearGlobalPromo.minPurchase - calc.subtotal
         }
 
         return CartTotals(
@@ -460,8 +533,69 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
             discount = calc.totalDiscount,
             promoSubsidyAmount = subsidy,
             total = maxOf(0.0, calc.finalTotal - subsidy),
-            missingAmount = missingAmount
+            missingAmount = missingAmount,
+            appliedPromoNames = calc.appliedPromoNames
         )
+    }
+
+    /** Status kasat mata per promo aktif-di-outlet — supaya kasir bisa lihat langsung kalau
+     *  promo yang admin buat baru "terjadwal" (belum masuk window tanggalnya) alih-alih
+     *  menduga-duga kenapa diskon tidak muncul. */
+    fun promoStatusEntries(promos: List<Promo> = activePromos.value, now: Long = System.currentTimeMillis()): List<PromoStatusEntry> {
+        return promos.map { promo ->
+            val status = when {
+                !promo.isActive -> PromoStatus.INACTIVE
+                promo.usageLimit != null && promo.currentUsage >= promo.usageLimit -> PromoStatus.QUOTA_EXCEEDED
+                promo.endDate != null && now > promo.endDate -> PromoStatus.EXPIRED
+                promo.startDate != null && now < promo.startDate -> PromoStatus.SCHEDULED
+                else -> PromoStatus.ACTIVE
+            }
+            val label = when (status) {
+                PromoStatus.ACTIVE -> "Aktif sekarang"
+                PromoStatus.SCHEDULED -> "Terjadwal mulai ${formatPromoDateTime(promo.startDate)}"
+                PromoStatus.EXPIRED -> "Sudah berakhir ${formatPromoDateTime(promo.endDate)}"
+                PromoStatus.QUOTA_EXCEEDED -> "Kuota pemakaian habis"
+                PromoStatus.INACTIVE -> "Nonaktif"
+            }
+            PromoStatusEntry(promo, status, label)
+        }.sortedBy { it.status.ordinal }
+    }
+
+    /** Promo per-menu paling relevan untuk ditampilkan di card menu (badge + harga coret) —
+     *  promo aktif diprioritaskan di atas yang cuma terjadwal, meniru tampilan situs web. */
+    fun promoStatusForMenuItem(menuItemId: String, promos: List<Promo> = activePromos.value, now: Long = System.currentTimeMillis()): PromoStatusEntry? {
+        return promoStatusEntries(promos, now)
+            .filter { it.promo.scope == PromoScope.ITEM && it.promo.menuItemId == menuItemId }
+            .minByOrNull { it.status.ordinal }
+    }
+
+    /** Harga per-unit setelah potongan promo aktif — dipakai buat tampilan harga-coret di card menu. */
+    fun discountedPriceFor(item: MenuItem, promo: Promo): Double {
+        val price = priceFor(item)
+        return when (promo.discountType) {
+            DiscountType.PERCENTAGE -> price * (1 - promo.discountValue / 100.0)
+            DiscountType.NOMINAL -> maxOf(0.0, price - promo.discountValue)
+        }
+    }
+
+    private fun formatPromoDateTime(millis: Long?): String {
+        if (millis == null) return "-"
+        return runCatching {
+            val formatter = DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm")
+                .withZone(java.time.ZoneId.of("Asia/Jakarta"))
+            formatter.format(Instant.ofEpochMilli(millis))
+        }.getOrDefault("-")
+    }
+
+    /** Label tanggal-jam singkat WIB buat badge "TERJADWAL" di card menu — meniru
+     *  format situs web ("17 Agu, 17.00 WIB"). */
+    fun scheduleLabelShort(promo: Promo): String? {
+        val millis = promo.startDate ?: return null
+        return runCatching {
+            val formatter = DateTimeFormatter.ofPattern("d MMM, HH.mm", java.util.Locale("id", "ID"))
+                .withZone(java.time.ZoneId.of("Asia/Jakarta"))
+            "${formatter.format(Instant.ofEpochMilli(millis))} WIB"
+        }.getOrNull()
     }
 
     private fun promoSubsidyAmount(): Double {
@@ -619,10 +753,28 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                 lastOfflineOrderNumber = maxToday,
                 channel = activeChannel,
                 source = if (isWalkInLike) OrderSource.POS else OrderSource.ONLINE,
-                additionalDiscount = totals.promoSubsidyAmount
+                additionalDiscount = totals.promoSubsidyAmount,
+                cashierName = currentUsername.value
             )
+            val effectiveReleaseTime = if (mode.value == OrderMode.WEBSITE) {
+                com.sukashawarma.pos.domain.usecase.PreparingOrderClassifier.effectiveReleaseTime(
+                    createdAt = order.createdAt,
+                    releaseTime = null,
+                    pickupTime = pickupTime.value,
+                    notes = null
+                )
+            } else 0L
+            val pickupTimeIso = effectiveReleaseTime.takeIf { it > 0L }?.let {
+                DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(it + 20 * 60_000L))
+            }
+            val releaseTimeIso = effectiveReleaseTime.takeIf { it > 0L }?.let {
+                DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(it))
+            }
 
             var pendingSync = !online
+            // Beda dari "device benar-benar tidak ada internet" — dipakai supaya pesan ke
+            // kasir tidak salah menuduh koneksi padahal request ke server yang gagal/ditolak.
+            var syncFailedWhileOnline = false
             var serverOrderNumber = order.orderNumber
 
             var localPaymentProofPath: String? = null
@@ -643,7 +795,10 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                         amountReceived = order.amountReceived,
                         changeAmount = order.changeAmount,
                         createdAt = createdAtIso,
-                        channel = order.channel
+                        channel = order.channel,
+                        pickupTime = pickupTimeIso,
+                        releaseTime = releaseTimeIso,
+                        cashierName = order.cashierName
                     )
                     val orderRes = api.createOrder(payload)
                     if (orderRes.isSuccessful && !orderRes.body().isNullOrEmpty()) {
@@ -661,15 +816,34 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                         }
                         api.createOrderItems(itemPayloads)
 
+                        order.appliedPromoIds.forEach { promoId ->
+                            try {
+                                api.incrementPromoUsage(
+                                    com.sukashawarma.pos.data.remote.dto.IncrementPromoUsagePayload(promoId = promoId)
+                                )
+                            } catch (e: Exception) {
+                                android.util.Log.e("POSManualOrderVM", "Gagal increment_promo_usage untuk promo $promoId", e)
+                            }
+                        }
+
                         qrisProofBitmap.value?.let { bitmap ->
                             uploadPaymentProof(outletId = order.outletId, orderId = order.id, orderNumber = serverOrderNumber, bitmap = bitmap)
                         }
                     } else {
+                        // Device online tapi request-nya sendiri gagal (validasi, RLS, timeout, dll) —
+                        // dicatat di logcat karena sebelumnya gagal total tanpa jejak, membuat order
+                        // yang bermasalah tampak "OFFLINE" selamanya tanpa cara mendiagnosis kenapa.
+                        android.util.Log.e(
+                            "POSManualOrderVM",
+                            "Submit order ${order.id} gagal walau online: HTTP ${orderRes.code()} ${orderRes.errorBody()?.string().orEmpty()}"
+                        )
                         pendingSync = true
+                        syncFailedWhileOnline = true
                     }
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    android.util.Log.e("POSManualOrderVM", "Submit order ${order.id} melempar exception walau online", e)
                     pendingSync = true
+                    syncFailedWhileOnline = true
                 }
             }
 
@@ -715,7 +889,10 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                 dirtyFields = "",
                 channel = order.channel,
                 isSyncedFromOffline = false,
-                localPaymentProofPath = localPaymentProofPath
+                localPaymentProofPath = localPaymentProofPath,
+                notes = order.notes,
+                effectiveReleaseTime = effectiveReleaseTime,
+                cashierName = order.cashierName
             )
             orderDao.insertOrder(entity)
             // Jangan tunggu echo realtime dari server: layar lain (target harian,
@@ -735,8 +912,14 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
 
 
             if (pendingSync) {
-                orderErrorMessage.value = "Order tersimpan lokal (offline) dengan nomor sementara #$serverOrderNumber. " +
-                    "Akan di-sinkronkan otomatis saat koneksi internet tersedia."
+                orderErrorMessage.value = if (syncFailedWhileOnline) {
+                    "Order tersimpan lokal (offline) dengan nomor sementara #$serverOrderNumber. " +
+                        "Koneksi internet ada, tapi server menolak/gagal merespons — akan dicoba " +
+                        "sinkron ulang otomatis."
+                } else {
+                    "Order tersimpan lokal (offline) dengan nomor sementara #$serverOrderNumber. " +
+                        "Akan di-sinkronkan otomatis saat koneksi internet tersedia."
+                }
             }
 
             // Reset cart for the next order, keep the active mode (page.tsx resets

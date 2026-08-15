@@ -332,11 +332,23 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun updateOrderStatus(order: Order, newStatus: OrderStatus) {
         viewModelScope.launch {
-            orderDao.updateOrderStatus(order.id, newStatus.name)
+            // Order Website tidak pernah dapat cashier_name saat dibuat (dibuat oleh
+            // customer, bukan kasir) — dicatat di sini, saat kasir yang benar-benar
+            // menekan Selesai, supaya laporan tahu siapa yang memproses pesanan itu.
+            val cashierNameToRecord = currentCashierName.value.takeIf { it.isNotBlank() }
+            if (cashierNameToRecord != null) {
+                orderDao.updateOrderStatusAndCashier(order.id, newStatus.name, cashierNameToRecord)
+            } else {
+                orderDao.updateOrderStatus(order.id, newStatus.name)
+            }
             try {
+                val patch = mutableMapOf("status" to newStatus.name.lowercase())
+                if (cashierNameToRecord != null) {
+                    patch["cashier_name"] = cashierNameToRecord
+                }
                 val res = api.updateOrderStatus(
                     orderIdFilter = "eq.${order.id}",
-                    patch = mapOf("status" to newStatus.name.lowercase())
+                    patch = patch
                 )
                 // Emit HANYA setelah server benar-benar menerima perubahan.
                 //
@@ -347,6 +359,43 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 if (res.isSuccessful) {
                     com.sukashawarma.pos.data.remote.GlobalEventBus.orderSyncEvent.tryEmit(Unit)
                     com.sukashawarma.pos.data.remote.GlobalEventBus.targetRefreshEvent.tryEmit(Unit)
+
+                    // Order website online yang ditandai Selesai di sini (papan order native)
+                    // juga harus memicu WA "pesanan siap diambil" ke customer — sebelumnya
+                    // hanya jalur web pos-kasir (markAsCompleted di KasirOrderClient.tsx) yang
+                    // melakukan ini, jadi order yang diselesaikan lewat tablet native tidak
+                    // pernah mengirim notifikasi WA sama sekali.
+                    //
+                    // PENTING (koreksi rilis sebelumnya): guard ini sempat dipersempit ke
+                    // `order.channel == "website"`, dengan asumsi keliru bahwa order website
+                    // asli punya channel itu. Dibuktikan lewat query production: dari 167 order
+                    // `source='online'` yang benar-benar dari website customer, 132 di antaranya
+                    // punya `channel = null` dan cuma 1 yang punya `channel = 'website'` — nilai
+                    // channel="website" di DB justru dipakai tab "Order Website (Backup)" (order
+                    // yang diketik manual kasir, source='manual', TANPA external_order_id), yang
+                    // seharusnya memang tidak memicu WA ini. Guard channel=="website" itu malah
+                    // mematikan notifikasi untuk order website asli. Server (notify-online-done)
+                    // sudah menyaring dengan benar lewat `order.source==='online' &&
+                    // order.external_order_id` — jadi cukup jaga di source==ONLINE saja di sini,
+                    // biar tetap ikut GoFood/GrabFood/dst (server men-skip yang tidak relevan).
+                    if (order.source == com.sukashawarma.pos.domain.model.OrderSource.ONLINE &&
+                        newStatus == OrderStatus.COMPLETED
+                    ) {
+                        try {
+                            val notifyRes = api.notifyOnlineOrderDone(
+                                url = "$WEB_POS_API_BASE/api/orders/notify-online-done",
+                                payload = mapOf("order_id" to order.id)
+                            )
+                            if (!notifyRes.isSuccessful) {
+                                android.util.Log.e(
+                                    "DashboardViewModel",
+                                    "notify-online-done gagal untuk order ${order.id}: HTTP ${notifyRes.code()}"
+                                )
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.e("DashboardViewModel", "Gagal memanggil notify-online-done", e)
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 // Offline: status lokal sudah tersimpan dan layar lain membaca Room
@@ -354,6 +403,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 e.printStackTrace()
             }
         }
+    }
+
+    companion object {
+        private const val WEB_POS_API_BASE = "https://pos.sukashawarma.com"
     }
 
     val printStatusMessage = MutableStateFlow<String?>(null)
@@ -507,7 +560,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             isOffline = entity.syncState != com.sukashawarma.pos.data.local.entity.SyncState.SYNCED.name,
             isSyncedFromOffline = entity.isSyncedFromOffline,
             channel = entity.channel,
-            notes = entity.notes
+            notes = entity.notes,
+            effectiveReleaseTime = entity.effectiveReleaseTime,
+            cashierName = entity.cashierName
         )
     }
 
@@ -559,7 +614,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             syncState = com.sukashawarma.pos.data.local.entity.SyncState.SYNCED.name,
             dirtyFields = "",
             isSyncedFromOffline = false,
-            channel = dto.channel
+            channel = dto.channel,
+            effectiveReleaseTime = com.sukashawarma.pos.domain.usecase.PreparingOrderClassifier.effectiveReleaseTime(
+                createdAt = parseIsoTimestamp(dto.createdAt),
+                releaseTime = dto.releaseTime,
+                pickupTime = dto.pickupTime,
+                notes = dto.notes
+            ),
+            cashierName = dto.cashierName
         )
     }
 }

@@ -16,3 +16,11 @@ captures/
 
 # Berisi password keystore release — sengaja lokal saja, jangan commit.
 docs/RELEASE-DAN-AUTO-UPDATE.md
+
+# Artefak rilis (APK/patch/screenshot) — dipublikasikan ke Supabase Storage,
+# bukan disimpan di repo (lihat scripts/publish.ps1).
+release/
+
+# Crash/replay dump JVM dari sesi gradle lokal.
+hs_err_pid*.log
+replay_pid*.log

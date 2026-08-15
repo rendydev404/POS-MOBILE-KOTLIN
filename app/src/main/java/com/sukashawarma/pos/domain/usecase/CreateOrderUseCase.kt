@@ -23,9 +23,10 @@ class CreateOrderUseCase(
         source: OrderSource = OrderSource.POS,
         // Order-manual's "Promo Apps" subsidy input (Food Apps channels only) — reduces
         // the payable total same as a discount, but isn't itself a Promo row.
-        additionalDiscount: Double = 0.0
+        additionalDiscount: Double = 0.0,
+        cashierName: String? = null
     ): Order {
-        val calc = calculateCartUseCase.execute(items, activePromos)
+        val calc = calculateCartUseCase.execute(items, activePromos, channel)
         val totalDiscount = calc.totalDiscount + additionalDiscount
         val finalTotal = maxOf(0.0, calc.finalTotal - additionalDiscount)
         val changeAmount = if (paymentMethod == PaymentMethod.CASH) {
@@ -55,7 +56,9 @@ class CreateOrderUseCase(
             amountReceived = amountReceived,
             changeAmount = changeAmount,
             isOffline = !isOnline,
-            channel = channel
+            channel = channel,
+            appliedPromoIds = calc.appliedPromoIds,
+            cashierName = cashierName
         )
     }
 }

@@ -31,6 +31,9 @@ interface OrderDao {
     @Query("UPDATE local_orders SET status = :status WHERE id = :orderId")
     suspend fun updateOrderStatus(orderId: String, status: String)
 
+    @Query("UPDATE local_orders SET status = :status, cashierName = :cashierName WHERE id = :orderId")
+    suspend fun updateOrderStatusAndCashier(orderId: String, status: String, cashierName: String)
+
     @Query("UPDATE local_orders SET kitchenReceiptPrinted = :printed WHERE id = :orderId")
     suspend fun updateKitchenReceiptStatus(orderId: String, printed: Boolean)
 

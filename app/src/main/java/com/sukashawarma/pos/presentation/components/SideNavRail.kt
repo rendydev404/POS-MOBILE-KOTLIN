@@ -70,6 +70,8 @@ import androidx.compose.ui.unit.sp
 
 import com.sukashawarma.pos.R
 
+import com.sukashawarma.pos.BuildConfig
+
 import com.sukashawarma.pos.presentation.theme.*
 
 enum class POSTab {
@@ -380,6 +382,13 @@ fun SideNavRail(
 
             ) {
 
+                // Hanya satu popover/accordion boleh aktif pada satu waktu,
+                // sama seperti `openDropdown` di KasirNav web.
+                var openDropdownLabel by remember { mutableStateOf<String?>(null) }
+                LaunchedEffect(isCollapsed) {
+                    if (!isCollapsed) openDropdownLabel = null
+                }
+
                 POS_MENU_LINKS.forEach { menuItem ->
 
                     val hasSubItems = !menuItem.subItems.isNullOrEmpty()
@@ -388,7 +397,7 @@ fun SideNavRail(
 
                     val isActive = (!hasSubItems && menuItem.tab == currentTab) || isAnySubActive
 
-                    var isDropdownExpanded by remember { mutableStateOf(false) }
+                    val isDropdownExpanded = openDropdownLabel == menuItem.label
 
                     Box {
 
@@ -408,7 +417,7 @@ fun SideNavRail(
 
                                     if (hasSubItems) {
 
-                                        isDropdownExpanded = !isDropdownExpanded
+                                        openDropdownLabel = if (isDropdownExpanded) null else menuItem.label
 
                                     } else {
 
@@ -510,85 +519,49 @@ fun SideNavRail(
                         // Dropdown for Collapsed Mode
 
                         if (isCollapsed && hasSubItems) {
-
                             DropdownMenu(
-
                                 expanded = isDropdownExpanded,
-
-                                onDismissRequest = { isDropdownExpanded = false },
-
+                                onDismissRequest = { openDropdownLabel = null },
+                                offset = androidx.compose.ui.unit.DpOffset(8.dp, 0.dp),
                                 modifier = Modifier
-
+                                    .width(192.dp)
+                                    .clip(RoundedCornerShape(16.dp))
                                     .background(Color(0xFFFFF8F1))
-
-                                    .padding(4.dp)
-
+                                    .border(1.dp, Color(0xFFD9C2B2), RoundedCornerShape(16.dp))
+                                    .padding(8.dp)
                             ) {
-
                                 Text(
-
                                     text = menuItem.label.uppercase(),
-
                                     color = Color(0xFFA48E7F),
-
                                     fontWeight = FontWeight.Bold,
-
                                     fontSize = 11.sp,
-
                                     letterSpacing = 1.sp,
-
                                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-
                                 )
-
                                 Spacer(modifier = Modifier.height(4.dp))
-
                                 menuItem.subItems!!.forEach { subItem ->
-
                                     val isSubActive = currentTab == subItem.tab
-
                                     Box(
-
                                         modifier = Modifier
-
                                             .fillMaxWidth()
-
                                             .padding(horizontal = 4.dp, vertical = 2.dp)
-
-                                            .clip(RoundedCornerShape(8.dp))
-
+                                            .clip(RoundedCornerShape(12.dp))
                                             .background(if (isSubActive) ActiveBgColor else Color.Transparent)
-
                                             .clickable {
-
                                                 onTabSelected(subItem.tab)
-
-                                                isDropdownExpanded = false
-
+                                                openDropdownLabel = null
                                             }
-
                                             .padding(horizontal = 12.dp, vertical = 10.dp)
-
                                     ) {
-
                                         Text(
-
                                             text = subItem.label,
-
                                             fontWeight = FontWeight.Bold,
-
                                             fontSize = 13.sp,
-
                                             color = if (isSubActive) Color.White else InactiveTextColor
-
                                         )
-
                                     }
-
                                 }
-
                             }
-
                         }
 
                     }
@@ -858,6 +831,29 @@ fun SideNavRail(
                     }
 
                 }
+
+                // Bukti versi aktif setelah updater menerapkan APK dan membuka
+                // kembali aplikasi. Label ini sengaja kecil agar tidak mengganggu
+                // operasional, tetapi memudahkan verifikasi update otomatis.
+                Text(
+
+                        text = if (isCollapsed) "v${BuildConfig.VERSION_NAME}" else "POS v${BuildConfig.VERSION_NAME}",
+
+                        color = InactiveTextColor.copy(alpha = 0.65f),
+
+                        fontSize = 10.sp,
+
+                        fontWeight = FontWeight.Medium,
+
+                        modifier = Modifier
+
+                            .fillMaxWidth()
+
+                            .padding(horizontal = 10.dp),
+
+                        textAlign = TextAlign.Center
+
+                    )
 
             }
 

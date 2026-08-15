@@ -21,4 +21,5 @@ object GlobalEventBus {
     val gateRefreshEvent = event()
     val pettyCashEvent = event()
     val stockEvent = event()
+    val promoEvent = event()
 }
