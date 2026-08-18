@@ -27,8 +27,23 @@ class CreateOrderUseCase(
         cashierName: String? = null
     ): Order {
         val calc = calculateCartUseCase.execute(items, activePromos, channel)
-        val totalDiscount = calc.totalDiscount + additionalDiscount
-        val finalTotal = maxOf(0.0, calc.finalTotal - additionalDiscount)
+        
+        val totalDiscount: Double
+        val promoSubsidy: Double
+        val finalTotal: Double
+        
+        val isOnlineOrderType = source == OrderSource.ONLINE || channel != null
+        
+        if (isOnlineOrderType) {
+            totalDiscount = calc.totalDiscount
+            promoSubsidy = calc.promoSubsidy + additionalDiscount
+            finalTotal = calc.finalTotal // For online, finalTotal is already subtotal (discount doesn't reduce it)
+        } else {
+            totalDiscount = calc.totalDiscount + additionalDiscount
+            promoSubsidy = calc.promoSubsidy
+            finalTotal = maxOf(0.0, calc.finalTotal - additionalDiscount)
+        }
+        
         val changeAmount = if (paymentMethod == PaymentMethod.CASH) {
             maxOf(0.0, amountReceived - finalTotal)
         } else {
@@ -52,6 +67,7 @@ class CreateOrderUseCase(
             items = items,
             subtotal = calc.subtotal,
             discountAmount = totalDiscount,
+            promoSubsidy = promoSubsidy,
             totalAmount = finalTotal,
             amountReceived = amountReceived,
             changeAmount = changeAmount,

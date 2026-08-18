@@ -790,7 +790,7 @@ private fun OrderRow(
                         }
                         if (discount != null) {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Diskon Tambahan", color = Color(0xFF6B7280), fontSize = 13.sp)
+                                Text("Diskon", color = Color(0xFF6B7280), fontSize = 13.sp)
                                 Text("- Rp ${String.format("%,.0f", discount)}", color = Color(0xFFF59E0B), fontSize = 13.sp, fontWeight = FontWeight.Medium)
                             }
                         }
