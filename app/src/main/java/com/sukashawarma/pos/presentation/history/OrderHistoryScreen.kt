@@ -659,11 +659,21 @@ private fun OrderRow(
                 }
 
                 Row(modifier = Modifier.weight(2.5f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
-                    Text(
-                        text = "Rp ${String.format("%,.0f", order.totalAmount)}",
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF111827)
-                    )
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = "Rp ${String.format("%,.0f", order.totalAmount)}",
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF111827)
+                        )
+                        val subsidy = order.promoSubsidy?.takeIf { it > 0.0 }
+                        if (subsidy != null) {
+                            Text("-Rp ${String.format("%,.0f", subsidy)}", color = Color(0xFFEF4444), fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                        }
+                        val discount = order.discountAmount?.takeIf { it > 0.0 }
+                        if (discount != null) {
+                            Text("-Rp ${String.format("%,.0f", discount)}", color = Color(0xFFF59E0B), fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                        }
+                    }
                     Spacer(modifier = Modifier.width(12.dp))
                     val badgeColor = when (order.paymentMethod?.uppercase()) {
                         "CASH" -> Color(0xFF10B981)
@@ -762,6 +772,32 @@ private fun OrderRow(
                                     }
                                 }
                             }
+                        }
+                    }
+
+                    val subsidy = order.promoSubsidy?.takeIf { it > 0.0 }
+                    val discount = order.discountAmount?.takeIf { it > 0.0 }
+                    if (subsidy != null || discount != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        androidx.compose.material3.HorizontalDivider(color = Color(0xFFE5E7EB), thickness = 1.dp)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        if (subsidy != null) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Potongan App", color = Color(0xFF6B7280), fontSize = 13.sp)
+                                Text("- Rp ${String.format("%,.0f", subsidy)}", color = Color(0xFFEF4444), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            }
+                        }
+                        if (discount != null) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Diskon Tambahan", color = Color(0xFF6B7280), fontSize = 13.sp)
+                                Text("- Rp ${String.format("%,.0f", discount)}", color = Color(0xFFF59E0B), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Total Akhir", color = Color(0xFF111827), fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            Text("Rp ${String.format("%,.0f", order.totalAmount)}", color = Color(0xFF111827), fontSize = 14.sp, fontWeight = FontWeight.Bold)
                         }
                     }
 

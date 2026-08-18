@@ -751,7 +751,17 @@ fun TransactionHistoryTable(orders: List<OrderDto>, searchQuery: String, onSearc
                                     com.sukashawarma.pos.presentation.components.OrderSourceBadge(source = order.source, channel = order.channel)
                                 }
                                 Text(order.paymentMethod?.uppercase() ?: "-", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2563EB), modifier = Modifier.weight(0.8f).background(Color(0xFFEFF6FF), RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 4.dp))
-                                Text(formatRupiah(order.totalAmount), fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF111827), modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                                Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+                                    Text(formatRupiah(order.totalAmount), fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF111827), textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                                    val subsidy = order.promoSubsidy?.takeIf { it > 0.0 }
+                                    if (subsidy != null) {
+                                        Text("Potongan App: -${formatRupiah(subsidy)}", color = Color(0xFFEF4444), fontSize = 10.sp, fontWeight = FontWeight.Medium, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                                    }
+                                    val discount = order.discountAmount?.takeIf { it > 0.0 }
+                                    if (discount != null) {
+                                        Text("Diskon: -${formatRupiah(discount)}", color = Color(0xFFF59E0B), fontSize = 10.sp, fontWeight = FontWeight.Medium, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                                    }
+                                }
                             }
                             HorizontalDivider(color = Color(0xFFF3F4F6))
                         }
