@@ -91,7 +91,6 @@ class OrderHistoryViewModel(application: Application) : AndroidViewModel(applica
         if (filter == "custom" && (customStartDate.value == null || customEndDate.value == null)) return
 
         viewModelScope.launch {
-            isLoading.value = true
             try {
                 val range = resolveRange()
                 val startIso = range.startIso
@@ -128,8 +127,10 @@ class OrderHistoryViewModel(application: Application) : AndroidViewModel(applica
                 val startMillis = range.startMillis
                 val endMillis = range.endMillis
 
-                // Start with empty to show loading state effectively
-                ordersHistory.value = emptyList()
+                // Start with empty to show loading state effectively only on first load
+                if (ordersHistory.value.isEmpty()) {
+                    isLoading.value = true
+                }
 
                 if (NetworkMonitor.isOnline.value) {
                     loadRevenueSummary(outletId, range, paymentMethod, channel)

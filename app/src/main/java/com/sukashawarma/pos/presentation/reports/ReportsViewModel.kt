@@ -170,7 +170,9 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
         val outletId = _currentOutletId.value
         if (outletId.isEmpty()) return
 
-        _isLoading.value = true
+        if (_analyticsData.value.orders.isEmpty()) {
+            _isLoading.value = true
+        }
         try {
             val range = resolveRange()
             if (NetworkMonitor.isOnline.value) {
