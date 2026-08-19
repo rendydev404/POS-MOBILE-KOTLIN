@@ -256,10 +256,12 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
 
         completed.forEach { o ->
             val gross = RevenueCalculator.grossOf(o)
+            val netAmount = RevenueCalculator.netOf(o) // Sama seperti actions.ts: netAmount = Number(o.total_amount) || 0
 
             val pm = o.paymentMethod ?: "unknown"
             val prev = paymentBreakdown[pm] ?: PaymentStats(0, 0.0)
-            paymentBreakdown[pm] = PaymentStats(prev.count + 1, prev.revenue + gross)
+            // actions.ts: paymentBreakdown[pm].revenue += netAmount
+            paymentBreakdown[pm] = PaymentStats(prev.count + 1, prev.revenue + netAmount)
 
             // Jam dan hari dihitung di zona Jakarta, sama seperti RPC.
             val instant = com.sukashawarma.pos.domain.gate.JakartaTime.instantOrNull(o.createdAt)
@@ -267,12 +269,14 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
                 val local = instant.atZone(com.sukashawarma.pos.domain.gate.JakartaTime.ZONE)
                 hourly[local.hour] += 1
                 val key = local.toLocalDate().toString()
-                dailyMap[key] = (dailyMap[key] ?: 0.0) + gross
+                dailyMap[key] = (dailyMap[key] ?: 0.0) + gross // Tren Pendapatan di web (grafik) biasanya omzet kotor
             }
 
             o.orderItems?.forEach { oi ->
-                val curr = itemMap[oi.displayName] ?: ItemStats(0, 0.0)
-                itemMap[oi.displayName] = ItemStats(curr.qty + oi.quantity, curr.revenue + oi.subtotal)
+                // actions.ts: const name = oi.menu_item_name || 'Item'
+                val name = oi.menuItemName ?: "Item"
+                val curr = itemMap[name] ?: ItemStats(0, 0.0)
+                itemMap[name] = ItemStats(curr.qty + oi.quantity, curr.revenue + oi.subtotal)
             }
         }
 
@@ -292,7 +296,8 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
             hourly = hourly,
             dailyEntries = dailyMap.toList().sortedBy { it.first },
             bestSellers = itemMap.toList().sortedByDescending { it.second.qty }.take(10),
-            avgOrderValue = if (summary.orderCount > 0) summary.gross / summary.orderCount else 0.0,
+            // actions.ts: Math.round(netRevenue / totalOrders)
+            avgOrderValue = if (summary.orderCount > 0) summary.net / summary.orderCount else 0.0,
             totalCashVariance = current.shifts.sumOf { it.variance ?: 0.0 },
             peakHour = if (maxHourly > 0) hourly.indexOf(maxHourly) else null
         )

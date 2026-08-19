@@ -48,22 +48,18 @@ object RevenueCalculator {
     fun isRevenue(entity: LocalOrderEntity): Boolean = isRevenue(entity.status, entity.cancellationStatus)
 
     /**
-     * Omzet kotor satu pesanan: jumlah subtotal seluruh baris item.
-     *
-     * Bila `order_items` tidak ikut terbawa (mis. response yang dipangkas), nilainya
-     * direkonstruksi dari `total_amount` ditambah potongan yang tercatat — hasilnya
-     * sama persis selama diskon memang tersimpan di kolomnya.
+     * Omzet kotor satu pesanan: diubah agar sama persis dengan web POS (`actions.ts`).
+     * Web selalu menjumlahkan `total_amount + discount_amount + promo_subsidy` dan
+     * MENGABAIKAN total harga dari `order_items`. Jika kita tidak menggunakan
+     * cara yang persis sama, angka omzet bisa beda.
      */
     fun grossOf(order: OrderDto): Double {
-        val items = order.orderItems
-        if (!items.isNullOrEmpty()) return items.sumOf { it.subtotal }
         return order.totalAmount + (order.discountAmount ?: 0.0) + (order.promoSubsidy ?: 0.0)
     }
 
-    /** Omzet kotor dari cache Room. Kolom `subtotal` sudah berisi jumlah subtotal item. */
+    /** Omzet kotor dari cache Room. Disesuaikan dengan logika yang sama. */
     fun grossOf(entity: LocalOrderEntity): Double =
-        if (entity.subtotal > 0.0) entity.subtotal
-        else entity.totalAmount + entity.discountAmount + entity.promoSubsidy
+        entity.totalAmount + entity.discountAmount + entity.promoSubsidy
 
     /** Uang yang benar-benar dibayar pelanggan. Dipakai untuk kas, bukan untuk omzet. */
     fun netOf(order: OrderDto): Double = order.totalAmount
