@@ -46,24 +46,83 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     val outlets = MutableStateFlow<List<Pair<String, String>>>(emptyList())
 
     /**
+     * Detak per menit supaya batas "hari ini" ikut dihitung ulang saat lewat
+     * tengah malam, meski tidak ada pesanan baru yang masuk.
+     *
+     * `LocalDate.now()` di [omzetKotorHariIni] dan [completedOrders] dulu hanya
+     * dievaluasi ulang saat Room memancarkan baris baru — dan `insertOrders`
+     * sengaja tidak menulis baris yang isinya identik (lihat [syncOrdersFromServer]),
+     * jadi tablet yang menyala semalaman tanpa transaksi baru tetap menampilkan
+     * "hari ini" versi kemarin sampai ada perubahan data.
+     */
+    private val dayTicker: Flow<Unit> = flow {
+        while (true) {
+            emit(Unit)
+            delay(60_000)
+        }
+    }
+
+    /** Angka RPC saat online; null berarti "belum ada / lagi offline", jatuh balik ke hitungan Room. */
+    private val _omzetServerOverride = MutableStateFlow<Double?>(null)
+
+    /**
      * Omzet kotor hari ini: jumlah subtotal item dari pesanan `COMPLETED`, zona Jakarta.
      *
      * Dulu ini menjumlahkan `totalAmount` (nilai setelah diskon) dan diberi label
      * "omzet", sehingga angkanya tidak pernah cocok dengan halaman Laporan.
-     * Aman dihitung dari Room karena cakupannya hanya hari ini — semua pesanan hari
-     * berjalan pasti ada di cache lokal.
+     *
+     * Selagi online, nilainya diambil dari RPC `pos_revenue_summary_guarded` lewat
+     * [_omzetServerOverride] — sumber yang sama dipakai dashboard web. Perhitungan
+     * dari Room dulu dianggap "aman karena hari ini pasti sudah ada di cache
+     * lokal", tapi itu cuma benar kalau event realtime yang
+     * menulis ke Room tidak pernah telat/kelewat — pada kenyataannya kadang telat,
+     * dan itu sumber omzet native pernah beda dari web. Room tetap dipakai sebagai
+     * fallback saat offline.
      */
-    val omzetKotorHariIni: StateFlow<Double> = currentOutletId
-        .flatMapLatest { outletId ->
-            orderDao.getOrdersByOutlet(outletId).map { entities ->
-                val today = LocalDate.now(ZoneId.of("Asia/Jakarta"))
-                entities.filter {
-                    com.sukashawarma.pos.domain.usecase.RevenueCalculator.isRevenue(it) &&
-                        isToday(it.createdAt, today)
-                }.sumOf { com.sukashawarma.pos.domain.usecase.RevenueCalculator.grossOf(it) }
-            }
-        }
+    val omzetKotorHariIni: StateFlow<Double> = combine(
+        currentOutletId.flatMapLatest { outletId ->
+            combine(orderDao.getOrdersByOutlet(outletId), dayTicker) { entities, _ -> entities }
+                .map { entities ->
+                    val today = LocalDate.now(ZoneId.of("Asia/Jakarta"))
+                    entities.filter {
+                        com.sukashawarma.pos.domain.usecase.RevenueCalculator.isRevenue(it) &&
+                            isToday(it.createdAt, today)
+                    }.sumOf { com.sukashawarma.pos.domain.usecase.RevenueCalculator.grossOf(it) }
+                }
+        },
+        _omzetServerOverride
+    ) { localGross, serverGross -> serverGross ?: localGross }
         .stateIn(viewModelScope, SharingStarted.Lazily, 0.0)
+
+    /** Menarik ulang [_omzetServerOverride] tiap ganti outlet, event sync, atau balik online. */
+    private suspend fun refreshOmzetFromServer() {
+        val outletId = currentOutletId.value
+        if (outletId.isBlank() || !NetworkMonitor.isOnline.value) {
+            _omzetServerOverride.value = null
+            return
+        }
+        try {
+            val today = LocalDate.now(ZoneId.of("Asia/Jakarta"))
+            val startIso = com.sukashawarma.pos.domain.gate.JakartaTime.startOfDayIso(today)
+            val endIso = com.sukashawarma.pos.domain.gate.JakartaTime.endOfDayIso(today)
+            
+            val conditions = mutableListOf<String>()
+            conditions.add("created_at.gte.$startIso")
+            conditions.add("created_at.lte.$endIso")
+            val filters = mapOf(
+                "outlet_id" to "eq.$outletId",
+                "limit" to "1000",
+                "and" to "(${conditions.joinToString(",")})"
+            )
+            
+            val dtos = api.getOrders(filters).body() ?: return
+            val completed = dtos.filter { com.sukashawarma.pos.domain.usecase.RevenueCalculator.isRevenue(it) }
+            val gross = completed.sumOf { com.sukashawarma.pos.domain.usecase.RevenueCalculator.grossOf(it) }
+            _omzetServerOverride.value = gross
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
     /** Bahan menipis + kritis di outlet ini, apa adanya dari `monitoring_view_crew`. */
     val stockAlerts = MutableStateFlow<List<StockAlert>>(emptyList())
 
@@ -103,13 +162,13 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         .map { list -> list.filter { it.status == OrderStatus.PREPARING } }
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
-    val completedOrders: StateFlow<List<Order>> = orders
-        .map { list -> 
+    val completedOrders: StateFlow<List<Order>> = combine(orders, dayTicker) { list, _ -> list }
+        .map { list ->
             val today = LocalDate.now(ZoneId.of("Asia/Jakarta"))
-            list.filter { 
-                (it.status == OrderStatus.COMPLETED || it.status == OrderStatus.READY) && 
-                isToday(it.createdAt, today)
-            } 
+            list.filter {
+                (it.status == OrderStatus.COMPLETED || it.status == OrderStatus.READY) &&
+                    isToday(it.createdAt, today)
+            }
         }
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
@@ -143,6 +202,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                 }
             }
+        }
+        viewModelScope.launch {
+            merge(
+                currentOutletId.map { },
+                com.sukashawarma.pos.data.remote.GlobalEventBus.orderSyncEvent.map { },
+                NetworkMonitor.isOnline.map { },
+                dayTicker
+            ).collectLatest { refreshOmzetFromServer() }
         }
     }
 
@@ -643,11 +710,15 @@ private fun safeParseSource(value: String): OrderSource = when (value.lowercase(
 private fun safeParsePaymentMethod(value: String?): PaymentMethod =
     try { PaymentMethod.valueOf((value ?: "cash").uppercase()) } catch (e: Exception) { PaymentMethod.CASH }
 
-private fun parseIsoTimestamp(iso: String): Long = try {
-    java.time.Instant.parse(if (iso.endsWith("Z") || iso.contains("+")) iso else "${iso}Z").toEpochMilli()
-} catch (e: Exception) {
-    System.currentTimeMillis()
-}
+/**
+ * `Instant.parse` melempar untuk timestamp ber-offset seperti `...+07:00` — bug yang
+ * sama sudah diperbaiki di [OrderHistoryViewModel] dan [ShiftViewModel] dengan
+ * [com.sukashawarma.pos.domain.gate.JakartaTime.instantOrNull]. Fallback ke "sekarang"
+ * salah: pesanan lama yang gagal di-parse akan ikut ke-cap sebagai "hari ini" dan
+ * membengkakkan omzet, bukan malah hilang.
+ */
+private fun parseIsoTimestamp(iso: String): Long =
+    com.sukashawarma.pos.domain.gate.JakartaTime.instantOrNull(iso)?.toEpochMilli() ?: 0L
 
 private fun isToday(timestamp: Long, today: LocalDate): Boolean {
     val orderDate = Instant.ofEpochMilli(timestamp).atZone(ZoneId.of("Asia/Jakarta")).toLocalDate()

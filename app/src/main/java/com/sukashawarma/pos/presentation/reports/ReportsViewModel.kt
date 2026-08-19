@@ -195,15 +195,13 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
      * itu memang hanya tabel, tidak dipakai untuk menghitung angka apa pun.
      */
     private suspend fun loadFromServer(outletId: String, range: ResolvedDateRange) {
-        // Angka omzet TIDAK dihitung di sini: [observeLocalOrders] sudah menghitung
-        // ulang tiap kali Room berubah. Dulu perhitungannya dipanggil dari sini,
-        // dan karena penulis Room dipicu event yang sama secara paralel, laporan
-        // membaca Room sebelum data baru masuk — itu sumber "laporan tidak realtime".
         val orders = fetchOrderList(outletId, range)
         val shifts = fetchShifts(outletId, range)
+        
+        recomputeFromDtos(orders)
 
         _analyticsData.value = _analyticsData.value.copy(
-            orders = orders,
+            orders = orders.filter { matchesStatusFilter(it) },
             shifts = shifts,
             totalCashVariance = shifts.sumOf { it.variance ?: 0.0 },
             isFromLocalCache = false
@@ -243,7 +241,11 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun recomputeFrom(entities: List<LocalOrderEntity>) {
-        val allDtos = entities.map { it.toOrderDto() }.filter { matchesNonStatusFilters(it) }
+        recomputeFromDtos(entities.map { it.toOrderDto() })
+    }
+
+    private fun recomputeFromDtos(dtos: List<OrderDto>) {
+        val allDtos = dtos.filter { matchesNonStatusFilters(it) }
         val completed = allDtos.filter { RevenueCalculator.isRevenue(it) }
         val summary = RevenueCalculator.summarize(allDtos)
 
@@ -304,7 +306,6 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
         val conditions = mutableListOf<String>()
         range.startIso?.let { conditions += "created_at.gte.$it" }
         range.endIso?.let { conditions += "created_at.lte.$it" }
-        if (statusFilter.value != "all") conditions += "status.eq.${statusFilter.value}"
         if (paymentFilter.value != "all") conditions += "payment_method.eq.${paymentFilter.value}"
         OrderChannel.postgrestCondition(channelFilter.value)?.let { conditions += it }
         if (conditions.isNotEmpty()) filters["and"] = "(${conditions.joinToString(",")})"
@@ -385,6 +386,6 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private companion object {
-        const val ORDER_LIST_LIMIT = "500"
+        const val ORDER_LIST_LIMIT = "1000"
     }
 }
