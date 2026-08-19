@@ -544,9 +544,11 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
      *  promo yang admin buat baru "terjadwal" (belum masuk window tanggalnya) alih-alih
      *  menduga-duga kenapa diskon tidak muncul. */
     fun promoStatusEntries(promos: List<Promo> = activePromos.value, now: Long = System.currentTimeMillis()): List<PromoStatusEntry> {
+        val isFoodAppTab = mode.value == OrderMode.ONLINE
         return promos.map { promo ->
             var status = when {
                 !promo.isActive -> PromoStatus.INACTIVE
+                isFoodAppTab && !promo.applyToFoodApps -> PromoStatus.INACTIVE
                 promo.usageLimit != null && promo.currentUsage >= promo.usageLimit -> PromoStatus.QUOTA_EXCEEDED
                 promo.endDate != null && now >= promo.endDate -> PromoStatus.EXPIRED
                 promo.startDate != null && now < promo.startDate -> PromoStatus.SCHEDULED
@@ -580,12 +582,14 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                 }
             }
 
-            val label = when (status) {
-                PromoStatus.ACTIVE -> "Aktif sekarang"
-                PromoStatus.SCHEDULED -> "Terjadwal mulai ${formatPromoDateTime(promo.startDate)}"
-                PromoStatus.EXPIRED -> "Sudah berakhir ${formatPromoDateTime(promo.endDate)}"
-                PromoStatus.QUOTA_EXCEEDED -> "Kuota pemakaian habis"
-                PromoStatus.INACTIVE -> "Nonaktif"
+            val label = when {
+                !promo.isActive -> "Nonaktif"
+                isFoodAppTab && !promo.applyToFoodApps -> "Tidak berlaku untuk Food App"
+                status == PromoStatus.ACTIVE -> "Aktif sekarang"
+                status == PromoStatus.SCHEDULED -> "Terjadwal mulai ${formatPromoDateTime(promo.startDate)}"
+                status == PromoStatus.EXPIRED -> "Sudah berakhir ${formatPromoDateTime(promo.endDate)}"
+                status == PromoStatus.QUOTA_EXCEEDED -> "Kuota pemakaian habis"
+                else -> "Nonaktif"
             }
             PromoStatusEntry(promo, status, label)
         }.sortedBy { it.status.ordinal }

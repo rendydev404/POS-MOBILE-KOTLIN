@@ -113,7 +113,7 @@ fun POSManualOrderScreen(
     // harus hitung ulang saat promo berubah realtime lewat WebSocket (cartLines dkk
     // tidak ikut berubah, jadi totalnya diam-diam basi sampai ada trigger lain).
     val totals = remember(cartLines, promoSubsidy, channel, mode, activePromosState) { viewModel.cartTotals() }
-    val promoEntries = remember(activePromosState) { viewModel.promoStatusEntries() }
+    val promoEntries = remember(activePromosState, mode) { viewModel.promoStatusEntries() }
 
     val context = LocalContext.current
     val connectionStatus by printerViewModel.connectionStatus.collectAsState()

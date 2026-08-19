@@ -1,0 +1,457 @@
+Created At: 2026-08-11T10:23:51+07:00
+Completed At: 2026-08-11T10:23:51+07:00
+File Path: `file:///d:/PROJECT-APPS-NATIVE/POS/app/src/main/java/com/sukashawarma/pos/presentation/components/SideNavRail.kt`
+Total Lines: 449
+Total Bytes: 22202
+Showing lines 1 to 449
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+1: package com.sukashawarma.pos.presentation.components
+2: 
+3: import androidx.compose.animation.AnimatedVisibility
+4: import androidx.compose.animation.core.animateFloatAsState
+5: import androidx.compose.animation.core.animateDpAsState
+6: import androidx.compose.animation.core.tween
+7: import androidx.compose.animation.core.spring
+8: import androidx.compose.animation.core.Spring
+9: import androidx.compose.foundation.Image
+10: import androidx.compose.foundation.background
+11: import androidx.compose.foundation.border
+12: import androidx.compose.foundation.clickable
+13: import androidx.compose.foundation.layout.*
+14: import androidx.compose.foundation.rememberScrollState
+15: import androidx.compose.foundation.shape.CircleShape
+16: import androidx.compose.foundation.shape.RoundedCornerShape
+17: import androidx.compose.foundation.verticalScroll
+18: import androidx.compose.material.icons.Icons
+19: import androidx.compose.material.icons.automirrored.filled.ArrowBack
+20: import androidx.compose.material.icons.automirrored.filled.ExitToApp
+21: import androidx.compose.material.icons.filled.*
+22: import androidx.compose.material3.*
+23: import androidx.compose.runtime.*
+24: import androidx.compose.ui.Alignment
+25: import androidx.compose.ui.Modifier
+26: import androidx.compose.ui.draw.clip
+27: import androidx.compose.ui.draw.rotate
+28: import androidx.compose.ui.graphics.Color
+29: import androidx.compose.ui.graphics.vector.ImageVector
+30: import androidx.compose.ui.res.painterResource
+31: import androidx.compose.ui.text.font.FontWeight
+32: import androidx.compose.ui.text.style.TextAlign
+33: import androidx.compose.ui.text.style.TextOverflow
+34: import androidx.compose.ui.unit.dp
+35: import androidx.compose.ui.unit.sp
+36: import com.sukashawarma.pos.R
+37: import com.sukashawarma.pos.presentation.theme.*
+38: 
+39: enum class POSTab {
+40:     DASHBOARD,
+41:     ORDER_MANUAL,
+42:     INFO_PORSI,
+43:     MENU_MANAGEMENT,
+44:     SHIFT_PETTY_CASH,
+45:     SHIFT_CLOSE,
+46:     HISTORI_BONUS,
+47:     KIOSK_CONTROL,
+48:     REPORTS,
+49:     SETTINGS,
+50:     PANDUAN,
+51:     STOK_OUTLET
+52: }
+53: 
+54: // Data structure mimicking the links array in KasirNav.tsx
+55: data class NavMenuItem(
+56:     val label: String,
+57:     val icon: ImageVector,
+58:     val tab: POSTab? = null,
+59:     val subItems: List<NavMenuSubItem>? = null,
+60:     val badgeCount: Int = 0
+61: )
+62: 
+63: data class NavMenuSubItem(
+64:     val label: String,
+65:     val tab: POSTab
+66: )
+67: 
+68: val POS_MENU_LINKS = listOf(
+69:     NavMenuItem(
+70:         label = "Order",
+71:         icon = Icons.Default.Notifications,
+72:         subItems = listOf(
+73:             NavMenuSubItem("Pesanan Kasir", POSTab.DASHBOARD),
+74:             NavMenuSubItem("Info Porsi & Stok", POSTab.INFO_PORSI)
+75:         )
+76:     ),
+77:     NavMenuItem(label = "Manajemen Menu", icon = Icons.Default.Fastfood, tab = POSTab.MENU_MANAGEMENT),
+78:     NavMenuItem(
+79:         label = "Shift",
+80:         icon = Icons.Default.AccountBalanceWallet,
+81:         subItems = listOf(
+82:             NavMenuSubItem("Petty Cash", POSTab.SHIFT_PETTY_CASH),
+83:             NavMenuSubItem("Tutup Shift", POSTab.SHIFT_CLOSE)
+84:         )
+85:     ),
+86:     NavMenuItem(label = "Histori & Bonus", icon = Icons.Default.Assignment, tab = POSTab.HISTORI_BONUS),
+87:     NavMenuItem(label = "Control Device", icon = Icons.Default.Tv, tab = POSTab.KIOSK_CONTROL),
+88:     NavMenuItem(label = "Laporan", icon = Icons.Default.BarChart, tab = POSTab.REPORTS),
+89:     NavMenuItem(label = "Screen Settings", icon = Icons.Default.Image, tab = POSTab.SETTINGS),
+90:     NavMenuItem(label = "Panduan", icon = Icons.Default.MenuBook, tab = POSTab.PANDUAN)
+91: )
+92: 
+93: val ActiveBgColor = Color(0xFFF29744)
+94: val ActiveTextColor = Color(0xFF643400)
+95: val ActiveBorderColor = Color(0xFF904D00)
+96: val InactiveTextColor = Color(0xFF544437)
+97: 
+98: @Composable
+99: fun SideNavRail(
+100:     currentTab: POSTab,
+101:     onTabSelected: (POSTab) -> Unit,
+102:     outletName: String = "SUKA SHAWARMA BNR",
+103:     lowStockCount: Int = 0,
+104:     isOnline: Boolean = true,
+105:     onLogoutClick: () -> Unit = {},
+106:     isCollapsed: Boolean = false,
+107:     modifier: Modifier = Modifier
+108: ) {
+109:     val scrollState = rememberScrollState()
+110: 
+111:     // Add badge count to specific items (like Stok Outlet if we added it, but here Stok is outside)
+112:     val width by animateDpAsState(targetValue = if (isCollapsed) 80.dp else 256.dp, animationSpec = tween(200), label = "width")
+113:     
+114:     Surface(
+115:         modifier = modifier
+116:             .fillMaxHeight()
+117:             .width(width),
+118:         color = CreamSurface,
+119:         border = androidx.compose.foundation.BorderStroke(1.dp, CreamBorder)
+120:     ) {
+121:         Column(
+122:             modifier = Modifier.fillMaxSize()
+123:         ) {
+124:             // Header (Logo & Name)
+125:             Column(
+126:                 modifier = Modifier
+127:                     .fillMaxWidth()
+128:                     .padding(if (isCollapsed) 8.dp else 24.dp),
+129:                 horizontalAlignment = Alignment.CenterHorizontally
+130:             ) {
+131:                 Box(contentAlignment = Alignment.TopEnd) {
+132:                     Image(
+133:                         painter = painterResource(id = R.mipmap.ic_launcher),
+134:                         contentDescription = "Logo",
+135:                         modifier = Modifier
+136:                             .size(if (isCollapsed) 40.dp else 52.dp)
+137:                             .clip(RoundedCornerShape(12.dp))
+138:                     )
+139:                     if (isCollapsed) {
+140:                         Box(
+141:                             modifier = Modifier
+142:                                 .offset(x = 2.dp, y = (-2).dp)
+143:                                 .size(10.dp)
+144:                                 .clip(CircleShape)
+145:                                 .background(if (isOnline) Color(0xFF22C55E) else Color(0xFFEF4444))
+146:                                 .border(1.5.dp, CreamSurface, CircleShape)
+147:                         )
+148:                     }
+149:                 }
+150:                 if (!isCollapsed) {
+151:                     Spacer(modifier = Modifier.height(12.dp))
+152:                     Text(
+153:                         text = "Hai, Kasir",
+154:                         style = MaterialTheme.typography.titleMedium,
+155:                         fontWeight = FontWeight.Bold,
+156:                         color = TextDarkPrimary,
+157:                         textAlign = TextAlign.Center
+158:                     )
+159:                     Spacer(modifier = Modifier.height(8.dp))
+160:                     Column(
+161:                         horizontalAlignment = Alignment.CenterHorizontally,
+162:                         modifier = Modifier
+163:                             .background(Color(0xFFE9E1D8), RoundedCornerShape(16.dp))
+164:                             .padding(horizontal = 10.dp, vertical = 6.dp)
+165:                     ) {
+166:                         Row(verticalAlignment = Alignment.CenterVertically) {
+167:                             Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(if (isOnline) Color(0xFF22C55E) else Color(0xFFEF4444)))
+168:                             Spacer(modifier = Modifier.width(6.dp))
+169:                             Text(
+170:                                 text = if (isOnline) "ONLINE" else "OFFLINE",
+171:                                 fontSize = 9.sp,
+172:                                 fontWeight = FontWeight.Bold,
+173:                                 color = ActiveBorderColor
+174:                             )
+175:                         }
+176:                         Text(
+177:                             text = outletName.uppercase(),
+178:                             fontSize = 10.sp,
+179:                             fontWeight = FontWeight.Bold,
+180:                             color = ActiveBorderColor,
+181:                             textAlign = TextAlign.Center
+182:                         )
+183:                     }
+184:                 }
+185:             }
+186: 
+187:             HorizontalDivider(color = CreamBorder)
+188: 
+189:             // Menu Items
+190:             Column(
+191:                 modifier = Modifier
+192:                     .weight(1f)
+193:                     .verticalScroll(scrollState)
+194:                     .padding(if (isCollapsed) 8.dp else 16.dp),
+195:                 verticalArrangement = Arrangement.spacedBy(8.dp)
+196:             ) {
+197:                 POS_MENU_LINKS.forEach { menuItem ->
+198:                     val hasSubItems = !menuItem.subItems.isNullOrEmpty()
+199:                     val isAnySubActive = hasSubItems && menuItem.subItems!!.any { it.tab == currentTab }
+200:                     val isActive = (!hasSubItems && menuItem.tab == currentTab) || isAnySubActive
+201:                     
+202:                     var isDropdownExpanded by remember { mutableStateOf(false) }
+203: 
+204:                     Box {
+205:                         // Main Item Button
+206:                         Row(
+207:                             modifier = Modifier
+208:                                 .fillMaxWidth()
+209:                                 .clip(RoundedCornerShape(12.dp))
+210:                                 .background(if (isActive && (!hasSubItems || isCollapsed || !isDropdownExpanded)) ActiveBgColor else Color.Transparent)
+211:                                 .clickable {
+212:                                     if (hasSubItems) {
+213:                                         isDropdownExpanded = !isDropdownExpanded
+214:                                     } else {
+215:                                         menuItem.tab?.let { onTabSelected(it) }
+216:                                     }
+217:                                 }
+218:                                 .padding(if (isCollapsed) 12.dp else 10.dp),
+219:                             verticalAlignment = Alignment.CenterVertically,
+220:                             horizontalArrangement = if (isCollapsed) Arrangement.Center else Arrangement.SpaceBetween
+221:                         ) {
+222:                             Row(verticalAlignment = Alignment.CenterVertically) {
+223:                                 Icon(
+224:                                     imageVector = menuItem.icon,
+225:                                     contentDescription = menuItem.label,
+226:                                     tint = if (isActive && (!hasSubItems || isCollapsed || !isDropdownExpanded)) ActiveTextColor else InactiveTextColor,
+227:                                     modifier = Modifier.size(18.dp)
+228:                                 )
+229:                                 if (!isCollapsed) {
+230:                                     Spacer(modifier = Modifier.width(12.dp))
+231:                                     Text(
+232:                                         text = menuItem.label,
+233:                                         color = if (isActive && (!hasSubItems || !isDropdownExpanded)) ActiveTextColor else InactiveTextColor,
+234:                                         fontWeight = FontWeight.Bold,
+235:                                         fontSize = 15.sp,
+236:                                         maxLines = 1,
+237:                                         overflow = TextOverflow.Ellipsis
+238:                                     )
+239:                                 }
+240:                             }
+241:                             if (!isCollapsed && hasSubItems) {
+242:                                 val rotation by animateFloatAsState(if (isDropdownExpanded) 180f else 0f, label = "rotate")
+243:                                 Icon(
+244:                                     Icons.Default.KeyboardArrowDown,
+245:                                     contentDescription = null,
+246:                                     tint = InactiveTextColor,
+247:                                     modifier = Modifier.size(14.dp).rotate(rotation)
+248:                                 )
+249:                             }
+250:                         }
+251: 
+252:                         // Left border indicator if active
+253:                         if (isActive && (!hasSubItems || isCollapsed || !isDropdownExpanded)) {
+254:                             Box(
+255:                                 modifier = Modifier
+256:                                     .align(Alignment.CenterStart)
+257:                                     .width(4.dp)
+258:                                     .height(48.dp)
+259:                                     .background(ActiveBorderColor, RoundedCornerShape(topStart = 12.dp, bottomStart = 12.dp))
+260:                             )
+261:                         }
+262: 
+263:                         // Dropdown for Collapsed Mode
+264:                         if (isCollapsed && hasSubItems) {
+265:                             DropdownMenu(
+266:                                 expanded = isDropdownExpanded,
+267:                                 onDismissRequest = { isDropdownExpanded = false },
+268:                                 modifier = Modifier
+269:                                     .background(Color(0xFFFFF8F1))
+270:                                     .padding(4.dp)
+271:                             ) {
+272:                                 Text(
+273:                                     text = menuItem.label.uppercase(),
+274:                                     color = Color(0xFFA48E7F),
+275:                                     fontWeight = FontWeight.Bold,
+276:                                     fontSize = 11.sp,
+277:                                     letterSpacing = 1.sp,
+278:                                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+279:                                 )
+280:                                 Spacer(modifier = Modifier.height(4.dp))
+281:                                 menuItem.subItems!!.forEach { subItem ->
+282:                                     val isSubActive = currentTab == subItem.tab
+283:                                     Box(
+284:                                         modifier = Modifier
+285:                                             .fillMaxWidth()
+286:                                             .padding(horizontal = 4.dp, vertical = 2.dp)
+287:                                             .clip(RoundedCornerShape(8.dp))
+288:                                             .background(if (isSubActive) ActiveBgColor else Color.Transparent)
+289:                                             .clickable {
+290:                                                 onTabSelected(subItem.tab)
+291:                                                 isDropdownExpanded = false
+292:                                             }
+293:                                             .padding(horizontal = 12.dp, vertical = 10.dp)
+294:                                     ) {
+295:                                         Text(
+296:                                             text = subItem.label,
+297:                                             fontWeight = FontWeight.Bold,
+298:                                             fontSize = 13.sp,
+299:                                             color = if (isSubActive) Color.White else InactiveTextColor
+300:                                         )
+301:                                     }
+302:                                 }
+303:                             }
+304:                         }
+305:                     }
+306: 
+307:                     // Expanded Mode Accordion
+308:                     if (!isCollapsed && hasSubItems) {
+309:                         AnimatedVisibility(visible = isDropdownExpanded) {
+310:                             Column(modifier = Modifier.padding(start = 44.dp, end = 8.dp)) {
+311:                                 menuItem.subItems!!.forEach { subItem ->
+312:                                     val subActive = currentTab == subItem.tab
+313:                                     Row(
+314:                                         modifier = Modifier
+315:                                             .fillMaxWidth()
+316:                                             .clip(RoundedCornerShape(8.dp))
+317:                                             .background(if (subActive) ActiveBgColor else Color.Transparent)
+318:                                             .clickable { onTabSelected(subItem.tab) }
+319:                                             .padding(horizontal = 12.dp, vertical = 8.dp)
+320:                                     ) {
+321:                                         Text(
+322:                                             text = subItem.label,
+323:                                             fontWeight = FontWeight.SemiBold,
+324:                                             fontSize = 14.sp,
+325:                                             color = if (subActive) Color.White else InactiveTextColor
+326:                                         )
+327:                                     }
+328:                                 }
+329:                             }
+330:                         }
+331:                     }
+332:                 }
+333: 
+334:                 // Stok Outlet Button
+335:                 val stokActive = currentTab == POSTab.STOK_OUTLET
+336:                 Box(
+337:                     modifier = Modifier
+338:                         .fillMaxWidth()
+339:                         .clip(RoundedCornerShape(12.dp))
+340:                         .background(if (stokActive) ActiveBgColor else Color.Transparent)
+341:                         .clickable { onTabSelected(POSTab.STOK_OUTLET) }
+342:                         .padding(if (isCollapsed) 12.dp else 10.dp)
+343:                 ) {
+344:                     Row(
+345:                         modifier = Modifier.align(if (isCollapsed) Alignment.Center else Alignment.CenterStart),
+346:                         verticalAlignment = Alignment.CenterVertically
+347:                     ) {
+348:                         Icon(
+349:                             imageVector = Icons.Default.Inventory2,
+350:                             contentDescription = "Stok Outlet",
+351:                             tint = if (stokActive) ActiveTextColor else InactiveTextColor,
+352:                             modifier = Modifier.size(20.dp)
+353:                         )
+354:                         if (!isCollapsed) {
+355:                             Spacer(modifier = Modifier.width(12.dp))
+356:                             Text(
+357:                                 text = "Stok Outlet",
+358:                                 color = if (stokActive) ActiveTextColor else InactiveTextColor,
+359:                                 fontWeight = FontWeight.Bold,
+360:                                 fontSize = 15.sp,
+361:                                 maxLines = 1,
+362:                                 overflow = TextOverflow.Ellipsis
+363:                             )
+364:                         }
+365:                     }
+366:                     if (lowStockCount > 0) {
+367:                         Box(
+368:                             modifier = Modifier
+369:                                 .align(if (isCollapsed) Alignment.TopEnd else Alignment.CenterEnd)
+370:                                 .offset(x = if (isCollapsed) 4.dp else 0.dp, y = if (isCollapsed) (-4).dp else 0.dp)
+371:                                 .size(20.dp)
+372:                                 .background(Color.Red, CircleShape),
+373:                             contentAlignment = Alignment.Center
+374:                         ) {
+375:                             Text(
+376:                                 text = lowStockCount.toString(),
+377:                                 color = Color.White,
+378:                                 fontSize = 10.sp,
+379:                                 fontWeight = FontWeight.Bold
+380:                             )
+381:                         }
+382:                     }
+383:                 }
+384:             }
+385: 
+386:             HorizontalDivider(color = CreamBorder)
+387:             
+388:             // Footer Actions
+389:             Column(
+390:                 modifier = Modifier
+391:                     .fillMaxWidth()
+392:                     .padding(if (isCollapsed) 8.dp else 16.dp),
+393:                 verticalArrangement = Arrangement.spacedBy(8.dp)
+394:             ) {
+395:                 // Portal
+396:                 Row(
+397:                     modifier = Modifier
+398:                         .fillMaxWidth()
+399:                         .clip(RoundedCornerShape(12.dp))
+400:                         .clickable { }
+401:                         .padding(if (isCollapsed) 12.dp else 10.dp),
+402:                     horizontalArrangement = if (isCollapsed) Arrangement.Center else Arrangement.Start,
+403:                     verticalAlignment = Alignment.CenterVertically
+404:                 ) {
+405:                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Portal", tint = InactiveTextColor, modifier = Modifier.size(18.dp))
+406:                     if (!isCollapsed) {
+407:                         Spacer(modifier = Modifier.width(12.dp))
+408:                         Text("Portal", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = InactiveTextColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+409:                     }
+410:                 }
+411: 
+412:                 // Printer
+413:                 Row(
+414:                     modifier = Modifier
+415:                         .fillMaxWidth()
+416:                         .clip(RoundedCornerShape(12.dp))
+417:                         .clickable { }
+418:                         .padding(if (isCollapsed) 12.dp else 10.dp),
+419:                     horizontalArrangement = if (isCollapsed) Arrangement.Center else Arrangement.Start,
+420:                     verticalAlignment = Alignment.CenterVertically
+421:                 ) {
+422:                     Icon(Icons.Default.Print, contentDescription = "Printer", tint = InactiveTextColor, modifier = Modifier.size(18.dp))
+423:                     if (!isCollapsed) {
+424:                         Spacer(modifier = Modifier.width(12.dp))
+425:                         Text("Koneksi Printer", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = InactiveTextColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+426:                     }
+427:                 }
+428: 
+429:                 // Logout
+430:                 Row(
+431:                     modifier = Modifier
+432:                         .fillMaxWidth()
+433:                         .clip(RoundedCornerShape(12.dp))
+434:                         .clickable(onClick = onLogoutClick)
+435:                         .padding(if (isCollapsed) 12.dp else 10.dp),
+436:                     horizontalArrangement = if (isCollapsed) Arrangement.Center else Arrangement.Start,
+437:                     verticalAlignment = Alignment.CenterVertically
+438:                 ) {
+439:                     Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = "Keluar", tint = Color(0xFFA43C26), modifier = Modifier.size(18.dp))
+440:                     if (!isCollapsed) {
+441:                         Spacer(modifier = Modifier.width(12.dp))
+442:                         Text("Keluar", style = MaterialTheme.typography.bodyMedium, color = Color(0xFFA43C26), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+443:                     }
+444:                 }
+445:             }
+446:         }
+447:     }
+448: }
+449: 
+The above content shows the entire, complete file contents of the requested file.
