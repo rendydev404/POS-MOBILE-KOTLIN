@@ -25,5 +25,7 @@ data class Promo(
     /** Epoch millis, absolute instants — null means unbounded on that side. */
     val startDate: Long? = null,
     val endDate: Long? = null,
+    val dailyStartTime: String? = null,
+    val dailyEndTime: String? = null,
     val applyToFoodApps: Boolean = false
 )

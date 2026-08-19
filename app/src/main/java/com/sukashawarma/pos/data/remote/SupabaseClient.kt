@@ -53,7 +53,13 @@ object SupabaseClient {
         }
         val refreshed = kotlinx.coroutines.runBlocking { AuthSessionManager.refresh() }
         if (!refreshed) return@Authenticator null
-        response.request.newBuilder().header(RETRY_HEADER, "1").build()
+        // Setelah refresh, ambil token BARU dari SessionTokenHolder — jangan reuse
+        // token lama dari request original, karena itulah yang menyebabkan 401 tadi.
+        val newToken = SessionTokenHolder.accessToken ?: ANON_KEY
+        response.request.newBuilder()
+            .header("Authorization", "Bearer $newToken")
+            .header(RETRY_HEADER, "1")
+            .build()
     }
 
     private const val RETRY_HEADER = "X-Token-Retry"

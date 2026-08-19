@@ -352,7 +352,7 @@ class OrderHistoryViewModel(application: Application) : AndroidViewModel(applica
             source = source.lowercase(),
             paymentMethod = paymentMethod.lowercase(),
             discountAmount = discountAmount,
-            promoSubsidy = 0.0,
+            promoSubsidy = promoSubsidy,
             totalAmount = totalAmount,
             amountReceived = amountReceived,
             changeAmount = changeAmount,

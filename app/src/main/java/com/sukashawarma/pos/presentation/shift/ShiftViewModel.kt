@@ -163,7 +163,10 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
                         // Fetch Topups
                         val topupsRes = api.getPettyCashTopups(mapOf("outlet_id" to "eq.$outletId"))
                         val topups = topupsRes.body()?.filter { 
-                            LedgerItem.parseDate(it.createdAt) >= startMillis 
+                            val created = LedgerItem.parseDate(it.createdAt)
+                            val completed = LedgerItem.parseDate(it.completedAt)
+                            val forwarded = LedgerItem.parseDate(it.leaderForwardedAt)
+                            created >= startMillis || completed >= startMillis || forwarded >= startMillis
                         } ?: emptyList()
 
                         // Ambil pesanan kasir dari local database (agar transaksi offline/belum sync juga langsung masuk laci kasir)
@@ -236,7 +239,12 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
                                 if (refMillis > 0) {
                                     val interimTopupsRes = api.getPettyCashTopups(mapOf("outlet_id" to "eq.$outletId"))
                                     val interimTopups = interimTopupsRes.body()
-                                        ?.filter { it.status in SUDAH_DI_LACI && LedgerItem.parseDate(it.createdAt) > refMillis }
+                                        ?.filter { 
+                                            val created = LedgerItem.parseDate(it.createdAt)
+                                            val completed = LedgerItem.parseDate(it.completedAt)
+                                            val forwarded = LedgerItem.parseDate(it.leaderForwardedAt)
+                                            it.status in SUDAH_DI_LACI && (created > refMillis || completed > refMillis || forwarded > refMillis)
+                                        }
                                         ?.sumOf { it.amount } ?: 0.0
 
                                     val interimExpensesRes = api.getPettyCashExpenses("eq.$outletId")
@@ -511,7 +519,7 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
             source = source.lowercase(),
             paymentMethod = paymentMethod.lowercase(),
             discountAmount = discountAmount,
-            promoSubsidy = 0.0,
+            promoSubsidy = promoSubsidy,
             totalAmount = totalAmount,
             amountReceived = amountReceived,
             changeAmount = changeAmount,

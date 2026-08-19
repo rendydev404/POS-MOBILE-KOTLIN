@@ -63,7 +63,7 @@ object RevenueCalculator {
     /** Omzet kotor dari cache Room. Kolom `subtotal` sudah berisi jumlah subtotal item. */
     fun grossOf(entity: LocalOrderEntity): Double =
         if (entity.subtotal > 0.0) entity.subtotal
-        else entity.totalAmount + entity.discountAmount
+        else entity.totalAmount + entity.discountAmount + entity.promoSubsidy
 
     /** Uang yang benar-benar dibayar pelanggan. Dipakai untuk kas, bukan untuk omzet. */
     fun netOf(order: OrderDto): Double = order.totalAmount

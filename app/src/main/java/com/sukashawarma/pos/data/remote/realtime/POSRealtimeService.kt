@@ -64,11 +64,7 @@ class POSRealtimeService : Service() {
         onlineSyncManager.connect()
         
         realtimeManager.onChange = { table, eventType, record ->
-            if (table == "order_items") {
-                // Item berubah -> omzet & laporan ikut berubah.
-                GlobalEventBus.orderSyncEvent.tryEmit(Unit)
-                GlobalEventBus.targetRefreshEvent.tryEmit(Unit)
-            } else if (table == "orders") {
+            if (table == "orders") {
                 // Fallback to currentOutletId if it's missing in the payload (common in UPDATE events without FULL replica identity)
                 val recordOutletId = record.optString("outlet_id", currentOutletId)
                 val recordSource = record.optString("source", "pos")
@@ -167,9 +163,59 @@ class POSRealtimeService : Service() {
             } else if (table == "bypass_requests") {
                 GlobalEventBus.bypassRequestEvent.tryEmit(Unit)
             } else if (table == "petty_cash_topups" || table == "petty_cash_expenses" || table == "shifts") {
-                // Shift yang dibuka/ditutup oleh perangkat lain harus langsung
-                // memperbarui full-screen blocker, seperti subscription web.
-                GlobalEventBus.pettyCashEvent.tryEmit(Unit)
+                val recordOutletId = record.optString("outlet_id", "")
+                
+                // Hanya memproses (dan refresh UI) jika outlet sesuai
+                if (recordOutletId.isEmpty() || recordOutletId == currentOutletId) {
+                    GlobalEventBus.pettyCashEvent.tryEmit(Unit)
+
+                    // Jika table petty_cash_topups, dan eventType INSERT/UPDATE (hanya jika ada id dan bukan POS sendiri)
+                    // Cek jika FCM belum mengirim, kita kirim local notif
+                    if (table == "petty_cash_topups" && (eventType == "INSERT" || eventType == "UPDATE")) {
+                        val amount = record.optDouble("amount", 0.0)
+                        val status = record.optString("status", "")
+                        
+                        val amountStr = if (amount > 0) "Rp ${java.text.NumberFormat.getInstance(java.util.Locale("id", "ID")).format(amount)}" else ""
+                        var title = "Update Petty Cash"
+                        var body = "Data petty cash Anda telah diperbarui."
+                        var shouldShow = false
+                        
+                        if (status == "forwarded_to_area_manager") {
+                            title = "Status Petty Cash"
+                            body = "Menunggu review AM."
+                            shouldShow = true
+                        } else if (status == "forwarded_to_finance") {
+                            title = "Status Petty Cash"
+                            body = "Sedang menunggu pencairan Finance."
+                            shouldShow = true
+                        } else if (status == "approved_by_finance" || status == "forwarded_by_finance") {
+                            title = "Status Petty Cash"
+                            body = "Dana ada di AM."
+                            shouldShow = true
+                        } else if (status == "forwarded_by_area_manager") {
+                            title = "Status Petty Cash"
+                            body = "Dana sudah diserahkan oleh AM ke Leader."
+                            shouldShow = true
+                        } else if (status == "completed" || status == "forwarded_by_leader" || status == "approved") {
+                            title = "Petty Cash Cair"
+                            body = "Saldo petty cash sudah masuk, Gunakan dengan sebaik-baiknya yaa😇😇"
+                            shouldShow = true
+                        } else if (status == "pending" && eventType == "INSERT") {
+                            title = "Top Up Baru"
+                            body = "Pengajuan top up petty cash menunggu persetujuan."
+                            shouldShow = true
+                        } else if (status == "rejected" || status == "cancelled") {
+                            title = "Top Up Dibatalkan"
+                            body = "Pengajuan top up petty cash ditolak/dibatalkan."
+                            shouldShow = true
+                        }
+                        
+                        if (shouldShow) {
+                            val msgId = record.optString("id").hashCode()
+                            showSystemPushNotification(msgId, title, body)
+                        }
+                    }
+                }
             } else if (table == "cancellation_requests") {
                 val orderId = record.optString("order_id")
                 val status = record.optString("status")
@@ -273,6 +319,30 @@ class POSRealtimeService : Service() {
             android.util.Log.d("POS_DEBUG", "Notification Manager notify called with id $id")
         } else {
             android.util.Log.d("POS_DEBUG", "Permission POST_NOTIFICATIONS is NOT granted!")
+        }
+    }
+
+    private fun showSystemPushNotification(id: Int, title: String, body: String) {
+        val intent = Intent(this, com.sukashawarma.pos.presentation.MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            putExtra("destination", "petty_cash")
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            this, 1, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val notification = NotificationCompat.Builder(this, NotificationChannels.SYSTEM_ALERTS_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .build()
+            
+        if (androidx.core.app.ActivityCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            val manager = getSystemService(NotificationManager::class.java)
+            manager?.notify(id, notification)
         }
     }
 

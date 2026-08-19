@@ -71,6 +71,21 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { /* no-op — alarm suara/realtime tetap jalan walau ditolak, hanya notifikasi sistem yang hilang */ }
 
+    private val _routeEvent = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 1)
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntentRouting(intent)
+    }
+
+    private fun handleIntentRouting(intent: android.content.Intent?) {
+        val dest = intent?.getStringExtra("destination")
+        if (dest != null) {
+            _routeEvent.tryEmit(dest)
+        }
+    }
+
     /**
      * Socket realtime bisa mati diam-diam saat layar tidur / app di background.
      * Tanpa pemulihan di sini, layar menampilkan data basi sampai heartbeat
@@ -185,6 +200,15 @@ class MainActivity : ComponentActivity() {
                     LaunchedEffect(Unit) {
                         shiftViewModel.navigateToReports.collect {
                             currentTab = POSTab.REPORTS
+                        }
+                    }
+
+                    LaunchedEffect(Unit) {
+                        handleIntentRouting(intent) // check initial intent on create
+                        _routeEvent.collect { dest ->
+                            if (dest == "petty_cash") {
+                                currentTab = POSTab.SHIFT_PETTY_CASH
+                            }
                         }
                     }
 

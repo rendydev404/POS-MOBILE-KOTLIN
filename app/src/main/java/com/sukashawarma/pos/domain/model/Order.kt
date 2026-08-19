@@ -52,6 +52,7 @@ data class Order(
     val items: List<OrderItem> = emptyList(),
     val subtotal: Double = 0.0,
     val discountAmount: Double = 0.0,
+    val promoSubsidy: Double = 0.0,
     val totalAmount: Double = 0.0,
     val amountReceived: Double = 0.0,
     val changeAmount: Double = 0.0,

@@ -8,10 +8,14 @@ import android.os.Build
 object NotificationChannels {
     const val NEW_ORDER_CHANNEL_ID = "new_order_alerts"
 
+    const val SYSTEM_ALERTS_CHANNEL_ID = "system_alerts"
+
     fun createChannels(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val channel = NotificationChannel(
+        
+        // Channel for Orders (Custom sounds applied elsewhere, high priority)
+        val orderChannel = NotificationChannel(
             NEW_ORDER_CHANNEL_ID,
             "Pesanan Masuk",
             NotificationManager.IMPORTANCE_HIGH
@@ -19,6 +23,17 @@ object NotificationChannels {
             description = "Notifikasi pesanan baru dari Kiosk/Online saat aplikasi di-background"
             enableVibration(true)
         }
-        manager.createNotificationChannel(channel)
+        manager.createNotificationChannel(orderChannel)
+
+        // Channel for System Alerts (Petty Cash, etc. Default sound & vibrate)
+        val systemChannel = NotificationChannel(
+            SYSTEM_ALERTS_CHANNEL_ID,
+            "Notifikasi Sistem",
+            NotificationManager.IMPORTANCE_DEFAULT
+        ).apply {
+            description = "Notifikasi sistem seperti update Petty Cash"
+            enableVibration(true)
+        }
+        manager.createNotificationChannel(systemChannel)
     }
 }

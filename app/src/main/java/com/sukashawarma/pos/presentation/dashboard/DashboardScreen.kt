@@ -86,16 +86,7 @@ fun DashboardScreen(
 
     val currentOutletId by viewModel.currentOutletId.collectAsState()
 
-    // Auto-refresh every 15s to catch eager patches/updates (like cancellation approvals)
-    // Mirrors the exact same pattern used in OrderHistoryScreen
-    LaunchedEffect(currentOutletId) {
-        if (currentOutletId.isNotBlank()) {
-            while (true) {
-                kotlinx.coroutines.delay(15000)
-                viewModel.syncOrdersFromServer(currentOutletId)
-            }
-        }
-    }
+    // 15s polling has been removed in favor of Supabase Realtime via GlobalEventBus
 
     // Sama seperti web: waktu berjalan harus memindahkan pesanan Terjadwal ke
     // Antrean secara otomatis saat release_time tercapai, tanpa menunggu refetch.

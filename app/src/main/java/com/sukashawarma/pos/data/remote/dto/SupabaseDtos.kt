@@ -99,6 +99,8 @@ data class PromoDto(
     @SerializedName("current_usage") val currentUsage: Int?,
     @SerializedName("start_date") val startDate: String?,
     @SerializedName("end_date") val endDate: String?,
+    @SerializedName("daily_start_time") val dailyStartTime: String?,
+    @SerializedName("daily_end_time") val dailyEndTime: String?,
     @SerializedName("apply_to_food_apps") val applyToFoodApps: Boolean?
 )
 
@@ -131,7 +133,8 @@ data class OrderDto(
     @SerializedName("cashier_name") val cashierName: String? = null,
     @SerializedName("cancellation_reason") val cancellationReason: String? = null,
     @SerializedName("void_reason") val voidReason: String? = null,
-    val isSyncedFromOffline: Boolean? = false
+    val isSyncedFromOffline: Boolean? = false,
+    @SerializedName("pos_client") val posClient: String? = null
 )
 
 data class MenuItemRefDto(
@@ -204,10 +207,11 @@ data class CreateOrderPayload(
     val status: String,
     val source: String,
     @SerializedName("payment_method") val paymentMethod: String,
-    @SerializedName("discount_amount") val discountAmount: Double,
-    @SerializedName("total_amount") val totalAmount: Double,
-    @SerializedName("amount_received") val amountReceived: Double,
-    @SerializedName("change_amount") val changeAmount: Double,
+    @SerializedName("discount_amount") val discountAmount: Long,
+    @SerializedName("promo_subsidy") val promoSubsidy: Long = 0L,
+    @SerializedName("total_amount") val totalAmount: Long,
+    @SerializedName("amount_received") val amountReceived: Long,
+    @SerializedName("change_amount") val changeAmount: Long,
     @SerializedName("created_at") val createdAt: String,
     // Food Apps/Website channel this order came in on (null for walk-in/endorse) —
     // column already read back via OrderDto.channel, so writing it is safe.
@@ -267,8 +271,8 @@ data class CreateOrderItemPayload(
     @SerializedName("menu_item_id") val menuItemId: String,
     @SerializedName("menu_item_name") val menuItemName: String,
     val quantity: Int,
-    @SerializedName("unit_price") val unitPrice: Double,
-    val subtotal: Double
+    @SerializedName("unit_price") val unitPrice: Long,
+    val subtotal: Long
 )
 
 data class IncrementPromoUsagePayload(
@@ -287,7 +291,9 @@ data class PettyCashTopupDto(
     val amount: Double,
     val status: String,
     @SerializedName("approval_token") val approvalToken: String?,
-    @SerializedName("created_at") val createdAt: String
+    @SerializedName("created_at") val createdAt: String,
+    @SerializedName("completed_at") val completedAt: String? = null,
+    @SerializedName("leader_forwarded_at") val leaderForwardedAt: String? = null
 )
 
 data class MonthlyBonusPayload(

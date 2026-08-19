@@ -28,6 +28,8 @@ data class LocalOrderEntity(
     val itemsJson: String, // JSON String array of items
     val subtotal: Double,
     val discountAmount: Double,
+    @ColumnInfo(defaultValue = "0.0")
+    val promoSubsidy: Double = 0.0,
     val totalAmount: Double,
     val amountReceived: Double,
     val changeAmount: Double,

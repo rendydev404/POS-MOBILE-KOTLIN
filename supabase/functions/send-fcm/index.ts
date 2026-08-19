@@ -53,6 +53,50 @@ function buildDataPayload(type: string, record: Record<string, any>): Record<str
       body: String(record.body ?? 'Ada pesan baru untuk Anda.'),
     }
   }
+  
+  if (type === 'petty_cash') {
+    const amountStr = record.amount ? `Rp ${Number(record.amount).toLocaleString('id-ID')}` : '';
+    let title = 'Update Petty Cash';
+    let body = `Data petty cash Anda telah diperbarui.`;
+    
+    if (record.status) {
+       if (record.status === 'forwarded_to_area_manager') {
+           title = 'Status Petty Cash';
+           body = `Menunggu review AM.`;
+       } else if (record.status === 'forwarded_to_finance') {
+           title = 'Status Petty Cash';
+           body = `Sedang menunggu pencairan Finance.`;
+       } else if (record.status === 'approved_by_finance' || record.status === 'forwarded_by_finance') {
+           title = 'Status Petty Cash';
+           body = `Dana ada di AM.`;
+       } else if (record.status === 'forwarded_by_area_manager') {
+           title = 'Status Petty Cash';
+           body = `Dana sudah diserahkan oleh AM ke Leader.`;
+       } else if (record.status === 'completed' || record.status === 'forwarded_by_leader' || record.status === 'approved') {
+           title = 'Petty Cash Cair';
+           body = `Saldo petty cash sudah masuk, Gunakan dengan sebaik-baiknya yaa😇😇`;
+       } else if (record.status === 'rejected' || record.status === 'cancelled') {
+           title = 'Top Up Dibatalkan';
+           body = `Pengajuan top up petty cash ditolak/dibatalkan.`;
+       } else if (record.status === 'pending') {
+           title = 'Top Up Baru';
+           body = `Pengajuan top up petty cash menunggu persetujuan.`;
+       } else {
+           // Do not send push notification for intermediate or unrecognized states not explicitly handled
+           return new Response(JSON.stringify({ message: "No explicit notification for this state" }), {
+               headers: { "Content-Type": "application/json" },
+           });
+       }
+    }
+    
+    return {
+      type,
+      id: String(record.id ?? ''),
+      title,
+      body,
+    }
+  }
+
   return {
     type: 'new_order',
     id: String(record.id ?? ''),

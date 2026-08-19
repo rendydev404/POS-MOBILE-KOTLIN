@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import com.sukashawarma.pos.presentation.components.EmptyState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -621,7 +622,7 @@ fun RiwayatAktivitas(ledgerItems: List<LedgerItem>, viewModel: ShiftViewModel) {
             HorizontalDivider(color = Color(0xFFF3F4F6))
             if (ledgerItems.isEmpty()) {
                 Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-                    com.sukashawarma.pos.presentation.components.EmptyState(
+                    EmptyState(
                         title = "Belum ada aktivitas shift ini",
                         icon = Icons.Default.ReceiptLong
                     )
@@ -654,7 +655,7 @@ fun RiwayatAktivitasMobile(ledgerItems: List<LedgerItem>, viewModel: ShiftViewMo
             HorizontalDivider(color = Color(0xFFF3F4F6))
             if (ledgerItems.isEmpty()) {
                 Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-                    com.sukashawarma.pos.presentation.components.EmptyState(
+                    EmptyState(
                         title = "Belum ada aktivitas shift ini",
                         icon = Icons.Default.ReceiptLong
                     )
@@ -967,12 +968,9 @@ fun formatRupiah(amount: Double): String {
 fun formatTime(dateStr: String?): String {
     if (dateStr == null) return "-"
     return try {
-        val format = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())
-        format.timeZone = TimeZone.getTimeZone("UTC")
-        val date = format.parse(dateStr) ?: return "-"
-        
+        val instant = com.sukashawarma.pos.domain.gate.JakartaTime.instantOrNull(dateStr) ?: return "-"
         val outFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
-        outFormat.format(date)
+        outFormat.format(java.util.Date.from(instant))
     } catch (e: Exception) {
         dateStr.substringBefore("T")
     }

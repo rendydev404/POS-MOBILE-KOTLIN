@@ -38,11 +38,12 @@ class POSFirebaseMessagingService : FirebaseMessagingService() {
         android.util.Log.d("POS_DEBUG", "FCM Message received: data=${message.data}, notification=${message.notification}")
 
         val isOwnerMessage = message.data["type"] == "broadcast" || message.data["type"] == "owner_message"
+        val isPettyCash = message.data["type"] == "petty_cash"
 
-        // Hanya bunyikan alert jika bukan pesan dari owner
+        // Hanya bunyikan alert jika bukan pesan dari owner dan bukan petty cash
         if (isOwnerMessage) {
             OrderAlertPlayer(applicationContext).playOwnerMessageAlert()
-        } else {
+        } else if (!isPettyCash) {
             OrderAlertPlayer(applicationContext).playNewOrderAlert()
         }
 
@@ -57,25 +58,32 @@ class POSFirebaseMessagingService : FirebaseMessagingService() {
         // notifikasi yang sama, keduanya menimpa satu sama lain, bukan menumpuk.
         val notificationId = message.data["id"]?.takeIf { it.isNotBlank() }?.hashCode()
             ?: System.currentTimeMillis().toInt()
-        showSystemNotification(notificationId, title, body)
+            
+        val channelId = if (isPettyCash) NotificationChannels.SYSTEM_ALERTS_CHANNEL_ID else NotificationChannels.NEW_ORDER_CHANNEL_ID
+        showSystemNotification(notificationId, title, body, channelId)
 
         // Layar yang sedang terbuka ikut menyegarkan diri saat push masuk.
         if (isOwnerMessage) {
             com.sukashawarma.pos.data.remote.GlobalEventBus.ownerMessageRefreshEvent.tryEmit(Unit)
+        } else if (isPettyCash) {
+            com.sukashawarma.pos.data.remote.GlobalEventBus.pettyCashEvent.tryEmit(Unit)
         } else {
             com.sukashawarma.pos.data.remote.GlobalEventBus.orderSyncEvent.tryEmit(Unit)
         }
     }
 
-    private fun showSystemNotification(id: Int, title: CharSequence, body: String) {
+    private fun showSystemNotification(id: Int, title: CharSequence, body: String, channelId: String = NotificationChannels.NEW_ORDER_CHANNEL_ID) {
         val intent = android.content.Intent(this, com.sukashawarma.pos.presentation.MainActivity::class.java).apply {
             flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK
+            if (channelId == NotificationChannels.SYSTEM_ALERTS_CHANNEL_ID) {
+                putExtra("destination", "petty_cash")
+            }
         }
         val pendingIntent = android.app.PendingIntent.getActivity(
             this, 0, intent, android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        val notification = NotificationCompat.Builder(this, NotificationChannels.NEW_ORDER_CHANNEL_ID)
+        val notification = NotificationCompat.Builder(this, channelId)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(body)

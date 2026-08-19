@@ -42,10 +42,11 @@ class OrderSyncEngine(
                     status = entity.status.lowercase(),
                     source = entity.source.lowercase(),
                     paymentMethod = entity.paymentMethod.lowercase(),
-                    discountAmount = entity.discountAmount,
-                    totalAmount = entity.totalAmount,
-                    amountReceived = entity.amountReceived,
-                    changeAmount = entity.changeAmount,
+                    discountAmount = entity.discountAmount.toLong(),
+                    promoSubsidy = entity.promoSubsidy.toLong(),
+                    totalAmount = entity.totalAmount.toLong(),
+                    amountReceived = entity.amountReceived.toLong(),
+                    changeAmount = entity.changeAmount.toLong(),
                     createdAt = createdAtIso,
                     channel = entity.channel,
                     pickupTime = entity.effectiveReleaseTime.takeIf { it > 0L }?.let {
@@ -87,8 +88,8 @@ class OrderSyncEngine(
                         menuItemId = item.menuItemId,
                         menuItemName = item.encodedMenuItemName(),
                         quantity = item.quantity,
-                        unitPrice = item.unitPrice,
-                        subtotal = item.subtotal
+                        unitPrice = item.unitPrice.toLong(),
+                        subtotal = item.subtotal.toLong()
                     )
                 }
                 if (itemPayloads.isNotEmpty()) {

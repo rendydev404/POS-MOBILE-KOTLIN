@@ -41,17 +41,30 @@ class CalculateCartUseCase {
             if (promo.startDate != null && now < promo.startDate) return false
             if (promo.endDate != null && now >= promo.endDate) return false
             
-            if (promo.startDate != null && promo.endDate != null) {
-                val wibOffset = 7L * 60L * 60L * 1000L
-                val dayMs = 24L * 60L * 60L * 1000L
-                val startTimeInDay = (promo.startDate + wibOffset) % dayMs
-                val endTimeInDay = (promo.endDate + wibOffset) % dayMs
-                val nowTimeInDay = (now + wibOffset) % dayMs
+            if (promo.dailyStartTime != null && promo.dailyEndTime != null) {
+                fun parseTimeStr(timeStr: String?): Long? {
+                    if (timeStr.isNullOrBlank()) return null
+                    val parts = timeStr.split(":")
+                    if (parts.size < 2) return null
+                    val h = parts[0].toLongOrNull() ?: return null
+                    val m = parts[1].toLongOrNull() ?: return null
+                    val s = if (parts.size > 2) parts[2].toLongOrNull() ?: 0L else 0L
+                    return (h * 60 * 60 + m * 60 + s) * 1000
+                }
                 
-                if (startTimeInDay <= endTimeInDay) {
-                    if (nowTimeInDay < startTimeInDay || nowTimeInDay >= endTimeInDay) return false
-                } else {
-                    if (nowTimeInDay < startTimeInDay && nowTimeInDay >= endTimeInDay) return false
+                val dailyStart = parseTimeStr(promo.dailyStartTime)
+                val dailyEnd = parseTimeStr(promo.dailyEndTime)
+                
+                if (dailyStart != null && dailyEnd != null) {
+                    val wibOffset = 7L * 60 * 60L * 1000L
+                    val dayMs = 24L * 60L * 60L * 1000L
+                    val nowTimeInDay = (now + wibOffset) % dayMs
+                    
+                    if (dailyStart <= dailyEnd) {
+                        if (nowTimeInDay < dailyStart || nowTimeInDay >= dailyEnd) return false
+                    } else {
+                        if (nowTimeInDay < dailyStart && nowTimeInDay >= dailyEnd) return false
+                    }
                 }
             }
 
