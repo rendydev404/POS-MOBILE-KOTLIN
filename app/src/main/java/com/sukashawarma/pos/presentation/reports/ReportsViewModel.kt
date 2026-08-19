@@ -273,8 +273,7 @@ class ReportsViewModel(application: Application) : AndroidViewModel(application)
             }
 
             o.orderItems?.forEach { oi ->
-                // actions.ts: const name = oi.menu_item_name || 'Item'
-                val name = oi.menuItemName ?: "Item"
+                val name = oi.displayName // KEMBALIKAN KE displayName! Agar varian dgn note digabung
                 val curr = itemMap[name] ?: ItemStats(0, 0.0)
                 itemMap[name] = ItemStats(curr.qty + oi.quantity, curr.revenue + oi.subtotal)
             }
