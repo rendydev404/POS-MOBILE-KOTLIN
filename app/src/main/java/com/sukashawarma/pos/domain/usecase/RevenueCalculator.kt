@@ -54,12 +54,12 @@ object RevenueCalculator {
      * cara yang persis sama, angka omzet bisa beda.
      */
     fun grossOf(order: OrderDto): Double {
-        return order.totalAmount + (order.discountAmount ?: 0.0) + (order.promoSubsidy ?: 0.0)
+        return order.totalAmount + (order.discountAmount ?: 0.0)
     }
 
     /** Omzet kotor dari cache Room. Disesuaikan dengan logika yang sama. */
     fun grossOf(entity: LocalOrderEntity): Double =
-        entity.totalAmount + entity.discountAmount + entity.promoSubsidy
+        entity.totalAmount + entity.discountAmount
 
     /** Uang yang benar-benar dibayar pelanggan. Dipakai untuk kas, bukan untuk omzet. */
     fun netOf(order: OrderDto): Double = order.totalAmount

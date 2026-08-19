@@ -692,7 +692,7 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
      *  online=QRIS/Tunai, website=QRIS/VA, endorse=none (forced cash/0). */
     fun availablePaymentMethods(): List<PaymentMethod> = when (mode.value) {
         OrderMode.WALKIN -> listOf(PaymentMethod.CASH, PaymentMethod.QRIS, PaymentMethod.CARD)
-        OrderMode.ONLINE -> listOf(PaymentMethod.QRIS, PaymentMethod.CASH)
+        OrderMode.ONLINE -> listOf(PaymentMethod.QRIS, PaymentMethod.CARD)
         OrderMode.WEBSITE -> listOf(PaymentMethod.QRIS, PaymentMethod.VA)
         OrderMode.ENDORSE -> emptyList()
     }
