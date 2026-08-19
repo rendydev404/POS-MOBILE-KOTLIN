@@ -543,13 +543,28 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
      *  menduga-duga kenapa diskon tidak muncul. */
     fun promoStatusEntries(promos: List<Promo> = activePromos.value, now: Long = System.currentTimeMillis()): List<PromoStatusEntry> {
         return promos.map { promo ->
-            val status = when {
+            var status = when {
                 !promo.isActive -> PromoStatus.INACTIVE
                 promo.usageLimit != null && promo.currentUsage >= promo.usageLimit -> PromoStatus.QUOTA_EXCEEDED
-                promo.endDate != null && now > promo.endDate -> PromoStatus.EXPIRED
+                promo.endDate != null && now >= promo.endDate -> PromoStatus.EXPIRED
                 promo.startDate != null && now < promo.startDate -> PromoStatus.SCHEDULED
                 else -> PromoStatus.ACTIVE
             }
+
+            if (status == PromoStatus.ACTIVE && promo.startDate != null && promo.endDate != null) {
+                val wibOffset = 7L * 60L * 60L * 1000L
+                val dayMs = 24L * 60L * 60L * 1000L
+                val startTimeInDay = (promo.startDate + wibOffset) % dayMs
+                val endTimeInDay = (promo.endDate + wibOffset) % dayMs
+                val nowTimeInDay = (now + wibOffset) % dayMs
+                
+                if (startTimeInDay <= endTimeInDay) {
+                    if (nowTimeInDay < startTimeInDay || nowTimeInDay >= endTimeInDay) status = PromoStatus.SCHEDULED
+                } else {
+                    if (nowTimeInDay < startTimeInDay && nowTimeInDay >= endTimeInDay) status = PromoStatus.SCHEDULED
+                }
+            }
+
             val label = when (status) {
                 PromoStatus.ACTIVE -> "Aktif sekarang"
                 PromoStatus.SCHEDULED -> "Terjadwal mulai ${formatPromoDateTime(promo.startDate)}"
@@ -691,7 +706,12 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
         val cm = app.getSystemService(Application.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
         val network = cm.activeNetwork ?: return false
         val capabilities = cm.getNetworkCapabilities(network) ?: return false
+        // NET_CAPABILITY_INTERNET = interface jaringan ada (WiFi/data aktif).
+        // NET_CAPABILITY_VALIDATED = OS sudah membuktikan koneksi bisa mencapai
+        // internet sungguhan (bukan captive portal / koneksi putus di tengah).
+        // Keduanya harus terpenuhi agar request ke Supabase punya peluang berhasil.
         return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
     fun submitOrder() {
@@ -781,6 +801,9 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
 
             if (online) {
                 try {
+                    // Pastikan token masih valid sebelum hit server — kalau sudah
+                    // expired di-refresh di sini, bukan setelah request gagal 401.
+                    com.sukashawarma.pos.data.remote.AuthSessionManager.ensureAuthenticated()
                     val createdAtIso = DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(order.createdAt))
                     val payload = CreateOrderPayload(
                         id = order.id,
@@ -790,10 +813,11 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                         status = order.status.name.lowercase(),
                         source = order.source.name.lowercase(),
                         paymentMethod = order.paymentMethod.name.lowercase(),
-                        discountAmount = order.discountAmount,
-                        totalAmount = order.totalAmount,
-                        amountReceived = order.amountReceived,
-                        changeAmount = order.changeAmount,
+                        discountAmount = order.discountAmount.toLong(),
+                        promoSubsidy = order.promoSubsidy.toLong(),
+                        totalAmount = order.totalAmount.toLong(),
+                        amountReceived = order.amountReceived.toLong(),
+                        changeAmount = order.changeAmount.toLong(),
                         createdAt = createdAtIso,
                         channel = order.channel,
                         pickupTime = pickupTimeIso,
@@ -810,8 +834,8 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                                 menuItemId = item.menuItemId,
                                 menuItemName = item.encodedMenuItemName(),
                                 quantity = item.quantity,
-                                unitPrice = item.unitPrice,
-                                subtotal = item.subtotal
+                                unitPrice = item.unitPrice.toLong(),
+                                subtotal = item.subtotal.toLong()
                             )
                         }
                         api.createOrderItems(itemPayloads)
@@ -877,6 +901,7 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                 itemsJson = gson.toJson(order.items),
                 subtotal = order.subtotal,
                 discountAmount = order.discountAmount,
+                promoSubsidy = order.promoSubsidy,
                 totalAmount = order.totalAmount,
                 amountReceived = order.amountReceived,
                 changeAmount = order.changeAmount,

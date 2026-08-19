@@ -11,6 +11,7 @@ import kotlin.math.max
 data class CartCalculationResult(
     val subtotal: Double,
     val totalDiscount: Double,
+    val promoSubsidy: Double,
     val finalTotal: Double,
     /** Ids of promos actually applied — for `increment_promo_usage` bookkeeping. */
     val appliedPromoIds: Set<String> = emptySet(),
@@ -38,7 +39,22 @@ class CalculateCartUseCase {
             if (!promo.isActive) return false
             if (promo.usageLimit != null && promo.currentUsage >= promo.usageLimit) return false
             if (promo.startDate != null && now < promo.startDate) return false
-            if (promo.endDate != null && now > promo.endDate) return false
+            if (promo.endDate != null && now >= promo.endDate) return false
+            
+            if (promo.startDate != null && promo.endDate != null) {
+                val wibOffset = 7L * 60L * 60L * 1000L
+                val dayMs = 24L * 60L * 60L * 1000L
+                val startTimeInDay = (promo.startDate + wibOffset) % dayMs
+                val endTimeInDay = (promo.endDate + wibOffset) % dayMs
+                val nowTimeInDay = (now + wibOffset) % dayMs
+                
+                if (startTimeInDay <= endTimeInDay) {
+                    if (nowTimeInDay < startTimeInDay || nowTimeInDay >= endTimeInDay) return false
+                } else {
+                    if (nowTimeInDay < startTimeInDay && nowTimeInDay >= endTimeInDay) return false
+                }
+            }
+
             if (isFoodAppChannel && !promo.applyToFoodApps) return false
             return true
         }
@@ -75,12 +91,26 @@ class CalculateCartUseCase {
             }
         } else 0.0
 
-        val totalDiscount = itemDiscountTotal + globalDiscountTotal
-        val finalTotal = max(0.0, subtotal - totalDiscount)
+        val totalCalculatedDiscount = itemDiscountTotal + globalDiscountTotal
+        
+        val totalDiscount: Double
+        val promoSubsidy: Double
+        val finalTotal: Double
+        
+        if (isFoodAppChannel) {
+            totalDiscount = 0.0
+            promoSubsidy = totalCalculatedDiscount
+            finalTotal = subtotal
+        } else {
+            totalDiscount = totalCalculatedDiscount
+            promoSubsidy = 0.0
+            finalTotal = max(0.0, subtotal - totalDiscount)
+        }
 
         return CartCalculationResult(
             subtotal = subtotal,
             totalDiscount = totalDiscount,
+            promoSubsidy = promoSubsidy,
             finalTotal = finalTotal,
             appliedPromoIds = appliedPromoIds,
             appliedPromoNames = appliedPromoNames.toList()
