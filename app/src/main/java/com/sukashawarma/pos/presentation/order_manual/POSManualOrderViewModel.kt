@@ -85,6 +85,17 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
      *  memicu fetch ulang seketika. Tidak ada polling di jalur ini sama sekali. */
     private var promoRealtime: com.sukashawarma.pos.data.remote.realtime.PromoRealtimeManager? = null
 
+    /**
+     * Scope untuk pekerjaan susulan setelah pesanan sukses dibuat (catat pemakaian
+     * promo, upload bukti transfer). Sengaja TIDAK memakai viewModelScope: kasir
+     * biasanya langsung menutup layar begitu tombol selesai, dan viewModelScope
+     * ikut dibatalkan saat itu — upload bukti transfer akan mati di tengah jalan.
+     * SupervisorJob supaya satu kegagalan tidak menjatuhkan pekerjaan lainnya.
+     */
+    private val postSubmitScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO
+    )
+
     val currentOutletId = MutableStateFlow("")
     val currentOutletName = MutableStateFlow("")
     val currentUsername = MutableStateFlow("")
@@ -859,18 +870,38 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                         }
                         api.createOrderItems(itemPayloads)
 
-                        order.appliedPromoIds.forEach { promoId ->
-                            try {
-                                api.incrementPromoUsage(
-                                    com.sukashawarma.pos.data.remote.dto.IncrementPromoUsagePayload(promoId = promoId)
-                                )
-                            } catch (e: Exception) {
-                                android.util.Log.e("POSManualOrderVM", "Gagal increment_promo_usage untuk promo $promoId", e)
+                        // Pencatatan pemakaian promo dan upload bukti transfer TIDAK
+                        // lagi ditunggu sebelum tombol dilepas: pesanannya sendiri
+                        // sudah tercipta di dua request di atas, dan keduanya memang
+                        // sudah dirancang non-fatal (kegagalan hanya dicatat ke log).
+                        // Sebelumnya semuanya berurutan dan ditunggu — dengan 3 promo
+                        // aktif itu 5+ round-trip ke Supabase sambil kasir menatap
+                        // "MEMPROSES...". Dijalankan di scope aplikasi, bukan
+                        // viewModelScope, supaya tidak ikut dibatalkan saat layar
+                        // ditutup tepat setelah submit.
+                        val promoIds = order.appliedPromoIds.toList()
+                        val proofBitmap = qrisProofBitmap.value
+                        val orderId = order.id
+                        val orderOutletId = order.outletId
+                        val finalOrderNumber = serverOrderNumber
+                        postSubmitScope.launch {
+                            promoIds.forEach { promoId ->
+                                try {
+                                    api.incrementPromoUsage(
+                                        com.sukashawarma.pos.data.remote.dto.IncrementPromoUsagePayload(promoId = promoId)
+                                    )
+                                } catch (e: Exception) {
+                                    android.util.Log.e("POSManualOrderVM", "Gagal increment_promo_usage untuk promo $promoId", e)
+                                }
                             }
-                        }
-
-                        qrisProofBitmap.value?.let { bitmap ->
-                            uploadPaymentProof(outletId = order.outletId, orderId = order.id, orderNumber = serverOrderNumber, bitmap = bitmap)
+                            proofBitmap?.let { bitmap ->
+                                uploadPaymentProof(
+                                    outletId = orderOutletId,
+                                    orderId = orderId,
+                                    orderNumber = finalOrderNumber,
+                                    bitmap = bitmap
+                                )
+                            }
                         }
                     } else {
                         // Device online tapi request-nya sendiri gagal (validasi, RLS, timeout, dll) —
@@ -894,12 +925,12 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                 // Save QRIS proof locally for later upload
                 qrisProofBitmap.value?.let { bitmap ->
                     try {
-                        val fileName = "${order.outletId}_${serverOrderNumber}_${LocalDate.now()}_offline.jpg"
+                        val fileName = "${order.outletId}_${serverOrderNumber}_${LocalDate.now()}_offline.webp"
                         val context = getApplication<Application>().applicationContext
                         val file = java.io.File(context.cacheDir, fileName)
                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                             java.io.FileOutputStream(file).use { out ->
-                                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, out)
+                                bitmap.compress(webpFormat(), 80, out)
                             }
                         }
                         localPaymentProofPath = file.absolutePath
@@ -989,13 +1020,19 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
      *  already created; only the proof photo attachment is lost. */
     private suspend fun uploadPaymentProof(outletId: String, orderId: String, orderNumber: Int, bitmap: Bitmap) {
         try {
-            val stream = ByteArrayOutputStream()
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 85, stream)
-            val fileName = "${outletId}_${orderNumber}_${LocalDate.now()}.jpg"
+            // compress() WAJIB di IO: sebelumnya jalan di main thread (viewModelScope
+            // default-nya Dispatchers.Main) sehingga kompresi foto membekukan UI —
+            // padahal jalur offline di submitOrder() sudah benar memakai IO.
+            val bytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val stream = ByteArrayOutputStream()
+                bitmap.compress(webpFormat(), 80, stream)
+                stream.toByteArray()
+            }
+            val fileName = "${outletId}_${orderNumber}_${LocalDate.now()}.webp"
             val objectPath = "payment_proofs/$fileName"
-            val body = stream.toByteArray().toRequestBody("image/jpeg".toMediaTypeOrNull())
+            val body = bytes.toRequestBody("image/webp".toMediaTypeOrNull())
 
-            val uploadRes = api.uploadPaymentProof(objectPath = objectPath, contentType = "image/jpeg", file = body)
+            val uploadRes = api.uploadPaymentProof(objectPath = objectPath, contentType = "image/webp", file = body)
             if (uploadRes.isSuccessful) {
                 val publicUrl = "${SupabaseClient.BASE_URL}storage/v1/object/public/$objectPath"
                 api.updateOrderStatus(orderIdFilter = "eq.$orderId", patch = mapOf("payment_proof_url" to publicUrl))
@@ -1004,4 +1041,19 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
             e.printStackTrace()
         }
     }
+
+    /**
+     * WebP kira-kira 25-35% lebih kecil dari JPEG pada kualitas setara, jadi upload
+     * bukti transfer lebih cepat — penting karena outlet sering di koneksi seluler.
+     *
+     * `WEBP_LOSSY` baru ada di API 30; minSdk proyek ini 26, jadi di bawah itu tetap
+     * memakai `WEBP` yang deprecated (perilakunya sama persis: lossy sesuai quality).
+     */
+    @Suppress("DEPRECATION")
+    private fun webpFormat(): Bitmap.CompressFormat =
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            Bitmap.CompressFormat.WEBP_LOSSY
+        } else {
+            Bitmap.CompressFormat.WEBP
+        }
 }

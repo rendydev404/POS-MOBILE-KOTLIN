@@ -7,6 +7,7 @@ import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 /**
  * Semua perhitungan hari untuk gate kasir memakai Asia/Jakarta, menyamai
@@ -39,6 +40,37 @@ object JakartaTime {
     fun startOfDayMillis(day: LocalDate): Long = day.atStartOfDay(ZONE).toInstant().toEpochMilli()
 
     fun endOfDayMillis(day: LocalDate): Long = day.plusDays(1).atStartOfDay(ZONE).toInstant().toEpochMilli() - 1
+
+    /** Bahasa tampilan tanggal di seluruh app — "Agu", bukan "Aug". */
+    private val LOCALE_ID: Locale = Locale("id", "ID")
+
+    private val DATE_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZONE)
+    private val TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm").withZone(ZONE)
+    private val DATE_TIME_FORMAT: DateTimeFormatter =
+        DateTimeFormatter.ofPattern("dd MMM yyyy, HH:mm", LOCALE_ID).withZone(ZONE)
+
+    /**
+     * Tanggal `yyyy-MM-dd` menurut Asia/Jakarta dari timestamp mentah PostgREST.
+     *
+     * Memotong 10 karakter pertama string mentah TIDAK sama dengan ini: baris yang
+     * datang dari cache Room diformat sebagai instant UTC (`...Z`), sehingga pesanan
+     * dini hari WIB (mis. 01:00) tampil sebagai tanggal KEMARIN.
+     */
+    fun dateStringOf(raw: String?): String =
+        instantOrNull(raw)?.let { DATE_FORMAT.format(it) } ?: "-"
+
+    /**
+     * Jam `HH:mm` menurut Asia/Jakarta dari timestamp mentah PostgREST.
+     *
+     * Zona ditetapkan eksplisit, bukan mengikuti zona perangkat: tablet outlet yang
+     * jam/zonanya meleset tidak boleh ikut menggeser jam pada struk dan riwayat.
+     */
+    fun timeStringOf(raw: String?): String =
+        instantOrNull(raw)?.let { TIME_FORMAT.format(it) } ?: "-"
+
+    /** Tanggal + jam (`dd MMM yyyy, HH:mm`) menurut Asia/Jakarta, untuk baris daftar transaksi. */
+    fun dateTimeStringOf(raw: String?): String =
+        instantOrNull(raw)?.let { DATE_TIME_FORMAT.format(it) } ?: "-"
 
     /** True bila [timestamp] jatuh pada [day] menurut Asia/Jakarta. */
     fun isOnDay(timestamp: String?, day: LocalDate): Boolean {

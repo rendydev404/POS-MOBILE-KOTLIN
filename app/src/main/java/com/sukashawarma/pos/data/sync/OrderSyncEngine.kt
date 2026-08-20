@@ -54,7 +54,12 @@ class OrderSyncEngine(
                     },
                     releaseTime = entity.effectiveReleaseTime.takeIf { it > 0L }?.let {
                         DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(it))
-                    }
+                    },
+                    // Ikut dikirim seperti jalur online di POSManualOrderViewModel.submitOrder.
+                    // Tanpa ini setiap pesanan yang dibuat saat offline mendarat di server
+                    // tanpa nama kasir — padahal Room menyimpannya — sehingga atribusi dan
+                    // perhitungan bonus kasir untuk transaksi offline permanen kosong.
+                    cashierName = entity.cashierName
                 )
 
                 val orderRes = api.createOrder(payload)
@@ -103,11 +108,17 @@ class OrderSyncEngine(
                     try {
                         val file = File(path)
                         if (file.exists()) {
-                            val fileName = "${entity.outletId}_${serverOrderNumber}_${java.time.LocalDate.now()}.jpg"
+                            // Ekstensi & content-type mengikuti file yang benar-benar
+                            // ditulis saat offline (sekarang WebP), bukan hardcode jpeg —
+                            // file lama yang masih .jpg tetap terkirim dengan benar.
+                            val isWebp = file.name.endsWith(".webp", ignoreCase = true)
+                            val ext = if (isWebp) "webp" else "jpg"
+                            val mime = if (isWebp) "image/webp" else "image/jpeg"
+                            val fileName = "${entity.outletId}_${serverOrderNumber}_${java.time.LocalDate.now()}.$ext"
                             val objectPath = "payment_proofs/$fileName"
-                            val body = file.asRequestBody("image/jpeg".toMediaTypeOrNull())
+                            val body = file.asRequestBody(mime.toMediaTypeOrNull())
 
-                            val uploadRes = api.uploadPaymentProof(objectPath = objectPath, contentType = "image/jpeg", file = body)
+                            val uploadRes = api.uploadPaymentProof(objectPath = objectPath, contentType = mime, file = body)
                             if (uploadRes.isSuccessful) {
                                 val publicUrl = "${com.sukashawarma.pos.data.remote.SupabaseClient.BASE_URL}storage/v1/object/public/$objectPath"
                                 api.updateOrderStatus(orderIdFilter = "eq.${entity.id}", patch = mapOf("payment_proof_url" to publicUrl))

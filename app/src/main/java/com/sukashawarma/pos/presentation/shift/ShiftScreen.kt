@@ -35,7 +35,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import java.text.NumberFormat
-import java.text.SimpleDateFormat
 import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -965,13 +964,12 @@ fun formatRupiah(amount: Double): String {
     return formatter.format(amount).replace("Rp", "Rp ")
 }
 
-fun formatTime(dateStr: String?): String {
-    if (dateStr == null) return "-"
-    return try {
-        val instant = com.sukashawarma.pos.domain.gate.JakartaTime.instantOrNull(dateStr) ?: return "-"
-        val outFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
-        outFormat.format(java.util.Date.from(instant))
-    } catch (e: Exception) {
-        dateStr.substringBefore("T")
-    }
-}
+/**
+ * Jam transaksi/shift dalam WIB.
+ *
+ * Dulu memformat lewat `SimpleDateFormat(..., Locale.getDefault())`, yang memakai
+ * zona waktu PERANGKAT — tablet outlet yang zonanya meleset (atau dibawa ke zona
+ * lain) ikut menggeser jam yang tampil, padahal seluruh app menetapkan Asia/Jakarta.
+ */
+fun formatTime(dateStr: String?): String =
+    com.sukashawarma.pos.domain.gate.JakartaTime.timeStringOf(dateStr)

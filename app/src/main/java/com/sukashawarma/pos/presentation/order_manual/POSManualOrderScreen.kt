@@ -1451,14 +1451,19 @@ private fun QrisModal(
     val cameraPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) cameraLauncher.launch(null)
     }
+    val scope = rememberCoroutineScope()
+    // Foto galeri di-decode di Dispatchers.IO DAN diperkecil lewat inSampleSize.
+    // Versi lama memanggil decodeStream() penuh di main thread: foto 12 MP jadi
+    // bitmap ~48 MB sekaligus — UI membeku dan tablet RAM kecil bisa OOM crash.
+    // Bukti transfer tidak perlu resolusi penuh, cukup terbaca.
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
-            val bitmap = try {
-                context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) }
-            } catch (e: Exception) {
-                null
+            scope.launch {
+                val bitmap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    decodeDownsampledBitmap(context, uri, maxDimension = 1600)
+                }
+                if (bitmap != null) viewModel.setQrisProofBitmap(bitmap)
             }
-            if (bitmap != null) viewModel.setQrisProofBitmap(bitmap)
         }
     }
 
@@ -1491,8 +1496,18 @@ private fun QrisModal(
                         shape = RoundedCornerShape(16.dp),
                         shadowElevation = 2.dp
                     ) {
-                        Image(
-                            painter = painterResource(id = R.drawable.qris_static),
+                        // AsyncImage (Coil), BUKAN painterResource: painterResource
+                        // men-decode PNG-nya di main thread saat modal dikomposisi,
+                        // jadi UI membeku sampai decode selesai — itu sebabnya QR
+                        // dulu lama muncul setelah tombol "Tampilkan QRIS" ditekan.
+                        // Asetnya sendiri sudah dipindah ke drawable-nodpi supaya
+                        // tidak di-upscale mengikuti densitas layar (di xxhdpi versi
+                        // lama membengkak jadi ~27 MB bitmap hanya untuk satu QR).
+                        AsyncImage(
+                            model = ImageRequest.Builder(LocalContext.current)
+                                .data(R.drawable.qris_static)
+                                .crossfade(false)
+                                .build(),
                             contentDescription = "QRIS",
                             modifier = Modifier
                                 .padding(12.dp)
@@ -1733,4 +1748,37 @@ private fun OrderSuccessOverlay(
             }
         }
     }
+}
+
+/**
+ * Decode foto bukti transfer dengan ukuran secukupnya, bukan resolusi penuh.
+ *
+ * Dipanggil dari Dispatchers.IO. Tahap pertama hanya membaca header (inJustDecodeBounds)
+ * untuk tahu dimensi asli tanpa mengalokasikan bitmap apa pun, lalu inSampleSize dipilih
+ * sebagai pangkat 2 terkecil yang membuat sisi terpanjang <= [maxDimension]. Foto kamera
+ * 12 MP yang tadinya jadi bitmap ~48 MB turun ke sekitar 1600x1200 (~7 MB) — cukup jelas
+ * sebagai bukti transfer, tapi tidak lagi membekukan UI atau memicu OOM.
+ */
+private fun decodeDownsampledBitmap(
+    context: android.content.Context,
+    uri: android.net.Uri,
+    maxDimension: Int
+): android.graphics.Bitmap? = try {
+    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    context.contentResolver.openInputStream(uri)?.use {
+        android.graphics.BitmapFactory.decodeStream(it, null, bounds)
+    }
+
+    var sample = 1
+    while (bounds.outWidth / sample > maxDimension || bounds.outHeight / sample > maxDimension) {
+        sample *= 2
+    }
+
+    val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+    context.contentResolver.openInputStream(uri)?.use {
+        android.graphics.BitmapFactory.decodeStream(it, null, opts)
+    }
+} catch (e: Exception) {
+    e.printStackTrace()
+    null
 }

@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.sukashawarma.pos.POSApplication
 import com.sukashawarma.pos.data.remote.SupabaseClient
 import com.sukashawarma.pos.data.remote.dto.*
+import com.sukashawarma.pos.domain.usecase.OrderStatusFilter
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -170,11 +171,19 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
                         } ?: emptyList()
 
                         // Ambil pesanan kasir dari local database (agar transaksi offline/belum sync juga langsung masuk laci kasir)
+                        //
+                        // Pesanan yang pembatalannya sudah disetujui WAJIB dibuang di sini.
+                        // Server tidak selalu ikut mengubah kolom `status` saat pembatalan
+                        // disetujui (lihat RevenueCalculator), jadi mengecek status saja
+                        // masih meloloskan pesanan batal — uangnya tidak pernah masuk laci
+                        // tapi ikut menaikkan `expectedCash`, sehingga saat tutup shift
+                        // kasir tampak KURANG setor sebesar nilai pesanan yang dibatalkan.
                         val cashOrders = orderDao.getOrdersByDateRange(outletId, startMillis, Long.MAX_VALUE)
                             .map { it.toOrderDto() }
-                            .filter { 
+                            .filter {
                                 (it.status.equals("completed", true) || it.status.equals("ready", true)) &&
-                                it.paymentMethod.equals("cash", true)
+                                it.paymentMethod.equals("cash", true) &&
+                                !OrderStatusFilter.isCancelled(it)
                             }
 
                         // Build Ledger

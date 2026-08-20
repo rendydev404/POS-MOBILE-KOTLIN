@@ -7,9 +7,11 @@ import com.sukashawarma.pos.domain.model.OrderStatus
 /**
  * Ringkasan penjualan untuk satu kumpulan pesanan.
  *
- * [gross] adalah omzet kotor — harga menu sebelum diskon dan subsidi promo dipotong.
+ * [gross] adalah omzet — `total_amount` apa adanya (lihat catatan di [RevenueCalculator]).
  * Ini angka yang ditampilkan di seluruh halaman. [net] dan [deductions] ikut dihitung
- * supaya rekonsiliasi kas tetap mungkin, tapi tidak dirender di UI.
+ * supaya rekonsiliasi kas tetap mungkin, tapi tidak dirender di UI. Setelah fix ini
+ * [gross] == [net] dan [deductions] selalu 0 — dipertahankan sebagai struktur data,
+ * bukan dihapus, supaya pemanggil yang sudah ada tidak perlu diubah.
  */
 data class RevenueSummary(
     val gross: Double = 0.0,
@@ -48,18 +50,23 @@ object RevenueCalculator {
     fun isRevenue(entity: LocalOrderEntity): Boolean = isRevenue(entity.status, entity.cancellationStatus)
 
     /**
-     * Omzet kotor satu pesanan: diubah agar sama persis dengan web POS (`actions.ts`).
-     * Web selalu menjumlahkan `total_amount + discount_amount + promo_subsidy` dan
-     * MENGABAIKAN total harga dari `order_items`. Jika kita tidak menggunakan
-     * cara yang persis sama, angka omzet bisa beda.
+     * Omzet satu pesanan = `total_amount` apa adanya. JANGAN menambahkan
+     * `discount_amount` / `promo_subsidy` balik ke sini — itu bug yang sudah dua kali
+     * terjadi di versi web (lihat `apps/pos-kasir/lib/channel-filter.ts` -> `getOrderGrossAmount`).
+     *
+     * Semua jalur pembuatan order (checkout/walk-in/manual di web, `CalculateCartUseCase`
+     * di native) sudah membuat `total_amount` menjadi angka final yang benar untuk
+     * masing-masing kasus:
+     * - Promo offline: diskon dibakar ke unit price, `total_amount` SUDAH setelah diskon.
+     *   `discount_amount` cuma catatan berapa yang sudah dipotong — menambahkannya balik
+     *   justru bikin promo MENAIKKAN omzet.
+     * - Food apps (GoFood/GrabFood/ShopeeFood/TikTok): `total_amount` = harga menu ASLI;
+     *   `promo_subsidy` sengaja tidak dipotong dari total, murni info "Potongan App".
      */
-    fun grossOf(order: OrderDto): Double {
-        return order.totalAmount + (order.discountAmount ?: 0.0)
-    }
+    fun grossOf(order: OrderDto): Double = order.totalAmount
 
-    /** Omzet kotor dari cache Room. Disesuaikan dengan logika yang sama. */
-    fun grossOf(entity: LocalOrderEntity): Double =
-        entity.totalAmount + entity.discountAmount
+    /** Omzet dari cache Room. Sama dengan [grossOf] di atas. */
+    fun grossOf(entity: LocalOrderEntity): Double = entity.totalAmount
 
     /** Uang yang benar-benar dibayar pelanggan. Dipakai untuk kas, bukan untuk omzet. */
     fun netOf(order: OrderDto): Double = order.totalAmount

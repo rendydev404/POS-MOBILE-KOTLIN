@@ -26,6 +26,7 @@ class RevenueCalculatorTest {
         total: Double = 25_000.0,
         discount: Double? = 0.0,
         promo: Double? = 0.0,
+        channel: String? = null,
         items: List<OrderItemDto>? = listOf(item())
     ) = OrderDto(
         id = "o1",
@@ -45,32 +46,33 @@ class RevenueCalculatorTest {
         cancellationStatus = null,
         cancellationUserName = null,
         createdAt = "2026-08-06T10:00:00+07:00",
-        channel = null,
+        channel = channel,
         orderItems = items
     )
 
+    // Regresi yang sudah dua kali terjadi (di versi web maupun native): promo malah
+    // MENAIKKAN omzet karena discount_amount/promo_subsidy ditambahkan balik ke
+    // total_amount. Omzet HARUS = total_amount apa adanya.
+
     @Test
-    fun `omzet kotor memakai subtotal item bukan total_amount`() {
-        // Menu Rp 30.000, diskon Rp 5.000, pelanggan bayar Rp 25.000.
-        val o = order(
-            total = 25_000.0,
-            discount = 5_000.0,
-            items = listOf(item(price = 30_000.0))
-        )
-        assertEquals(30_000.0, RevenueCalculator.grossOf(o), 0.01)
+    fun `promo offline MENGURANGI omzet, bukan menambah`() {
+        // Menu Rp 30.000, diskon Rp 5.000 sudah dibakar ke total -> pelanggan bayar Rp 25.000.
+        val o = order(total = 25_000.0, discount = 5_000.0, items = listOf(item(price = 30_000.0)))
+        assertEquals(25_000.0, RevenueCalculator.grossOf(o), 0.01)
         assertEquals(25_000.0, RevenueCalculator.netOf(o), 0.01)
     }
 
     @Test
-    fun `beberapa baris item dijumlahkan`() {
-        val o = order(items = listOf(item(qty = 2, price = 25_000.0), item("Extra Keju", 1, 5_000.0)))
-        assertEquals(55_000.0, RevenueCalculator.grossOf(o), 0.01)
+    fun `food apps omzet = harga menu asli, subsidi TIDAK ikut ditambahkan`() {
+        // total_amount sudah harga asli 50rb; subsidi 15rb murni info "Potongan App".
+        val o = order(total = 50_000.0, discount = 15_000.0, promo = 15_000.0, channel = "gofood")
+        assertEquals(50_000.0, RevenueCalculator.grossOf(o), 0.01)
     }
 
     @Test
-    fun `tanpa order_items nilainya direkonstruksi dari potongan yang tercatat`() {
-        val o = order(total = 25_000.0, discount = 4_000.0, promo = 1_000.0, items = null)
-        assertEquals(30_000.0, RevenueCalculator.grossOf(o), 0.01)
+    fun `order tanpa diskon apa pun omzet = total apa adanya`() {
+        val o = order(total = 25_000.0)
+        assertEquals(25_000.0, RevenueCalculator.grossOf(o), 0.01)
     }
 
     @Test
@@ -86,15 +88,15 @@ class RevenueCalculatorTest {
     @Test
     fun `summarize mengabaikan pesanan batal dan pending`() {
         val orders = listOf(
-            order(status = "completed", total = 25_000.0, items = listOf(item(price = 30_000.0))),
+            order(status = "completed", total = 25_000.0, discount = 5_000.0, items = listOf(item(price = 30_000.0))),
             order(status = "cancelled", total = 99_000.0, items = listOf(item(price = 99_000.0))),
             order(status = "pending", total = 50_000.0, items = listOf(item(price = 50_000.0)))
         )
         val summary = RevenueCalculator.summarize(orders)
 
-        assertEquals(30_000.0, summary.gross, 0.01)
+        assertEquals(25_000.0, summary.gross, 0.01)
         assertEquals(25_000.0, summary.net, 0.01)
-        assertEquals(5_000.0, summary.deductions, 0.01)
+        assertEquals(0.0, summary.deductions, 0.01)
         assertEquals(1, summary.orderCount)
         assertEquals(1, summary.itemsSold)
     }
@@ -107,15 +109,9 @@ class RevenueCalculatorTest {
     }
 
     @Test
-    fun `entity Room memakai kolom subtotal sebagai omzet kotor`() {
+    fun `entity Room omzet = total_amount apa adanya`() {
         val e = entity(status = "COMPLETED", subtotal = 30_000.0, total = 25_000.0, discount = 5_000.0)
-        assertEquals(30_000.0, RevenueCalculator.grossOf(e), 0.01)
-    }
-
-    @Test
-    fun `entity tanpa subtotal jatuh ke total ditambah diskon`() {
-        val e = entity(status = "COMPLETED", subtotal = 0.0, total = 25_000.0, discount = 5_000.0)
-        assertEquals(30_000.0, RevenueCalculator.grossOf(e), 0.01)
+        assertEquals(25_000.0, RevenueCalculator.grossOf(e), 0.01)
     }
 
     private fun entity(

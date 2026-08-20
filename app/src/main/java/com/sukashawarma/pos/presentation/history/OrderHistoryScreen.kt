@@ -37,6 +37,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.sukashawarma.pos.data.remote.dto.OrderDto
 import com.sukashawarma.pos.data.remote.dto.OrderItemDto
+import com.sukashawarma.pos.domain.gate.JakartaTime
 import com.sukashawarma.pos.domain.usecase.OrderStatusFilter
 import com.sukashawarma.pos.presentation.reports.FilterDropdown
 import com.sukashawarma.pos.presentation.theme.*
@@ -643,8 +644,15 @@ private fun OrderRow(
                 }
 
                 Column(modifier = Modifier.weight(2f)) {
-                    Text(order.createdAt.take(10), color = Color(0xFF6B7280), fontSize = 12.sp)
-                    Text(order.createdAt.takeLast(8).take(5), color = Color(0xFF9CA3AF), fontSize = 12.sp)
+                    // Dulu tanggal & jam dipotong langsung dari string mentah
+                    // (`take(10)` / `takeLast(8).take(5)`). Itu mengabaikan zona waktu
+                    // DAN bergantung pada panjang string yang ternyata tidak tetap:
+                    // server mengirim "…T19:53:02.046521+07:00" sehingga kolom jam
+                    // menampilkan potongan offset ("21+07"), sedangkan baris dari cache
+                    // Room berformat UTC ("…Z") sehingga jamnya mundur 7 jam dan
+                    // pesanan dini hari tampil bertanggal kemarin.
+                    Text(JakartaTime.dateStringOf(order.createdAt), color = Color(0xFF6B7280), fontSize = 12.sp)
+                    Text(JakartaTime.timeStringOf(order.createdAt), color = Color(0xFF9CA3AF), fontSize = 12.sp)
                 }
 
                 Column(modifier = Modifier.weight(1.3f)) {
@@ -775,24 +783,18 @@ private fun OrderRow(
                         }
                     }
 
-                    val subsidy = order.promoSubsidy?.takeIf { it > 0.0 }
+                    // "Potongan App" (promo_subsidy) SENGAJA tidak ditampilkan di sini — kasir
+                    // hanya perlu tahu Total Akhir yang ditagih; rincian subsidi promo app
+                    // cukup di layar Laporan (lihat ReportsScreen.kt).
                     val discount = order.discountAmount?.takeIf { it > 0.0 }
-                    if (subsidy != null || discount != null) {
+                    if (discount != null) {
                         Spacer(modifier = Modifier.height(8.dp))
                         androidx.compose.material3.HorizontalDivider(color = Color(0xFFE5E7EB), thickness = 1.dp)
                         Spacer(modifier = Modifier.height(8.dp))
-                        
-                        if (subsidy != null) {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Potongan App", color = Color(0xFF6B7280), fontSize = 13.sp)
-                                Text("- Rp ${String.format("%,.0f", subsidy)}", color = Color(0xFFEF4444), fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                            }
-                        }
-                        if (discount != null) {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Diskon", color = Color(0xFF6B7280), fontSize = 13.sp)
-                                Text("- Rp ${String.format("%,.0f", discount)}", color = Color(0xFFF59E0B), fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                            }
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Diskon", color = Color(0xFF6B7280), fontSize = 13.sp)
+                            Text("- Rp ${String.format("%,.0f", discount)}", color = Color(0xFFF59E0B), fontSize = 13.sp, fontWeight = FontWeight.Medium)
                         }
                         Spacer(modifier = Modifier.height(4.dp))
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {

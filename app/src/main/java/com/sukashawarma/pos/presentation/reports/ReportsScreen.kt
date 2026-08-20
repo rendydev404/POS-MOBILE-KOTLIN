@@ -23,7 +23,6 @@ import androidx.compose.ui.unit.sp
 import com.sukashawarma.pos.data.remote.dto.OrderDto
 import com.sukashawarma.pos.presentation.theme.*
 import java.time.LocalDate
-import java.time.LocalDateTime
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -349,7 +348,7 @@ fun OfflineDataBanner(isOnline: Boolean = false) {
 @Composable
 fun KPICards(data: AnalyticsData) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        KPICard(Modifier.weight(1f), "Omzet Kotor", formatRupiah(data.grossRevenue), "Pesanan selesai, sebelum potongan", Color(0xFFF59E0B), Icons.Default.MonetizationOn)
+        KPICard(Modifier.weight(1f), "Omzet Kotor", formatRupiah(data.grossRevenue), "Sudah dipotong promo offline · food apps pakai harga asli", Color(0xFFF59E0B), Icons.Default.MonetizationOn)
         KPICardLight(Modifier.weight(1f), "Pesanan Sukses", "${data.totalOrders}", "Transaksi berhasil diproses", Color(0xFF3B82F6), Icons.Default.ShoppingBag)
         KPICardLight(Modifier.weight(1f), "Rata-rata / Order", formatRupiah(data.avgOrderValue), "Rata-rata belanja per pesanan", Color(0xFFA855F7), Icons.Default.ShowChart)
         KPICardLight(Modifier.weight(1f), "Jam Tersibuk", data.peakHour?.let { "${it.toString().padStart(2, '0')}:00" } ?: "—", "Jam dengan pesanan terbanyak", Color(0xFF6366F1), Icons.Default.AccessTime)
@@ -740,10 +739,11 @@ fun TransactionHistoryTable(orders: List<OrderDto>, searchQuery: String, onSearc
                                         }
                                     }
                                 }
-                                val dateStr = try {
-                                    val cleanDate = if(order.createdAt.contains("+")) order.createdAt.substringBefore("+") else order.createdAt.substringBefore("Z")
-                                    LocalDateTime.parse(cleanDate).format(DateTimeFormatter.ofPattern("dd MMM yyyy, HH:mm"))
-                                } catch(e:Exception) { order.createdAt }
+                                // Membuang offset lalu mem-parse sebagai LocalDateTime membaca
+                                // jam APA ADANYA: baris server ber-offset "+07:00" kebetulan
+                                // benar, tapi baris dari cache Room berformat UTC ("…Z") tampil
+                                // mundur 7 jam — dan pesanan dini hari WIB ikut salah tanggal.
+                                val dateStr = com.sukashawarma.pos.domain.gate.JakartaTime.dateTimeStringOf(order.createdAt)
                                 Text(dateStr, fontSize = 12.sp, color = Color(0xFF6B7280), modifier = Modifier.weight(1f))
                                 val itemsStr = order.orderItems?.joinToString(", ") { it.displayName } ?: ""
                                 Text(itemsStr, fontSize = 14.sp, color = Color(0xFF4B5563), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(2f))

@@ -31,6 +31,23 @@ import java.time.ZoneId
 import java.time.LocalDate
 
 class DashboardViewModel(application: Application) : AndroidViewModel(application) {
+
+    private companion object {
+        /**
+         * Cakupan cermin Room di [syncOrdersFromServer], dalam hari (termasuk hari ini).
+         *
+         * Yang benar-benar dilayani cache lokal adalah pesanan berjalan di dashboard
+         * dan laci kasir shift — shift terpanjang pun hanya melewati satu tengah
+         * malam, jadi seminggu sudah jauh lebih dari cukup. Diambil dari pengukuran
+         * langsung ke outlet tersibuk: 7 hari ≈ 540 pesanan (±0,8 MB), sementara
+         * tanpa batas ≈ 1.000 pesanan (±1,5 MB) pada tiap event realtime.
+         */
+        const val SYNC_WINDOW_DAYS = 7
+
+        /** Jaring pengaman kalau satu outlet meledak transaksinya dalam rentang di atas. */
+        const val SYNC_ROW_LIMIT = "2000"
+    }
+
     private val database = (application as POSApplication).database
     private val orderDao = database.orderDao()
     private val api = SupabaseClient.api
@@ -266,59 +283,97 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private fun isNoCancellation(value: String?): Boolean =
         value.isNullOrBlank() || value.equals("none", ignoreCase = true)
 
-    /** Pulls this outlet's orders (with line items) from Supabase and mirrors them into Room. */
+    /**
+     * Pulls this outlet's recent orders (with line items) from Supabase and mirrors them into Room.
+     *
+     * Dibatasi [SYNC_WINDOW_DAYS] hari terakhir, bukan "semua pesanan outlet".
+     * Versi lama mengirim query tanpa rentang tanggal maupun limit, sehingga:
+     *   1. Tiap pemanggilan menarik ~1000 baris (±1,5 MB, sudah termasuk
+     *      order_items dan menu_items bersarang) — dan fungsi ini dipanggil pada
+     *      SETIAP event realtime pesanan, tiap flush pending-sync, dan tiap
+     *      pergantian sesi. Di jam sibuk itu berulang terus-menerus.
+     *   2. Yang membatasi hanya `max-rows` bawaan PostgREST, jadi cakupan Room
+     *      menyusut diam-diam seiring bertambahnya transaksi outlet — outlet
+     *      dengan 3.700 pesanan hanya menerima ±13 hari terakhir tanpa ada
+     *      tandanya sama sekali.
+     * Rentang tetap membuat beban sinkron konstan dan cakupannya bisa diprediksi.
+     */
     suspend fun syncOrdersFromServer(outletId: String) {
         if (outletId.isBlank()) return
         try {
-            val res = api.getOrders(mapOf("outlet_id" to "eq.$outletId", "order" to "created_at.desc"))
-            if (res.isSuccessful && res.body() != null) {
-                val dtos = res.body()!!
-                // Dikumpulkan dulu, lalu ditulis sekali. Versi lama menyisipkan tiap
-                // pesanan satu per satu pada SETIAP sync (tiap 15 detik dan tiap event
-                // realtime), termasuk pesanan yang isinya sama persis — setiap
-                // penyisipan memicu Room mengirim sinyal dan seluruh daftar pesanan,
-                // laporan, serta laci kasir dikomposisi ulang tanpa ada yang berubah.
-                val toWrite = mutableListOf<LocalOrderEntity>()
-                val existingById = orderDao.getAllOrdersByOutlet(outletId).associateBy { it.id }
-                dtos.forEach { dto ->
-                    val existing = existingById[dto.id]
-                    var newEntity = dtoToEntity(dto)
-                    if (existing != null) {
-                        newEntity = newEntity.copy(isSyncedFromOffline = existing.isSyncedFromOffline)
-                        // Prevent stale HTTP response from overwriting an eager real-time CANCELLED patch
-                        if (existing.status == com.sukashawarma.pos.domain.model.OrderStatus.CANCELLED.name && newEntity.status != com.sukashawarma.pos.domain.model.OrderStatus.CANCELLED.name) {
-                            newEntity = newEntity.copy(
-                                status = com.sukashawarma.pos.domain.model.OrderStatus.CANCELLED.name,
-                                cancellationStatus = "approved"
-                            )
-                        }
-                        // Jangan biarkan "belum ada pembatalan" dari server menimpa
-                        // status pending_approval yang baru ditulis lokal.
-                        //
-                        // Kolom `orders.cancellation_status` default-nya string 'none',
-                        // BUKAN NULL. Penjaga lama cuma memeriksa null/kosong, jadi
-                        // 'none' lolos dan menimpa status lokal — kartu "Menunggu
-                        // Persetujuan" balik jadi tombol Batal/Selesai dalam hitungan
-                        // detik, karena sync ini berjalan tiap 15 detik.
-                        // Perlindungan ini berbatas waktu. Tanpa batas, keputusan
-                        // TOLAK dari AM (server mengembalikan nilai ke 'none')
-                        // tidak pernah bisa mendarat dan kartu terus berputar.
-                        if (existing.cancellationStatus == "pending_approval" &&
-                            isNoCancellation(newEntity.cancellationStatus) &&
-                            com.sukashawarma.pos.data.sync.PendingCancellationGuard.isProtected(dto.id)
-                        ) {
-                            newEntity = newEntity.copy(
-                                cancellationStatus = "pending_approval",
-                                cancellationUserName = existing.cancellationUserName
-                            )
-                        }
-                    }
-                    // Baris yang isinya identik tidak perlu ditulis ulang.
-                    if (newEntity != existing) toWrite += newEntity
-                }
-
-                if (toWrite.isNotEmpty()) orderDao.insertOrders(toWrite)
+            val since = com.sukashawarma.pos.domain.gate.JakartaTime.startOfDayIso(
+                com.sukashawarma.pos.domain.gate.JakartaTime.today().minusDays(SYNC_WINDOW_DAYS - 1L)
+            )
+            // `order` sengaja tidak dikirim di sini: getOrders() sudah memasang
+            // default `created_at.desc`, dan mengirimnya lagi lewat QueryMap
+            // membuat parameter itu muncul dua kali di URL.
+            val res = api.getOrders(
+                mapOf(
+                    "outlet_id" to "eq.$outletId",
+                    "created_at" to "gte.$since",
+                    "limit" to SYNC_ROW_LIMIT
+                )
+            )
+            if (!res.isSuccessful) {
+                // Dulu kegagalan di sini tidak meninggalkan jejak apa pun: Room
+                // tidak ter-update dan kasir tetap melihat data lama tanpa tahu
+                // sinkronisasinya gagal (token kedaluwarsa, 5xx, timeout).
+                android.util.Log.e(
+                    "DashboardViewModel",
+                    "Sync pesanan outlet $outletId gagal: HTTP ${res.code()} ${res.errorBody()?.string().orEmpty()}"
+                )
+                return
             }
+            val dtos = res.body()
+            if (dtos == null) {
+                android.util.Log.e("DashboardViewModel", "Sync pesanan outlet $outletId sukses tapi body kosong")
+                return
+            }
+            // Dikumpulkan dulu, lalu ditulis sekali. Versi lama menyisipkan tiap
+            // pesanan satu per satu pada SETIAP sync (tiap 15 detik dan tiap event
+            // realtime), termasuk pesanan yang isinya sama persis — setiap
+            // penyisipan memicu Room mengirim sinyal dan seluruh daftar pesanan,
+            // laporan, serta laci kasir dikomposisi ulang tanpa ada yang berubah.
+            val toWrite = mutableListOf<LocalOrderEntity>()
+            val existingById = orderDao.getAllOrdersByOutlet(outletId).associateBy { it.id }
+            dtos.forEach { dto ->
+                val existing = existingById[dto.id]
+                var newEntity = dtoToEntity(dto)
+                if (existing != null) {
+                    newEntity = newEntity.copy(isSyncedFromOffline = existing.isSyncedFromOffline)
+                    // Prevent stale HTTP response from overwriting an eager real-time CANCELLED patch
+                    if (existing.status == com.sukashawarma.pos.domain.model.OrderStatus.CANCELLED.name && newEntity.status != com.sukashawarma.pos.domain.model.OrderStatus.CANCELLED.name) {
+                        newEntity = newEntity.copy(
+                            status = com.sukashawarma.pos.domain.model.OrderStatus.CANCELLED.name,
+                            cancellationStatus = "approved"
+                        )
+                    }
+                    // Jangan biarkan "belum ada pembatalan" dari server menimpa
+                    // status pending_approval yang baru ditulis lokal.
+                    //
+                    // Kolom `orders.cancellation_status` default-nya string 'none',
+                    // BUKAN NULL. Penjaga lama cuma memeriksa null/kosong, jadi
+                    // 'none' lolos dan menimpa status lokal — kartu "Menunggu
+                    // Persetujuan" balik jadi tombol Batal/Selesai dalam hitungan
+                    // detik, karena sync ini berjalan tiap 15 detik.
+                    // Perlindungan ini berbatas waktu. Tanpa batas, keputusan
+                    // TOLAK dari AM (server mengembalikan nilai ke 'none')
+                    // tidak pernah bisa mendarat dan kartu terus berputar.
+                    if (existing.cancellationStatus == "pending_approval" &&
+                        isNoCancellation(newEntity.cancellationStatus) &&
+                        com.sukashawarma.pos.data.sync.PendingCancellationGuard.isProtected(dto.id)
+                    ) {
+                        newEntity = newEntity.copy(
+                            cancellationStatus = "pending_approval",
+                            cancellationUserName = existing.cancellationUserName
+                        )
+                    }
+                }
+                // Baris yang isinya identik tidak perlu ditulis ulang.
+                if (newEntity != existing) toWrite += newEntity
+            }
+
+            if (toWrite.isNotEmpty()) orderDao.insertOrders(toWrite)
         } catch (e: Exception) {
             e.printStackTrace()
         }
