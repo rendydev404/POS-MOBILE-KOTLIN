@@ -218,7 +218,10 @@ data class CreateOrderPayload(
     val channel: String? = null,
     @SerializedName("pickup_time") val pickupTime: String? = null,
     @SerializedName("release_time") val releaseTime: String? = null,
-    @SerializedName("cashier_name") val cashierName: String? = null
+    @SerializedName("cashier_name") val cashierName: String? = null,
+    // Tanpa ini dashboard admin (yang fallback ke 'web' saat kolom null) salah
+    // menampilkan badge "WEB POS" untuk transaksi yang sebenarnya dari POS native.
+    @SerializedName("pos_client") val posClient: String = "native"
 )
 
 // ── RPC request/response payloads (rest/v1/rpc/*) ──────────────────────────
