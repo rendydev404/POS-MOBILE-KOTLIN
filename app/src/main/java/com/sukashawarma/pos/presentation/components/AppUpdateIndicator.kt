@@ -64,7 +64,7 @@ fun AppUpdateIndicator(
         AppUpdateManager.DownloadState.READY_TO_INSTALL -> if (isSafeToApply) {
             "Siap diterapkan otomatis"
         } else {
-            "Siap \u2022 menunggu layar Order"
+            "Siap \u2022 selesaikan input pesanan dahulu"
         }
         AppUpdateManager.DownloadState.INSTALLING -> "Menerapkan update..."
         AppUpdateManager.DownloadState.AWAITING_USER_ACTION -> "Perlu izin \u2022 ketuk di sini"

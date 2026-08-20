@@ -223,10 +223,10 @@ class MainActivity : ComponentActivity() {
                     val isShiftOpen by shiftViewModel.isShiftOpen.collectAsState()
                     val isShiftStateReady by shiftViewModel.isShiftStateReady.collectAsState()
 
-                    // Update kode native diterapkan otomatis hanya di layar Order,
-                    // bukan ketika kasir sedang mengisi pesanan/tutup shift atau saat
-                    // dialog printer terbuka. Proses download tetap jalan di background.
-                    val isSafeToApplyUpdate = currentTab == POSTab.DASHBOARD &&
+                    // Update kode native boleh diterapkan dari halaman mana pun,
+                    // kecuali saat kasir sedang mengisi pesanan. Dialog printer dan
+                    // handoff ke aplikasi Stok tetap harus selesai lebih dulu.
+                    val isSafeToApplyUpdate = currentTab != POSTab.ORDER_MANUAL &&
                         !showPrinterDialog && !isOpeningStok
                     LaunchedEffect(updateDownloadState, isSafeToApplyUpdate) {
                         if (updateDownloadState == com.sukashawarma.pos.data.update.AppUpdateManager.DownloadState.READY_TO_INSTALL &&
@@ -353,7 +353,9 @@ class MainActivity : ComponentActivity() {
                                             com.sukashawarma.pos.data.update.AppUpdateManager.DownloadState.FAILED ->
                                                 com.sukashawarma.pos.data.update.AppUpdateManager.startDownload(context, manifest)
                                             com.sukashawarma.pos.data.update.AppUpdateManager.DownloadState.READY_TO_INSTALL ->
-                                                com.sukashawarma.pos.data.update.AppUpdateManager.installDownloadedApk(context)
+                                                if (isSafeToApplyUpdate) {
+                                                    com.sukashawarma.pos.data.update.AppUpdateManager.installDownloadedApk(context)
+                                                }
                                             com.sukashawarma.pos.data.update.AppUpdateManager.DownloadState.AWAITING_USER_ACTION ->
                                                 com.sukashawarma.pos.data.update.AppUpdateManager.continueInstallWithUserAction(context)
                                             com.sukashawarma.pos.data.update.AppUpdateManager.DownloadState.DOWNLOADING,
