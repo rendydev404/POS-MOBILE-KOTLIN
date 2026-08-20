@@ -59,7 +59,8 @@ class OrderSyncEngine(
                     // Tanpa ini setiap pesanan yang dibuat saat offline mendarat di server
                     // tanpa nama kasir — padahal Room menyimpannya — sehingga atribusi dan
                     // perhitungan bonus kasir untuk transaksi offline permanen kosong.
-                    cashierName = entity.cashierName
+                    cashierName = entity.cashierName,
+                    isOfflineSync = true
                 )
 
                 val orderRes = api.createOrder(payload)

@@ -221,7 +221,11 @@ data class CreateOrderPayload(
     @SerializedName("cashier_name") val cashierName: String? = null,
     // Tanpa ini dashboard admin (yang fallback ke 'web' saat kolom null) salah
     // menampilkan badge "WEB POS" untuk transaksi yang sebenarnya dari POS native.
-    @SerializedName("pos_client") val posClient: String = "native"
+    @SerializedName("pos_client") val posClient: String = "native",
+    // Hanya true untuk order yang dibuat saat perangkat offline lalu disusulkan
+    // OrderSyncEngine. Jalur online mengirim false supaya badge "Offline Sync
+    // Native" di POS web tidak muncul untuk transaksi yang langsung terkirim.
+    @SerializedName("is_offline_sync") val isOfflineSync: Boolean = false
 )
 
 // ── RPC request/response payloads (rest/v1/rpc/*) ──────────────────────────
