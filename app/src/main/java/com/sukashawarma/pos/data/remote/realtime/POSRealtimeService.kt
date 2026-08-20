@@ -254,7 +254,11 @@ class POSRealtimeService : Service() {
             // layar baru menyusul setelah heartbeat timeout (~70 detik).
             realtimeManager.reconnectNow()
         }
-        return START_STICKY
+        // REDELIVER (bukan cuma STICKY): kalau sistem membunuh proses ini di
+        // latar belakang, Android me-restart service DENGAN intent outlet_id
+        // terakhir yang sama, bukan intent kosong — jadi channel langsung
+        // tersambung ulang sendiri tanpa menunggu kasir logout lalu login lagi.
+        return START_REDELIVER_INTENT
     }
 
     override fun onDestroy() {

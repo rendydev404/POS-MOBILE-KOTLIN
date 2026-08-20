@@ -1444,23 +1444,55 @@ private fun QrisModal(
 ) {
     val proofBitmap by viewModel.qrisProofBitmap.collectAsState()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var pendingCameraFile by remember { mutableStateOf<java.io.File?>(null) }
 
-    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
-        if (bitmap != null) viewModel.setQrisProofBitmap(bitmap)
+    // TakePicturePreview hanya mengembalikan thumbnail kecil (umumnya ~320 px),
+    // lalu pecah ketika dibuka dari Histori. Simpan foto kamera penuh sementara,
+    // kemudian decode terukur agar tajam tanpa mengalokasikan foto 12 MP di RAM.
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
+        val file = pendingCameraFile
+        pendingCameraFile = null
+        if (saved && file != null) {
+            scope.launch {
+                val bitmap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val uri = androidx.core.content.FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.fileprovider",
+                        file
+                    )
+                    decodeDownsampledBitmap(context, uri, maxDimension = PAYMENT_PROOF_MAX_DIMENSION)
+                }
+                file.delete()
+                if (bitmap != null) viewModel.setQrisProofBitmap(bitmap)
+            }
+        } else {
+            file?.delete()
+        }
+    }
+    val launchCameraCapture = {
+        val directory = java.io.File(context.externalCacheDir ?: context.cacheDir, "payment-proofs")
+        directory.mkdirs()
+        val file = java.io.File(directory, "qris-${System.currentTimeMillis()}.jpg")
+        pendingCameraFile = file
+        cameraLauncher.launch(
+            androidx.core.content.FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file
+            )
+        )
     }
     val cameraPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) cameraLauncher.launch(null)
+        if (granted) launchCameraCapture()
     }
-    val scope = rememberCoroutineScope()
-    // Foto galeri di-decode di Dispatchers.IO DAN diperkecil lewat inSampleSize.
-    // Versi lama memanggil decodeStream() penuh di main thread: foto 12 MP jadi
-    // bitmap ~48 MB sekaligus — UI membeku dan tablet RAM kecil bisa OOM crash.
-    // Bukti transfer tidak perlu resolusi penuh, cukup terbaca.
+    // Foto galeri di-decode di Dispatchers.IO dan dibatasi sisi terpanjang 1920 px:
+    // tajam saat viewer dibuka, tetapi jauh lebih ringan daripada bitmap 12 MP.
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
             scope.launch {
                 val bitmap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    decodeDownsampledBitmap(context, uri, maxDimension = 1600)
+                    decodeDownsampledBitmap(context, uri, maxDimension = PAYMENT_PROOF_MAX_DIMENSION)
                 }
                 if (bitmap != null) viewModel.setQrisProofBitmap(bitmap)
             }
@@ -1782,3 +1814,6 @@ private fun decodeDownsampledBitmap(
     e.printStackTrace()
     null
 }
+
+/** Resolusi detail yang cukup untuk viewer tablet, tanpa biaya foto kamera asli 12 MP. */
+private const val PAYMENT_PROOF_MAX_DIMENSION = 1920

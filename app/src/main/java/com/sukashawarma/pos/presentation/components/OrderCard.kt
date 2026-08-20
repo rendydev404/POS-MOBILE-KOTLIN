@@ -333,7 +333,7 @@ fun OrderCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.Top
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Nomor Antrian #${order.orderNumber}",
                         color = TextSlateDark,
@@ -341,41 +341,81 @@ fun OrderCard(
                         fontWeight = FontWeight.ExtraBold
                     )
                     Spacer(modifier = Modifier.height(4.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        val timeText = "dipesan $timeAgoStr"
-                        val cashierText = if (!order.cashierName.isNullOrBlank()) " • kasir: ${order.cashierName}" else ""
-                        Text(
-                            text = timeText + cashierText,
-                            color = TextSlate,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                        if (order.isOffline) {
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Surface(
-                                color = Color(0xFFFEE2E2), // red-100
-                                shape = RoundedCornerShape(4.dp)
+                    Text(
+                        text = "dipesan $timeAgoStr",
+                        color = TextSlate,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (order.isOffline || order.isSyncedFromOffline) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        val isOffline = order.isOffline
+                        Surface(
+                            // Status diletakkan pada baris sendiri: tidak boleh menyusut
+                            // ketika header kartu sempit karena badge proses ada di kanan.
+                            modifier = Modifier.widthIn(min = 72.dp),
+                            color = if (isOffline) Color(0xFFFEE2E2) else Color(0xFFD1FAE5),
+                            shape = RoundedCornerShape(5.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .background(
+                                            if (isOffline) Color(0xFFDC2626) else Color(0xFF059669),
+                                            CircleShape
+                                        )
+                                )
+                                Spacer(modifier = Modifier.width(5.dp))
                                 Text(
-                                    "OFFLINE",
-                                    color = Color(0xFF991B1B), // red-800
-                                    fontSize = 9.sp,
+                                    text = if (isOffline) "OFFLINE" else "TERSINKRON",
+                                    color = if (isOffline) Color(0xFF991B1B) else Color(0xFF065F46),
+                                    fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                    maxLines = 1
                                 )
                             }
-                        } else if (order.isSyncedFromOffline) {
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Surface(
-                                color = Color(0xFFD1FAE5), // emerald-100
-                                shape = RoundedCornerShape(4.dp)
+                        }
+                    }
+                    if (!order.cashierName.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = Color(0xFFEFF6FF),
+                            shape = RoundedCornerShape(7.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBFDBFE))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Person,
+                                    contentDescription = null,
+                                    tint = TextBlue,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(modifier = Modifier.width(5.dp))
                                 Text(
-                                    "SYNC",
-                                    color = Color(0xFF065F46), // emerald-800
-                                    fontSize = 9.sp,
+                                    text = "KASIR",
+                                    color = TextBlue,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = order.cashierName,
+                                    color = TextSlateDark,
+                                    fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
                                 )
                             }
                         }
@@ -383,6 +423,7 @@ fun OrderCard(
                 }
 
                 // Status Badge
+                Spacer(modifier = Modifier.width(8.dp))
                 if (order.status == OrderStatus.PENDING) {
                     Surface(
                         color = BadgeAmberBg,

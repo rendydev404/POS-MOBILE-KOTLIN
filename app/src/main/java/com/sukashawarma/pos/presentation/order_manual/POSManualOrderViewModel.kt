@@ -930,7 +930,7 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                         val file = java.io.File(context.cacheDir, fileName)
                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                             java.io.FileOutputStream(file).use { out ->
-                                bitmap.compress(webpFormat(), 80, out)
+                                bitmap.compress(webpFormat(), 88, out)
                             }
                         }
                         localPaymentProofPath = file.absolutePath
@@ -1025,7 +1025,7 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
             // padahal jalur offline di submitOrder() sudah benar memakai IO.
             val bytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 val stream = ByteArrayOutputStream()
-                bitmap.compress(webpFormat(), 80, stream)
+                bitmap.compress(webpFormat(), 88, stream)
                 stream.toByteArray()
             }
             val fileName = "${outletId}_${orderNumber}_${LocalDate.now()}.webp"

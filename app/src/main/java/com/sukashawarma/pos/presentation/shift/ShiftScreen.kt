@@ -788,7 +788,12 @@ fun LedgerItemRow(item: LedgerItem, viewModel: ShiftViewModel) {
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold
                         )
-                        Text(formatTime(top.createdAt), color = Color.Gray, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+                        Text(
+                            "Dicatat: ${formatActivityDateTime(top.accountingTimestamp)}",
+                            color = Color.Gray,
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
                     }
                 }
                 is LedgerItem.Sale -> {
@@ -973,3 +978,6 @@ fun formatRupiah(amount: Double): String {
  */
 fun formatTime(dateStr: String?): String =
     com.sukashawarma.pos.domain.gate.JakartaTime.timeStringOf(dateStr)
+
+fun formatActivityDateTime(dateStr: String?): String =
+    com.sukashawarma.pos.domain.gate.JakartaTime.dateTimeStringOf(dateStr)

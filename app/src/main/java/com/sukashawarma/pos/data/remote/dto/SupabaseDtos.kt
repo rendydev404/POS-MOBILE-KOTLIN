@@ -292,6 +292,7 @@ data class PettyCashTopupDto(
     val status: String,
     @SerializedName("approval_token") val approvalToken: String?,
     @SerializedName("created_at") val createdAt: String,
+    @SerializedName("approved_at") val approvedAt: String? = null,
     @SerializedName("completed_at") val completedAt: String? = null,
     @SerializedName("leader_forwarded_at") val leaderForwardedAt: String? = null
 )

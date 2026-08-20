@@ -98,17 +98,16 @@ class StockRealtimeManager(
             while (isActive) {
                 delay(25_000)
                 // JWT kedaluwarsa membuat server menutup channel tanpa menutup socket —
-                // sama seperti manager realtime lain di app ini.
+                // sama seperti manager realtime lain di app ini. Sekadar mengirim
+                // `access_token` ke channel yang sudah terbuka tidak selalu
+                // menyegarkan ulang binding-nya (socket & heartbeat tetap hidup, tapi
+                // langganan postgres_changes berhenti diam-diam), jadi sambung ulang
+                // penuh.
                 AuthSessionManager.ensureAuthenticated()
                 val token = SessionTokenHolder.accessToken
                 if (token != null && token != channelToken) {
-                    channelToken = token
-                    ws.send(JSONObject().apply {
-                        put("topic", topic)
-                        put("event", "access_token")
-                        put("payload", JSONObject().put("access_token", token))
-                        put("ref", refCounter.getAndIncrement().toString())
-                    }.toString())
+                    connect(outletId)
+                    return@launch
                 }
 
                 ws.send(JSONObject().apply {

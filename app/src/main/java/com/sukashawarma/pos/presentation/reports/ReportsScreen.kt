@@ -348,7 +348,7 @@ fun OfflineDataBanner(isOnline: Boolean = false) {
 @Composable
 fun KPICards(data: AnalyticsData) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        KPICard(Modifier.weight(1f), "Omzet Kotor", formatRupiah(data.grossRevenue), "Sudah dipotong promo offline · food apps pakai harga asli", Color(0xFFF59E0B), Icons.Default.MonetizationOn)
+        KPICard(Modifier.weight(1f), "Omzet Kotor", formatRupiah(data.grossRevenue), "", Color(0xFFF59E0B), Icons.Default.MonetizationOn)
         KPICardLight(Modifier.weight(1f), "Pesanan Sukses", "${data.totalOrders}", "Transaksi berhasil diproses", Color(0xFF3B82F6), Icons.Default.ShoppingBag)
         KPICardLight(Modifier.weight(1f), "Rata-rata / Order", formatRupiah(data.avgOrderValue), "Rata-rata belanja per pesanan", Color(0xFFA855F7), Icons.Default.ShowChart)
         KPICardLight(Modifier.weight(1f), "Jam Tersibuk", data.peakHour?.let { "${it.toString().padStart(2, '0')}:00" } ?: "—", "Jam dengan pesanan terbanyak", Color(0xFF6366F1), Icons.Default.AccessTime)

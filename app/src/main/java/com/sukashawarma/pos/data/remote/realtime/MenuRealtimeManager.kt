@@ -91,17 +91,16 @@ class MenuRealtimeManager(
             while (isActive) {
                 delay(25_000)
                 // Sama seperti OrderRealtimeManager: JWT kedaluwarsa membuat channel
-                // ditutup server tanpa menutup socket-nya.
+                // ditutup server tanpa menutup socket-nya. Sekadar mengirim
+                // `access_token` ke channel yang sudah terbuka tidak selalu
+                // menyegarkan ulang binding-nya (socket & heartbeat tetap hidup, tapi
+                // langganan postgres_changes berhenti diam-diam), jadi sambung ulang
+                // penuh.
                 com.sukashawarma.pos.data.remote.AuthSessionManager.ensureAuthenticated()
                 val token = SessionTokenHolder.accessToken
                 if (token != null && token != channelToken) {
-                    channelToken = token
-                    ws.send(JSONObject().apply {
-                        put("topic", topic)
-                        put("event", "access_token")
-                        put("payload", JSONObject().put("access_token", token))
-                        put("ref", refCounter.getAndIncrement().toString())
-                    }.toString())
+                    connect()
+                    return@launch
                 }
 
                 val hb = JSONObject().apply {

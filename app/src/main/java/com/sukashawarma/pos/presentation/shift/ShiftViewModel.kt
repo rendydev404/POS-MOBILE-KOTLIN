@@ -29,7 +29,10 @@ sealed class LedgerItem {
     }
 
     data class Topup(val data: PettyCashTopupDto) : LedgerItem() {
-        override val date: Long = parseDate(data.createdAt)
+        // Riwayat top-up dicatat pada saat dana menjadi efektif, bukan saat
+        // pengajuan awal dibuat. Jadi pengajuan tanggal 18 yang disetujui atau
+        // diserahkan tanggal 19 tampil dan diurutkan sebagai aktivitas tanggal 19.
+        override val date: Long = parseDate(data.accountingTimestamp)
     }
 
     data class Sale(val data: OrderDto) : LedgerItem() {
@@ -163,12 +166,7 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
 
                         // Fetch Topups
                         val topupsRes = api.getPettyCashTopups(mapOf("outlet_id" to "eq.$outletId"))
-                        val topups = topupsRes.body()?.filter { 
-                            val created = LedgerItem.parseDate(it.createdAt)
-                            val completed = LedgerItem.parseDate(it.completedAt)
-                            val forwarded = LedgerItem.parseDate(it.leaderForwardedAt)
-                            created >= startMillis || completed >= startMillis || forwarded >= startMillis
-                        } ?: emptyList()
+                        val topups = topupsRes.body()?.filter { it.touchesShiftSince(startMillis) } ?: emptyList()
 
                         // Ambil pesanan kasir dari local database (agar transaksi offline/belum sync juga langsung masuk laci kasir)
                         //
@@ -248,12 +246,7 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
                                 if (refMillis > 0) {
                                     val interimTopupsRes = api.getPettyCashTopups(mapOf("outlet_id" to "eq.$outletId"))
                                     val interimTopups = interimTopupsRes.body()
-                                        ?.filter { 
-                                            val created = LedgerItem.parseDate(it.createdAt)
-                                            val completed = LedgerItem.parseDate(it.completedAt)
-                                            val forwarded = LedgerItem.parseDate(it.leaderForwardedAt)
-                                            it.status in SUDAH_DI_LACI && (created > refMillis || completed > refMillis || forwarded > refMillis)
-                                        }
+                                        ?.filter { it.status in SUDAH_DI_LACI && it.touchesShiftSince(refMillis, inclusive = false) }
                                         ?.sumOf { it.amount } ?: 0.0
 
                                     val interimExpensesRes = api.getPettyCashExpenses("eq.$outletId")
@@ -541,4 +534,20 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
             orderItems = orderItems
         )
     }
+}
+
+/**
+ * Waktu ketika top-up benar-benar relevan untuk saldo/riwayat kasir.
+ *
+ * `approved_at` diperlukan untuk alur lama dengan status `approved`: sebelumnya
+ * pengajuan lama tidak terbaca bila disetujui pada shift berikutnya karena hanya
+ * `created_at`, `completed_at`, dan `leader_forwarded_at` yang diperiksa.
+ */
+val PettyCashTopupDto.accountingTimestamp: String
+    get() = completedAt ?: leaderForwardedAt ?: approvedAt ?: createdAt
+
+private fun PettyCashTopupDto.touchesShiftSince(startMillis: Long, inclusive: Boolean = true): Boolean {
+    val eventTimes = listOfNotNull(createdAt, approvedAt, completedAt, leaderForwardedAt)
+        .map(LedgerItem::parseDate)
+    return if (inclusive) eventTimes.any { it >= startMillis } else eventTimes.any { it > startMillis }
 }

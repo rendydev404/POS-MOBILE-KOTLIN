@@ -155,17 +155,19 @@ class OrderRealtimeManager(
                 }
                 // Supabase menutup channel begitu JWT-nya kedaluwarsa (~1 jam) tanpa
                 // menutup socket-nya, jadi realtime mati diam-diam. Segarkan token
-                // lebih dulu, lalu kirim yang baru ke channel.
+                // lebih dulu.
                 com.sukashawarma.pos.data.remote.AuthSessionManager.ensureAuthenticated()
                 val token = SessionTokenHolder.accessToken
                 if (token != null && token != channelToken) {
-                    channelToken = token
-                    ws.send(JSONObject().apply {
-                        put("topic", topic)
-                        put("event", "access_token")
-                        put("payload", JSONObject().put("access_token", token))
-                        put("ref", refCounter.getAndIncrement().toString())
-                    }.toString())
+                    // Mengirim event `access_token` ke channel yang sudah terbuka TIDAK
+                    // selalu menyegarkan ulang binding RLS-nya di server: socket tetap
+                    // hidup dan heartbeat tetap dibalas, tapi langganan
+                    // `postgres_changes` diam-diam berhenti mengirim event — persis
+                    // gejala "harus logout+login dulu baru pesanan baru muncul".
+                    // Sambung ulang penuh (persis yang terjadi saat login manual)
+                    // memastikan langganannya benar-benar segar.
+                    connect(currentOutletId)
+                    return@launch
                 }
 
                 val hb = JSONObject().apply {

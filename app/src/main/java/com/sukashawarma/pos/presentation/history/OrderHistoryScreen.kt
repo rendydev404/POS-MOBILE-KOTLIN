@@ -530,7 +530,13 @@ fun OrderHistoryContent(viewModel: OrderHistoryViewModel) {
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     AsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current).data(previewImageUrl).crossfade(true).build(),
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(previewImageUrl)
+                            // Decode satu gambar yang cukup tajam untuk dialog dan
+                            // cache hasilnya; hindari decode foto asli 12 MP.
+                            .size(1600, 1600)
+                            .crossfade(false)
+                            .build(),
                         contentDescription = "Bukti Pembayaran",
                         contentScale = ContentScale.Fit,
                         modifier = Modifier

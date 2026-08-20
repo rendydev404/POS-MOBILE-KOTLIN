@@ -2,4 +2,6 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- APK update di-download ke sini (lihat AppUpdateManager) -->
     <external-files-path name="updates" path="updates/" />
+    <!-- Foto bukti QRIS resolusi penuh disimpan sementara saat kamera terbuka. -->
+    <external-cache-path name="payment-proofs" path="payment-proofs/" />
 </paths>

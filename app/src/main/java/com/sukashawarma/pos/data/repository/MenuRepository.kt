@@ -150,8 +150,18 @@ class MenuRepository(
         val cachedEntities = menuItemDao.getAllMenuItems().first()
         if (cachedEntities.isEmpty()) return null
         val items = filterByOutlet(cachedEntities.map { it.toDomain() }, outletId)
+        // Kategori tidak punya tabel cache sendiri, tetapi id + nama kategorinya sudah
+        // ikut tersimpan di setiap menu. Bentuk ulang dari data itu agar chip filter
+        // tetap tersedia saat offline, bukan hanya tombol "Semua".
+        val categories = items
+            .asSequence()
+            .filter { it.categoryId.isNotBlank() && it.categoryName.isNotBlank() }
+            .distinctBy { it.categoryId }
+            .map { Category(id = it.categoryId, name = it.categoryName) }
+            .sortedBy { it.name.lowercase() }
+            .toList()
         val settings = kioskSettingDao.getAllSettings().first().toKioskSettings()
-        return MenuSnapshot(items = items, categories = emptyList(), settings = settings, fromCache = true)
+        return MenuSnapshot(items = items, categories = categories, settings = settings, fromCache = true)
     }
 
     private suspend fun writeCache(items: List<MenuItem>, settings: KioskSettings) {
