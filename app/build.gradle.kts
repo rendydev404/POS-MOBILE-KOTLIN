@@ -33,8 +33,8 @@ android {
         applicationId = "com.sukashawarma.pos"
         minSdk = 26
         targetSdk = 34
-        versionCode = 73
-        versionName = "1.0.72"
+        versionCode = 74
+        versionName = "1.0.73"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
