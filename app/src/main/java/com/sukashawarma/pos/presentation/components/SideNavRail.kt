@@ -164,7 +164,7 @@ val POS_MENU_LINKS = listOf(
 
     NavMenuItem(label = "Histori & Bonus", icon = Icons.Default.Assignment, tab = POSTab.HISTORI_BONUS),
 
-    NavMenuItem(label = "Control Device", icon = Icons.Default.Tv, tab = POSTab.KIOSK_CONTROL),
+    NavMenuItem(label = "Control Dev..", icon = Icons.Default.Tv, tab = POSTab.KIOSK_CONTROL),
 
     NavMenuItem(label = "Laporan", icon = Icons.Default.BarChart, tab = POSTab.REPORTS),
 

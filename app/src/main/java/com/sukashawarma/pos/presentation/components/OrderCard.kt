@@ -4,6 +4,8 @@ import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -57,7 +59,7 @@ data class ParsedOrderItem(
     val quantity: Int
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun OrderCard(
     order: Order,
@@ -68,8 +70,13 @@ fun OrderCard(
     onReprint: (Order) -> Unit = {},
     onAcceptOrder: (Order) -> Unit = {},
     isStatusUpdating: Boolean = false,
+    isHighlighted: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    val bringIntoViewRequester = remember { BringIntoViewRequester() }
+    LaunchedEffect(isHighlighted) {
+        if (isHighlighted) bringIntoViewRequester.bringIntoView()
+    }
     val timeFormat = SimpleDateFormat("HH.mm", Locale.getDefault())
     val formattedTime = timeFormat.format(Date(order.createdAt))
     val currencyFormat = NumberFormat.getCurrencyInstance(Locale("id", "ID")).apply {
@@ -316,11 +323,16 @@ fun OrderCard(
     }
 
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .bringIntoViewRequester(bringIntoViewRequester),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = cardBg),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, cardBorder)
+        border = androidx.compose.foundation.BorderStroke(
+            if (isHighlighted) 3.dp else 1.dp,
+            if (isHighlighted) ShawarmaOrange else cardBorder
+        )
     ) {
         Column(
             modifier = Modifier.fillMaxWidth()

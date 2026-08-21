@@ -250,6 +250,11 @@ interface SupabaseApi {
     @POST("rest/v1/rpc/register_fcm_token")
     suspend fun registerFcmToken(@Body payload: RegisterFcmTokenPayload): Response<Void>
 
+    // Dipanggil sebelum token sesi dibersihkan saat logout. Policy DELETE
+    // membatasi baris ke auth.uid() yang sedang aktif.
+    @DELETE("rest/v1/fcm_tokens")
+    suspend fun deleteFcmToken(@Query("token") tokenFilter: String): Response<Void>
+
     @GET("rest/v1/petty_cash_topups")
     suspend fun getPettyCashTopups(
         @QueryMap filters: Map<String, String>,

@@ -54,6 +54,10 @@ import com.sukashawarma.pos.data.remote.NetworkMonitor
 import androidx.compose.ui.Alignment
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        const val EXTRA_ORDER_ID = "order_id"
+    }
+
     private val loginViewModel: LoginViewModel by viewModels()
     private val dashboardViewModel: DashboardViewModel by viewModels()
     private val posManualOrderViewModel: POSManualOrderViewModel by viewModels()
@@ -80,6 +84,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIntentRouting(intent: android.content.Intent?) {
+        val orderId = intent?.getStringExtra(EXTRA_ORDER_ID)
+        if (!orderId.isNullOrBlank()) {
+            _routeEvent.tryEmit("order:$orderId")
+            return
+        }
         val dest = intent?.getStringExtra("destination")
         if (dest != null) {
             _routeEvent.tryEmit(dest)
@@ -206,8 +215,12 @@ class MainActivity : ComponentActivity() {
                     LaunchedEffect(Unit) {
                         handleIntentRouting(intent) // check initial intent on create
                         _routeEvent.collect { dest ->
-                            if (dest == "petty_cash") {
-                                currentTab = POSTab.SHIFT_PETTY_CASH
+                            when {
+                                dest == "petty_cash" -> currentTab = POSTab.SHIFT_PETTY_CASH
+                                dest.startsWith("order:") -> {
+                                    currentTab = POSTab.DASHBOARD
+                                    dashboardViewModel.highlightOrder(dest.removePrefix("order:"))
+                                }
                             }
                         }
                     }

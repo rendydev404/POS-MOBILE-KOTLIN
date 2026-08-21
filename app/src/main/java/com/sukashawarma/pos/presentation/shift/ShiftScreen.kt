@@ -397,7 +397,7 @@ fun LaciKasirCard(initialCash: Double, shiftSalesTotal: Double, expectedCash: Do
             }
             HorizontalDivider(Modifier.padding(vertical = 12.dp), color = Color(0xFFF3F4F6))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Estimasi Uang Fisik:", fontWeight = FontWeight.Medium, color = Color.Gray, fontSize = 14.sp)
+                Text("Estimasi Penjualan Cash:", fontWeight = FontWeight.Medium, color = Color.Gray, fontSize = 14.sp)
                 Text(formatRupiah(expectedCash), fontWeight = FontWeight.Black, fontSize = 20.sp, color = Color(0xFF1F2937))
             }
         }

@@ -48,6 +48,7 @@ fun DashboardScreen(
     val pendingOrders by viewModel.pendingOrders.collectAsState()
     val preparingOrders by viewModel.preparingOrders.collectAsState()
     val updatingOrderIds by viewModel.updatingOrderIds.collectAsState()
+    val highlightedOrderId by viewModel.highlightedOrderId.collectAsState()
     val completedOrders by viewModel.completedOrders.collectAsState()
     
     val printerConnectionStatus by printerViewModel.connectionStatus.collectAsState()
@@ -320,6 +321,7 @@ fun DashboardScreen(
                             key(order.id) { OrderCard(
                                 order = order,
                                 isStatusUpdating = order.id in updatingOrderIds,
+                                isHighlighted = order.id == highlightedOrderId,
                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
                                 onCancelOrder = { o, reason -> 
                                     viewModel.requestCancellation(
@@ -381,6 +383,7 @@ fun DashboardScreen(
                             key(order.id) { OrderCard(
                                 order = order,
                                 isStatusUpdating = order.id in updatingOrderIds,
+                                isHighlighted = order.id == highlightedOrderId,
                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
                                 onCancelOrder = { o, reason -> 
                                     viewModel.requestCancellation(
@@ -428,6 +431,7 @@ fun DashboardScreen(
                             key(order.id) { OrderCard(
                                 order = order,
                                 isStatusUpdating = order.id in updatingOrderIds,
+                                isHighlighted = order.id == highlightedOrderId,
                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
                                 onCancelOrder = { o, reason -> 
                                     viewModel.requestCancellation(

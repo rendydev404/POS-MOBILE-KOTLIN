@@ -59,6 +59,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private val alertPlayer = OrderAlertPlayer(application)
     private val syncEngine = OrderSyncEngine(orderDao, api)
     private val statusUpdateGuard = OrderStatusUpdateGuard()
+    val highlightedOrderId = MutableStateFlow<String?>(null)
+    private var highlightClearJob: Job? = null
 
     private val _updatingOrderIds = MutableStateFlow<Set<String>>(emptySet())
     val updatingOrderIds: StateFlow<Set<String>> = _updatingOrderIds.asStateFlow()
@@ -69,6 +71,16 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     val currentOutletName = MutableStateFlow("")
     val currentCashierName = MutableStateFlow("Kasir")
     val outlets = MutableStateFlow<List<Pair<String, String>>>(emptyList())
+
+    /** Fokus singkat pada kartu order yang dibuka dari tap notifikasi push. */
+    fun highlightOrder(orderId: String) {
+        highlightedOrderId.value = orderId
+        highlightClearJob?.cancel()
+        highlightClearJob = viewModelScope.launch {
+            delay(5_000)
+            highlightedOrderId.value = null
+        }
+    }
 
     /**
      * Detak per menit supaya batas "hari ini" ikut dihitung ulang saat lewat

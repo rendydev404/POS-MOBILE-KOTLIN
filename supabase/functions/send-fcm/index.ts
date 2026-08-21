@@ -44,7 +44,7 @@ async function getValidAccessToken(clientEmail: string, privateKey: string) {
 }
 
 /** Data-only: app yang membangun notifikasinya sendiri (custom sound + dedup pakai id). */
-function buildDataPayload(type: string, record: Record<string, any>): Record<string, string> {
+function buildDataPayload(type: string, record: Record<string, any>): Record<string, string> | null {
   if (type === 'owner_message') {
     return {
       type,
@@ -83,9 +83,7 @@ function buildDataPayload(type: string, record: Record<string, any>): Record<str
            body = `Pengajuan top up petty cash menunggu persetujuan.`;
        } else {
            // Do not send push notification for intermediate or unrecognized states not explicitly handled
-           return new Response(JSON.stringify({ message: "No explicit notification for this state" }), {
-               headers: { "Content-Type": "application/json" },
-           });
+           return null
        }
     }
     
@@ -97,9 +95,22 @@ function buildDataPayload(type: string, record: Record<string, any>): Record<str
     }
   }
 
+  if (type === 'order_cancelled') {
+    return {
+      type,
+      id: String(record.id ?? ''),
+      order_id: String(record.id ?? ''),
+      title: 'Pesanan Dibatalkan',
+      body: record.order_number
+        ? `Order #${record.order_number} dibatalkan.`
+        : 'Ada pesanan yang dibatalkan.',
+    }
+  }
+
   return {
     type: 'new_order',
     id: String(record.id ?? ''),
+    order_id: String(record.id ?? ''),
     title: 'Pesanan Baru Masuk',
     body: record.order_number
       ? `Order #${record.order_number} menunggu diproses.`
@@ -190,6 +201,12 @@ Deno.serve(async (req) => {
     const accessToken = await getValidAccessToken(serviceAccount.client_email, privateKey)
 
     const dataPayload = buildDataPayload(type, record)
+    if (dataPayload === null) {
+      return new Response(JSON.stringify({ message: 'No explicit notification for this state' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
 
     const results = []
     const deadTokens: string[] = []

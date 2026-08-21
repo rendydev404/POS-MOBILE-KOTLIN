@@ -2,6 +2,8 @@ package com.sukashawarma.pos.data.notification
 
 import android.Manifest
 import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
@@ -11,6 +13,7 @@ import com.google.firebase.messaging.RemoteMessage
 import com.sukashawarma.pos.R
 import com.sukashawarma.pos.data.local.SessionPrefs
 import com.sukashawarma.pos.data.remote.AuthSessionManager
+import com.sukashawarma.pos.presentation.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -39,6 +42,8 @@ class POSFirebaseMessagingService : FirebaseMessagingService() {
 
         val isOwnerMessage = message.data["type"] == "broadcast" || message.data["type"] == "owner_message"
         val isPettyCash = message.data["type"] == "petty_cash"
+        val isCancelledOrder = message.data["type"] == "order_cancelled"
+        val orderId = message.data["order_id"]?.takeIf { it.isNotBlank() }
 
         // Hanya bunyikan alert jika bukan pesan dari owner dan bukan petty cash
         if (isOwnerMessage) {
@@ -47,7 +52,8 @@ class POSFirebaseMessagingService : FirebaseMessagingService() {
             OrderAlertPlayer(applicationContext).playNewOrderAlert()
         }
 
-        var title: CharSequence = message.notification?.title ?: message.data["title"] ?: "Pesanan Baru Masuk"
+        var title: CharSequence = message.notification?.title ?: message.data["title"]
+            ?: if (isCancelledOrder) "Pesanan Dibatalkan" else "Pesanan Baru Masuk"
         val body = message.notification?.body ?: message.data["body"] ?: "Ada pesanan baru menunggu diproses."
 
         if (isOwnerMessage) {
@@ -57,10 +63,11 @@ class POSFirebaseMessagingService : FirebaseMessagingService() {
         // Id record, bukan timestamp: kalau POSRealtimeService sudah menampilkan
         // notifikasi yang sama, keduanya menimpa satu sama lain, bukan menumpuk.
         val notificationId = message.data["id"]?.takeIf { it.isNotBlank() }?.hashCode()
+            ?: orderId?.hashCode()
             ?: System.currentTimeMillis().toInt()
             
         val channelId = if (isPettyCash) NotificationChannels.SYSTEM_ALERTS_CHANNEL_ID else NotificationChannels.NEW_ORDER_CHANNEL_ID
-        showSystemNotification(notificationId, title, body, channelId)
+        showSystemNotification(notificationId, title, body, channelId, orderId)
 
         // Layar yang sedang terbuka ikut menyegarkan diri saat push masuk.
         if (isOwnerMessage) {
@@ -72,15 +79,22 @@ class POSFirebaseMessagingService : FirebaseMessagingService() {
         }
     }
 
-    private fun showSystemNotification(id: Int, title: CharSequence, body: String, channelId: String = NotificationChannels.NEW_ORDER_CHANNEL_ID) {
-        val intent = android.content.Intent(this, com.sukashawarma.pos.presentation.MainActivity::class.java).apply {
-            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK
+    private fun showSystemNotification(
+        id: Int,
+        title: CharSequence,
+        body: String,
+        channelId: String = NotificationChannels.NEW_ORDER_CHANNEL_ID,
+        orderId: String? = null
+    ) {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             if (channelId == NotificationChannels.SYSTEM_ALERTS_CHANNEL_ID) {
                 putExtra("destination", "petty_cash")
             }
+            orderId?.let { putExtra(MainActivity.EXTRA_ORDER_ID, it) }
         }
-        val pendingIntent = android.app.PendingIntent.getActivity(
-            this, 0, intent, android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        val pendingIntent = PendingIntent.getActivity(
+            this, id, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
         val notification = NotificationCompat.Builder(this, channelId)

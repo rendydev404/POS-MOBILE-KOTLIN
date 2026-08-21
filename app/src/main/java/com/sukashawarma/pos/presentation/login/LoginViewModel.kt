@@ -181,14 +181,16 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
     
     fun logout() {
         activeSession.value = null
-        SessionTokenHolder.clear()
-        AuthPrefs.clear()
-        SessionPrefs.clear()
-        
-        // After logout, keep the last credentials filled in, but they must manually click login.
-        val lastUser = AuthPrefs.getLastUsername()
-        val lastPass = AuthPrefs.getLastPassword()
-        if (lastUser != null) usernameInput.value = lastUser
-        if (lastPass != null) passwordInput.value = lastPass
+        viewModelScope.launch {
+            // Harus sebelum token sesi dibersihkan: policy DELETE memakai auth.uid().
+            com.sukashawarma.pos.data.notification.FcmTokenRegistrar.unregisterCurrentToken()
+            SessionTokenHolder.clear()
+            AuthPrefs.clear()
+            SessionPrefs.clear()
+
+            // Biarkan kredensial terakhir tetap terisi, tetapi login harus manual.
+            AuthPrefs.getLastUsername()?.let { usernameInput.value = it }
+            AuthPrefs.getLastPassword()?.let { passwordInput.value = it }
+        }
     }
 }
