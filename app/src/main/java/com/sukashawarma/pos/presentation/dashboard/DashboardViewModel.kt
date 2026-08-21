@@ -335,10 +335,19 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             // penyisipan memicu Room mengirim sinyal dan seluruh daftar pesanan,
             // laporan, serta laci kasir dikomposisi ulang tanpa ada yang berubah.
             val toWrite = mutableListOf<LocalOrderEntity>()
+            // Order yang device ini belum pernah punya salinannya SAMA SEKALI (kiosk/
+            // device lain, bukan yang membuat order-nya) tidak punya `existing` untuk
+            // dipertahankan kalau kena race yang sama (lihat komentar panjang di bawah).
+            // Satu-satunya penyelamatan yang mungkin: fetch ulang sekali lagi setelah
+            // jeda singkat, dengan asumsi order_items-nya sudah komit di server saat itu.
+            val suspiciousNewOrderIds = mutableListOf<String>()
             val existingById = orderDao.getAllOrdersByOutlet(outletId).associateBy { it.id }
             dtos.forEach { dto ->
                 val existing = existingById[dto.id]
                 var newEntity = dtoToEntity(dto)
+                if (existing == null && dto.orderItems.isNullOrEmpty() && dto.totalAmount > 0) {
+                    suspiciousNewOrderIds += dto.id
+                }
                 if (existing != null) {
                     newEntity = newEntity.copy(isSyncedFromOffline = existing.isSyncedFromOffline)
                     // Prevent stale HTTP response from overwriting an eager real-time CANCELLED patch
@@ -368,14 +377,71 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                             cancellationUserName = existing.cancellationUserName
                         )
                     }
+                    // submitOrder() menyimpan order lokal dengan item LENGKAP, lalu di
+                    // baris berikutnya langsung memancarkan orderSyncEvent yang memicu
+                    // fetch ini — BERSAMAAN dengan pushOrderRemainder() yang baru mulai
+                    // POST order_items ke server di coroutine terpisah (lihat
+                    // POSManualOrderViewModel.submitOrder). Kalau fetch GET ini menang
+                    // race dan sampai duluan sebelum POST order_items komit, server
+                    // membalas order_items KOSONG padahal total_amount sudah terisi
+                    // (kolom independen) — dan REPLACE di insertOrders() menimpa item
+                    // lokal yang tadinya sudah benar dengan yang kosong itu. Order jadi
+                    // tampil "harga ada, menu hilang" secara PERMANEN karena app hanya
+                    // subscribe realtime ke tabel `orders`, bukan `order_items` — tidak
+                    // ada event susulan yang memicu resync buat memperbaikinya sendiri.
+                    // Jangan biarkan hasil fetch yang lebih miskin (item kosong) menimpa
+                    // item lokal yang sudah ada.
+                    if (dto.orderItems.isNullOrEmpty() &&
+                        existing.itemsJson.isNotBlank() && existing.itemsJson != "[]" &&
+                        dto.totalAmount > 0
+                    ) {
+                        newEntity = newEntity.copy(
+                            itemsJson = existing.itemsJson,
+                            subtotal = existing.subtotal
+                        )
+                    }
                 }
                 // Baris yang isinya identik tidak perlu ditulis ulang.
                 if (newEntity != existing) toWrite += newEntity
             }
 
             if (toWrite.isNotEmpty()) orderDao.insertOrders(toWrite)
+
+            if (suspiciousNewOrderIds.isNotEmpty()) {
+                viewModelScope.launch { retrySuspiciousOrders(outletId, suspiciousNewOrderIds) }
+            }
         } catch (e: Exception) {
             e.printStackTrace()
+        }
+    }
+
+    /**
+     * Fetch ulang SEKALI, khusus order yang pertama kali muncul di device ini
+     * dengan order_items kosong tapi total_amount terisi — kemungkinan besar
+     * order_items-nya baru komit di server sesaat setelah fetch pertama (lihat
+     * komentar race condition di [syncOrdersFromServer]). Dibatasi satu kali
+     * retry (tidak memanggil syncOrdersFromServer lagi secara rekursif) supaya
+     * order yang order_items-nya memang betul-betul kosong di server tidak
+     * memicu polling tanpa henti.
+     */
+    private suspend fun retrySuspiciousOrders(outletId: String, orderIds: List<String>) {
+        kotlinx.coroutines.delay(4_000)
+        try {
+            val res = api.getOrders(
+                mapOf("id" to "in.(${orderIds.joinToString(",")})")
+            )
+            val dtos = res.body() ?: return
+            if (!res.isSuccessful || dtos.isEmpty()) return
+            val existingById = orderDao.getAllOrdersByOutlet(outletId).associateBy { it.id }
+            val toWrite = dtos.mapNotNull { dto ->
+                if (dto.orderItems.isNullOrEmpty()) return@mapNotNull null
+                val newEntity = dtoToEntity(dto)
+                val existing = existingById[dto.id]
+                if (newEntity == existing) null else newEntity
+            }
+            if (toWrite.isNotEmpty()) orderDao.insertOrders(toWrite)
+        } catch (e: Exception) {
+            android.util.Log.e("DashboardViewModel", "Retry order_items kosong gagal", e)
         }
     }
 
@@ -685,7 +751,11 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             cancellationStatus = entity.cancellationStatus,
             cancellationUserName = entity.cancellationUserName,
             createdAt = entity.createdAt,
-            isOffline = entity.syncState != com.sukashawarma.pos.data.local.entity.SyncState.SYNCED.name,
+            // SENDING tidak dihitung "offline": itu pesanan yang baru saja dibuat dan
+            // pengirimannya masih berjalan di latar belakang (umumnya < 1 detik).
+            // Menandainya merah akan membuat setiap pesanan baru berkedip "OFFLINE".
+            isOffline = entity.syncState != com.sukashawarma.pos.data.local.entity.SyncState.SYNCED.name &&
+                entity.syncState != com.sukashawarma.pos.data.local.entity.SyncState.SENDING.name,
             isSyncedFromOffline = entity.isSyncedFromOffline,
             channel = entity.channel,
             notes = entity.notes,

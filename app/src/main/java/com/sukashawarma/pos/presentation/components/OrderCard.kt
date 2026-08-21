@@ -373,7 +373,7 @@ fun OrderCard(
                                 )
                                 Spacer(modifier = Modifier.width(5.dp))
                                 Text(
-                                    text = if (isOffline) "OFFLINE" else "TERSINKRON",
+                                    text = if (isOffline) "OFFLINE" else "SYNC",
                                     color = if (isOffline) Color(0xFF991B1B) else Color(0xFF065F46),
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
