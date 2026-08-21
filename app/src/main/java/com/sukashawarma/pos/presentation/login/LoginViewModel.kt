@@ -11,7 +11,6 @@ import com.sukashawarma.pos.data.remote.SupabaseClient
 import com.sukashawarma.pos.domain.model.UserSession
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
-import retrofit2.HttpException
 
 private const val LOGIN_EMAIL_DOMAIN = "@outlet.local"
 
@@ -163,7 +162,14 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
                 SessionPrefs.setSession(staff.id, staff.outletId, session.outletName, session.username, session.role)
                 activeSession.value = session
 
-            } catch (e: HttpException) {
+            } catch (e: java.io.IOException) {
+                // Semua fungsi API di app ini mengembalikan Response<T> (isSuccessful
+                // dicek manual di atas), jadi Retrofit TIDAK PERNAH melempar
+                // HttpException untuk error HTTP — cabang itu kode mati. Kegagalan
+                // jaringan sungguhan (WiFi putus, timeout, DNS gagal) selalu berupa
+                // IOException, dan sebelum ini jatuh ke catch generik di bawah,
+                // membuat masalah WiFi biasa tampil sebagai "Terjadi masalah sistem"
+                // yang menakutkan alih-alih pesan yang actionable.
                 errorMessage.value = "Koneksi internet terputus atau server tidak merespons. Periksa koneksi Anda."
             } catch (e: Exception) {
                 errorMessage.value = "Terjadi masalah sistem. Silakan coba beberapa saat lagi."
