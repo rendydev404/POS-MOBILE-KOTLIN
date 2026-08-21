@@ -67,6 +67,7 @@ fun OrderCard(
     onPrintCustomer: (Order) -> Unit,
     onReprint: (Order) -> Unit = {},
     onAcceptOrder: (Order) -> Unit = {},
+    isStatusUpdating: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val timeFormat = SimpleDateFormat("HH.mm", Locale.getDefault())
@@ -997,6 +998,7 @@ fun OrderCard(
                             if (order.source == OrderSource.ONLINE && order.status == OrderStatus.PENDING) {
                                 Button(
                                     onClick = { onAcceptOrder(order) },
+                                    enabled = !isStatusUpdating,
                                     modifier = Modifier.weight(1f).height(48.dp),
                                     shape = RoundedCornerShape(12.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6)), // blue-500
@@ -1009,14 +1011,23 @@ fun OrderCard(
                             } else {
                                 Button(
                                     onClick = { onStatusChange(order, OrderStatus.COMPLETED) },
+                                    enabled = !isStatusUpdating,
                                     modifier = Modifier.weight(1f).height(48.dp),
                                     shape = RoundedCornerShape(12.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = TextEmerald),
                                     contentPadding = PaddingValues(horizontal = 4.dp)
                                 ) {
-                                    Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                    if (isStatusUpdating) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            color = Color.White,
+                                            strokeWidth = 2.dp
+                                        )
+                                    } else {
+                                        Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                    }
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Selesai", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(if (isStatusUpdating) "Menyimpan" else "Selesai", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                             }
                             

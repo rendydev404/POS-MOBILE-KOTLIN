@@ -20,6 +20,8 @@ import com.sukashawarma.pos.data.sync.OrderSyncEngine
 import com.sukashawarma.pos.data.remote.NetworkMonitor
 import com.sukashawarma.pos.domain.model.*
 import com.sukashawarma.pos.domain.usecase.PrintReceiptUseCase
+import com.sukashawarma.pos.domain.usecase.OrderStatusUpdateGuard
+import com.sukashawarma.pos.domain.usecase.OrderStatusUpdatePolicy
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.flow.*
@@ -56,6 +58,12 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     val printerManager = BluetoothPrinterManager
     private val alertPlayer = OrderAlertPlayer(application)
     private val syncEngine = OrderSyncEngine(orderDao, api)
+    private val statusUpdateGuard = OrderStatusUpdateGuard()
+
+    private val _updatingOrderIds = MutableStateFlow<Set<String>>(emptySet())
+    val updatingOrderIds: StateFlow<Set<String>> = _updatingOrderIds.asStateFlow()
+    private val _statusUpdateErrors = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val statusUpdateErrors: SharedFlow<String> = _statusUpdateErrors.asSharedFlow()
 
     val currentOutletId = MutableStateFlow("")
     val currentOutletName = MutableStateFlow("")
@@ -519,32 +527,32 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun updateOrderStatus(order: Order, newStatus: OrderStatus) {
+        if (!statusUpdateGuard.tryBegin(order.id)) return
+        _updatingOrderIds.update { it + order.id }
         viewModelScope.launch {
-            // Order Website tidak pernah dapat cashier_name saat dibuat (dibuat oleh
-            // customer, bukan kasir) — dicatat di sini, saat kasir yang benar-benar
-            // menekan Selesai, supaya laporan tahu siapa yang memproses pesanan itu.
-            val cashierNameToRecord = currentCashierName.value.takeIf { it.isNotBlank() }
-            if (cashierNameToRecord != null) {
-                orderDao.updateOrderStatusAndCashier(order.id, newStatus.name, cashierNameToRecord)
-            } else {
-                orderDao.updateOrderStatus(order.id, newStatus.name)
-            }
             try {
+                // Order Website tidak pernah dapat cashier_name saat dibuat (dibuat oleh
+                // customer, bukan kasir) — dicatat saat kasir benar-benar menyelesaikannya.
+                val cashierNameToRecord = currentCashierName.value.takeIf { it.isNotBlank() }
                 val patch = mutableMapOf("status" to newStatus.name.lowercase())
                 if (cashierNameToRecord != null) {
                     patch["cashier_name"] = cashierNameToRecord
                 }
-                val res = api.updateOrderStatus(
+                // Server lebih dulu. Versi lama menghapus kartu dari kolom secara
+                // optimistis, lalu menganggap HTTP 204 dengan 0 baris sebagai sukses.
+                // Jika order belum pernah tersimpan di server, kartu tampak hilang
+                // walaupun tidak ada transaksi yang bisa ditemukan di database.
+                val res = api.updateOrderStatusReturning(
                     orderIdFilter = "eq.${order.id}",
                     patch = patch
                 )
-                // Emit HANYA setelah server benar-benar menerima perubahan.
-                //
-                // Sebelumnya event ini dikirim sebelum PATCH berangkat. Kolektornya
-                // langsung menjalankan syncOrdersFromServer, yang menarik status
-                // LAMA dari server dan menimpa tulisan lokal barusan — kartu balik
-                // ke "Diproses" dan tombol Selesai baru berhasil di klik kedua.
-                if (res.isSuccessful) {
+                val updatedRows = res.body()?.size ?: 0
+                if (OrderStatusUpdatePolicy.canCommit(res.isSuccessful, updatedRows)) {
+                    if (cashierNameToRecord != null) {
+                        orderDao.updateOrderStatusAndCashier(order.id, newStatus.name, cashierNameToRecord)
+                    } else {
+                        orderDao.updateOrderStatus(order.id, newStatus.name)
+                    }
                     com.sukashawarma.pos.data.remote.GlobalEventBus.orderSyncEvent.tryEmit(Unit)
                     com.sukashawarma.pos.data.remote.GlobalEventBus.targetRefreshEvent.tryEmit(Unit)
 
@@ -593,11 +601,25 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                             }
                         }
                     }
+                } else {
+                    android.util.Log.e(
+                        "DashboardViewModel",
+                        "Status order ${order.id} tidak diubah: HTTP ${res.code()}, baris=$updatedRows"
+                    )
+                    _statusUpdateErrors.tryEmit(
+                        "Order #${order.orderNumber} belum tersimpan di server. Status tidak diubah; coba lagi."
+                    )
                 }
             } catch (e: Exception) {
-                // Offline: status lokal sudah tersimpan dan layar lain membaca Room
-                // secara reaktif, jadi tidak ada yang perlu dipicu di sini.
-                e.printStackTrace()
+                // Pertahankan kartu di status semula. Kasir dapat mencoba lagi dan
+                // order tidak terlihat selesai sebelum server menyimpannya.
+                android.util.Log.e("DashboardViewModel", "Update status order ${order.id} gagal", e)
+                _statusUpdateErrors.tryEmit(
+                    "Gagal mengubah order #${order.orderNumber}. Order tetap aman di daftar; cek koneksi lalu coba lagi."
+                )
+            } finally {
+                statusUpdateGuard.finish(order.id)
+                _updatingOrderIds.update { it - order.id }
             }
         }
     }

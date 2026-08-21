@@ -169,6 +169,16 @@ interface SupabaseApi {
         @Body patch: Map<String, String>
     ): Response<Void>
 
+    // Khusus perpindahan status dari UI. `return=representation` membedakan
+    // "PATCH berhasil dan satu baris berubah" dari HTTP 204 yang mengubah 0 baris
+    // (misalnya order lokal belum pernah sampai ke server).
+    @PATCH("rest/v1/orders")
+    @Headers("Prefer: return=representation")
+    suspend fun updateOrderStatusReturning(
+        @Query("id") orderIdFilter: String,
+        @Body patch: Map<String, String>
+    ): Response<List<OrderDto>>
+
     // Upload a QRIS payment-proof photo to Supabase Storage — port of the web's upload
     // step in handleWalkInPay (order-manual/page.tsx:684-710). `objectPath` is
     // "<bucket>/<filename>"; @Path(encoded=true) so the "/" between them isn't escaped.

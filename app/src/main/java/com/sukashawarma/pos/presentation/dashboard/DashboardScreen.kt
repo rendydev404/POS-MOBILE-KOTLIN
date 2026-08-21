@@ -47,6 +47,7 @@ fun DashboardScreen(
 ) {
     val pendingOrders by viewModel.pendingOrders.collectAsState()
     val preparingOrders by viewModel.preparingOrders.collectAsState()
+    val updatingOrderIds by viewModel.updatingOrderIds.collectAsState()
     val completedOrders by viewModel.completedOrders.collectAsState()
     
     val printerConnectionStatus by printerViewModel.connectionStatus.collectAsState()
@@ -80,6 +81,12 @@ fun DashboardScreen(
 
     LaunchedEffect(printStatusMessage) {
         printStatusMessage?.let { msg ->
+            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
+    LaunchedEffect(viewModel) {
+        viewModel.statusUpdateErrors.collect { msg ->
             android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
         }
     }
@@ -310,8 +317,9 @@ fun DashboardScreen(
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         filteredPending.forEach { order ->
-                            OrderCard(
+                            key(order.id) { OrderCard(
                                 order = order,
+                                isStatusUpdating = order.id in updatingOrderIds,
                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
                                 onCancelOrder = { o, reason -> 
                                     viewModel.requestCancellation(
@@ -342,7 +350,7 @@ fun DashboardScreen(
                                         viewModel.markKitchenReceiptPrinted(o)
                                     }
                                 }
-                            )
+                            ) }
                         }
                     }
                 }
@@ -370,8 +378,9 @@ fun DashboardScreen(
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         visiblePreparing.forEach { order ->
-                            OrderCard(
+                            key(order.id) { OrderCard(
                                 order = order,
+                                isStatusUpdating = order.id in updatingOrderIds,
                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
                                 onCancelOrder = { o, reason -> 
                                     viewModel.requestCancellation(
@@ -396,7 +405,7 @@ fun DashboardScreen(
                                     }
                                 },
                                 onReprint = { o -> viewModel.printReceipt(context, o, isKitchen = false) }
-                            )
+                            ) }
                         }
                     }
                 }
@@ -416,8 +425,9 @@ fun DashboardScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         val itemsToShow = filteredCompleted.filter { completedSearchQuery.isEmpty() || it.orderNumber.toString().contains(completedSearchQuery) }
                         itemsToShow.forEach { order ->
-                            OrderCard(
+                            key(order.id) { OrderCard(
                                 order = order,
+                                isStatusUpdating = order.id in updatingOrderIds,
                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
                                 onCancelOrder = { o, reason -> 
                                     viewModel.requestCancellation(
@@ -442,7 +452,7 @@ fun DashboardScreen(
                                     }
                                 },
                                 onReprint = { o -> viewModel.printReceipt(context, o, isKitchen = false) }
-                            )
+                            ) }
                         }
                     }
                 }
