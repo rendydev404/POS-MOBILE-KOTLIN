@@ -3,6 +3,7 @@ package com.sukashawarma.pos
 import android.app.Application
 import com.sukashawarma.pos.data.local.AppDatabase
 import com.sukashawarma.pos.data.local.AuthPrefs
+import com.sukashawarma.pos.data.local.MenuImageCache
 import com.sukashawarma.pos.data.local.PrinterPrefs
 import com.sukashawarma.pos.data.local.SessionPrefs
 import com.sukashawarma.pos.data.notification.NotificationChannels
@@ -27,6 +28,7 @@ class POSApplication : Application() {
         PrinterPrefs.init(this)
         AuthPrefs.init(this)
         SessionPrefs.init(this)
+        MenuImageCache.init(this, database.imageCacheDao(), com.sukashawarma.pos.data.remote.SupabaseClient.okHttpClient)
         NetworkMonitor.init(this)
         NotificationChannels.createChannels(this)
         com.sukashawarma.pos.data.update.AppUpdateManager.initialize(this)

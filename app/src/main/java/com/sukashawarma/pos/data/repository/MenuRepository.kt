@@ -169,6 +169,12 @@ class MenuRepository(
         menuItemDao.clearMenuItems()
         menuItemDao.insertMenuItems(items.map { it.toEntity() })
         kioskSettingDao.upsertAll(settings.toEntities(now))
+        // Proaktif, bukan menunggu item-nya dibuka kasir: dipanggil di sini supaya
+        // ikut jalan tiap login, reconnect, DAN tiap realtime menu_items berubah
+        // (promo/edit/tambah menu) — bukan cuma sekali saat kartu menu di-scroll.
+        // Lihat MenuImageCache untuk kenapa ini perlu ada (cacheDir default Coil
+        // bukan penyimpanan permanen).
+        com.sukashawarma.pos.data.local.MenuImageCache.syncAll(items.map { it.imageUrl })
     }
 }
 

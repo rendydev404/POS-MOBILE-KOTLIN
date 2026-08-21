@@ -603,7 +603,9 @@ private fun MenuItemCard(
                 if (!menuItem.imageUrl.isNullOrBlank()) {
                     AsyncImage(
                         model = ImageRequest.Builder(LocalContext.current)
-                            .data(menuItem.imageUrl)
+                            // File lokal permanen kalau sudah ter-cache (MenuImageCache),
+                            // fallback ke URL remote kalau belum — lihat MenuImageCache.
+                            .data(com.sukashawarma.pos.data.local.MenuImageCache.resolve(menuItem.imageUrl))
                             .crossfade(true)
                             .build(),
                         contentDescription = menuItem.name,
@@ -1380,7 +1382,9 @@ private fun ExtraItemCard(extra: MenuItem, price: Double, selected: Boolean, onC
     ) {
         if (!extra.imageUrl.isNullOrBlank()) {
             AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current).data(extra.imageUrl).crossfade(true).build(),
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(com.sukashawarma.pos.data.local.MenuImageCache.resolve(extra.imageUrl))
+                    .crossfade(true).build(),
                 contentDescription = extra.name,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.size(44.dp).clip(RoundedCornerShape(8.dp))

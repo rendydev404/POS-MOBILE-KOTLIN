@@ -6,10 +6,12 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.sukashawarma.pos.data.local.dao.ImageCacheDao
 import com.sukashawarma.pos.data.local.dao.KioskSettingDao
 import com.sukashawarma.pos.data.local.dao.MenuItemDao
 import com.sukashawarma.pos.data.local.dao.OrderDao
 import com.sukashawarma.pos.data.local.dao.SyncQueueDao
+import com.sukashawarma.pos.data.local.entity.LocalImageCacheEntity
 import com.sukashawarma.pos.data.local.entity.LocalKioskSettingEntity
 import com.sukashawarma.pos.data.local.entity.LocalMenuItemEntity
 import com.sukashawarma.pos.data.local.entity.LocalOrderEntity
@@ -20,9 +22,10 @@ import com.sukashawarma.pos.data.local.entity.SyncQueueEntity
         LocalOrderEntity::class,
         LocalMenuItemEntity::class,
         SyncQueueEntity::class,
-        LocalKioskSettingEntity::class
+        LocalKioskSettingEntity::class,
+        LocalImageCacheEntity::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -30,6 +33,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun menuItemDao(): MenuItemDao
     abstract fun syncQueueDao(): SyncQueueDao
     abstract fun kioskSettingDao(): KioskSettingDao
+    abstract fun imageCacheDao(): ImageCacheDao
 
     companion object {
         @Volatile
@@ -201,6 +205,23 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // Indeks foto permanen (menu, dst) — lihat LocalImageCacheEntity untuk kenapa
+        // ini terpisah dari cacheDir bawaan Coil/Android.
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS local_image_cache (
+                        remoteUrl TEXT NOT NULL PRIMARY KEY,
+                        localPath TEXT NOT NULL,
+                        sizeBytes INTEGER NOT NULL,
+                        lastAccessedAt INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -210,7 +231,7 @@ abstract class AppDatabase : RoomDatabase() {
                 ).addMigrations(
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
                     MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
-                    MIGRATION_9_10
+                    MIGRATION_9_10, MIGRATION_10_11
                 )
                  // TIDAK ADA fallbackToDestructiveMigration di sini, dan jangan pernah
                  // ditambahkan: local_orders + sync_queue menyimpan penjualan yang belum

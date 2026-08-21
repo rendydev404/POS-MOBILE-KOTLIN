@@ -217,7 +217,7 @@ fun MenuTableRow(item: MenuItem, viewModel: MenuManagementViewModel, kioskSettin
                 if (!item.imageUrl.isNullOrBlank()) {
                     AsyncImage(
                         model = ImageRequest.Builder(LocalContext.current)
-                            .data(item.imageUrl)
+                            .data(com.sukashawarma.pos.data.local.MenuImageCache.resolve(item.imageUrl))
                             .crossfade(true)
                             .build(),
                         contentDescription = item.name,
