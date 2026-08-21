@@ -141,14 +141,19 @@ interface SupabaseApi {
         @Query("order") order: String = "created_at.desc"
     ): Response<List<OrderDto>>
 
-    // Create New Order
-    @POST("rest/v1/orders")
-    @Headers("Prefer: return=representation")
-    suspend fun createOrder(
-        @Body payload: CreateOrderPayload
-    ): Response<List<OrderDto>>
+    // Jalur pembuatan pesanan yang dipakai app: order + seluruh barisnya masuk
+    // dalam SATU transaksi database, jadi pesanan tidak pernah bisa terbaca
+    // "setengah jadi" (harga ada, menu kosong). Aman dikirim ulang: fungsi ini
+    // idempoten terhadap id order yang sama. Mengembalikan baris order final,
+    // termasuk order_number hasil trigger — nomor yang dicetak di struk.
+    @POST("rest/v1/rpc/create_order_with_items")
+    suspend fun createOrderWithItems(
+        @Body payload: CreateOrderWithItemsPayload
+    ): Response<OrderDto>
 
-    // Create Order Items (cart lines) for an already-created order
+    // Create Order Items (cart lines) for an already-created order.
+    // Hanya untuk menambal pesanan LAMA yang barisnya terlanjur kosong; jalur
+    // pembuatan pesanan baru memakai createOrderWithItems di atas.
     @POST("rest/v1/order_items")
     @Headers("Prefer: return=representation")
     suspend fun createOrderItems(

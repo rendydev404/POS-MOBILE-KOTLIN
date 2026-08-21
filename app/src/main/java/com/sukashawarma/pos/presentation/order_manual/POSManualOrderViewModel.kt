@@ -72,6 +72,14 @@ data class PromoStatusEntry(
  * QRIS payment-proof capture *is* ported (camera/gallery -> Supabase Storage bucket
  * `payment_proofs` -> orders.payment_proof_url), see qrisProofBitmap/uploadPaymentProof.
  */
+/**
+ * Batas kasir menunggu insert order (satu-satunya request yang harus ditunggu, karena
+ * nomor antrean dibagikan server). Jaringan sehat menyelesaikannya dalam ratusan
+ * milidetik; angka ini murni ambang menyerah supaya sinyal buruk tidak menahan antrean
+ * pelanggan sampai timeout OkHttp (15 dtk connect + 15 dtk read) habis.
+ */
+private const val ORDER_INSERT_TIMEOUT_MS = 5_000L
+
 @OptIn(ExperimentalCoroutinesApi::class)
 class POSManualOrderViewModel(application: Application) : AndroidViewModel(application) {
     private val database = (application as POSApplication).database
@@ -754,6 +762,25 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
 
         viewModelScope.launch {
             isSubmitting.value = true
+            try {
+                submitOrderInternal(outletId)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Tanpa try/finally di sini, exception apa pun di tengah jalan (Room
+                // insert gagal, disk I/O, dll) membuat isSubmitting nyangkut true
+                // selamanya — tombol permanen "MEMPROSES..." dan kasir harus restart
+                // app. Ini akar masalah "QRIS lag/stuck di memproses": exception-nya
+                // transient makanya cuma "kadang".
+                android.util.Log.e("POSManualOrderVM", "submitOrder gagal tak terduga", e)
+                orderErrorMessage.value = "Gagal memproses order, coba lagi. (${e.message ?: e.javaClass.simpleName})"
+            } finally {
+                isSubmitting.value = false
+            }
+        }
+    }
+
+    private suspend fun submitOrderInternal(outletId: String) {
             val totals = cartTotals()
             val finalCustomerName = if (mode.value == OrderMode.WEBSITE && pickupTime.value.isNotBlank()) {
                 "${customerName.value} [Jam Ambil: ${pickupTime.value}]"
@@ -821,128 +848,122 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                 DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(it))
             }
 
-            var pendingSync = !online
-            // Beda dari "device benar-benar tidak ada internet" — dipakai supaya pesan ke
-            // kasir tidak salah menuduh koneksi padahal request ke server yang gagal/ditolak.
-            var syncFailedWhileOnline = false
-            var serverOrderNumber = order.orderNumber
-
             var localPaymentProofPath: String? = null
+            val proofBitmap = qrisProofBitmap.value
 
+            val itemPayloads = order.items.map { item ->
+                CreateOrderItemPayload(
+                    orderId = order.id,
+                    menuItemId = item.menuItemId,
+                    menuItemName = item.encodedMenuItemName(),
+                    quantity = item.quantity,
+                    unitPrice = item.unitPrice.toLong(),
+                    subtotal = item.subtotal.toLong()
+                )
+            }
+
+            // SATU-SATUNYA penantian jaringan yang tersisa, dan memang tidak bisa
+            // dihilangkan: nomor antrean dibagikan server. Trigger `assign_order_number`
+            // (migrasi 20300105000000) MENIMPA nomor apa pun yang dikirim client —
+            // "order_number yang dikirim client SENGAJA diabaikan" — dan nomor itulah
+            // yang tercetak di struk pelanggan. Menebaknya di tablet berarti struk dan
+            // dapur bisa memegang nomor berbeda.
+            //
+            // Baris pesanan IKUT dalam request yang sama (RPC create_order_with_items,
+            // migrasi 20260821090000) — bukan menyusul di latar belakang seperti dulu.
+            // Menyusulkannya menyisakan jendela waktu di mana order sudah ada di server
+            // tanpa satu pun barisnya; resync yang kebetulan menyalip di jendela itu
+            // menyimpan pesanan "harga ada, menu kosong" secara permanen. Menyatukannya
+            // TIDAK menambah penantian kasir: tetap satu round-trip, hanya isinya lebih
+            // lengkap. Yang masih di latar belakang cuma pencatatan promo dan upload
+            // bukti transfer — keduanya tidak menentukan utuh/tidaknya pesanan.
+            var serverOrderNumber = order.orderNumber
+            var acceptedByServer = false
             if (online) {
-                try {
-                    // Pastikan token masih valid sebelum hit server — kalau sudah
-                    // expired di-refresh di sini, bukan setelah request gagal 401.
-                    com.sukashawarma.pos.data.remote.AuthSessionManager.ensureAuthenticated()
-                    val createdAtIso = DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(order.createdAt))
-                    val payload = CreateOrderPayload(
-                        id = order.id,
-                        orderNumber = order.orderNumber,
-                        outletId = order.outletId,
-                        customerName = order.customerName,
-                        status = order.status.name.lowercase(),
-                        source = order.source.name.lowercase(),
-                        paymentMethod = order.paymentMethod.name.lowercase(),
-                        discountAmount = order.discountAmount.toLong(),
-                        promoSubsidy = order.promoSubsidy.toLong(),
-                        totalAmount = order.totalAmount.toLong(),
-                        amountReceived = order.amountReceived.toLong(),
-                        changeAmount = order.changeAmount.toLong(),
-                        createdAt = createdAtIso,
-                        channel = order.channel,
-                        pickupTime = pickupTimeIso,
-                        releaseTime = releaseTimeIso,
-                        cashierName = order.cashierName
-                    )
-                    val orderRes = api.createOrder(payload)
-                    if (orderRes.isSuccessful && !orderRes.body().isNullOrEmpty()) {
-                        serverOrderNumber = orderRes.body()!!.first().orderNumber
-
-                        val itemPayloads = order.items.map { item ->
-                            CreateOrderItemPayload(
-                                orderId = order.id,
-                                menuItemId = item.menuItemId,
-                                menuItemName = item.encodedMenuItemName(),
-                                quantity = item.quantity,
-                                unitPrice = item.unitPrice.toLong(),
-                                subtotal = item.subtotal.toLong()
+                val createdAtIso = DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(order.createdAt))
+                val payload = CreateOrderPayload(
+                    id = order.id,
+                    orderNumber = order.orderNumber,
+                    outletId = order.outletId,
+                    customerName = order.customerName,
+                    status = order.status.name.lowercase(),
+                    source = order.source.name.lowercase(),
+                    paymentMethod = order.paymentMethod.name.lowercase(),
+                    discountAmount = order.discountAmount.toLong(),
+                    promoSubsidy = order.promoSubsidy.toLong(),
+                    totalAmount = order.totalAmount.toLong(),
+                    amountReceived = order.amountReceived.toLong(),
+                    changeAmount = order.changeAmount.toLong(),
+                    createdAt = createdAtIso,
+                    channel = order.channel,
+                    pickupTime = pickupTimeIso,
+                    releaseTime = releaseTimeIso,
+                    cashierName = order.cashierName
+                )
+                // Batas waktu keras. Tanpa ini penantiannya bisa 15 dtk connect + 15 dtk
+                // read (dan satu request lagi kalau token perlu refresh) — puluhan detik
+                // dengan antrean pelanggan menunggu. Lewat batas ini, pesanannya jatuh ke
+                // jalur offline yang memang sudah ada.
+                // try/catch DI LUAR withTimeoutOrNull, bukan di dalam:
+                // TimeoutCancellationException adalah turunan Exception, jadi catch di
+                // dalam blok akan menelan sinyal timeout-nya sendiri. Di posisi ini,
+                // withTimeoutOrNull menangani timeout-nya sendiri (mengembalikan null)
+                // dan hanya kegagalan jaringan sungguhan yang sampai ke catch.
+                val orderRes = try {
+                    kotlinx.coroutines.withTimeoutOrNull(ORDER_INSERT_TIMEOUT_MS) {
+                        // Token disegarkan di sini kalau sudah kedaluwarsa, bukan setelah
+                        // request pertama gagal 401.
+                        com.sukashawarma.pos.data.remote.AuthSessionManager.ensureAuthenticated()
+                        api.createOrderWithItems(
+                            com.sukashawarma.pos.data.remote.dto.CreateOrderWithItemsPayload(
+                                order = payload,
+                                items = itemPayloads
                             )
-                        }
-                        api.createOrderItems(itemPayloads)
-
-                        // Pencatatan pemakaian promo dan upload bukti transfer TIDAK
-                        // lagi ditunggu sebelum tombol dilepas: pesanannya sendiri
-                        // sudah tercipta di dua request di atas, dan keduanya memang
-                        // sudah dirancang non-fatal (kegagalan hanya dicatat ke log).
-                        // Sebelumnya semuanya berurutan dan ditunggu — dengan 3 promo
-                        // aktif itu 5+ round-trip ke Supabase sambil kasir menatap
-                        // "MEMPROSES...". Dijalankan di scope aplikasi, bukan
-                        // viewModelScope, supaya tidak ikut dibatalkan saat layar
-                        // ditutup tepat setelah submit.
-                        val promoIds = order.appliedPromoIds.toList()
-                        val proofBitmap = qrisProofBitmap.value
-                        val orderId = order.id
-                        val orderOutletId = order.outletId
-                        val finalOrderNumber = serverOrderNumber
-                        postSubmitScope.launch {
-                            promoIds.forEach { promoId ->
-                                try {
-                                    api.incrementPromoUsage(
-                                        com.sukashawarma.pos.data.remote.dto.IncrementPromoUsagePayload(promoId = promoId)
-                                    )
-                                } catch (e: Exception) {
-                                    android.util.Log.e("POSManualOrderVM", "Gagal increment_promo_usage untuk promo $promoId", e)
-                                }
-                            }
-                            proofBitmap?.let { bitmap ->
-                                uploadPaymentProof(
-                                    outletId = orderOutletId,
-                                    orderId = orderId,
-                                    orderNumber = finalOrderNumber,
-                                    bitmap = bitmap
-                                )
-                            }
-                        }
-                    } else {
-                        // Device online tapi request-nya sendiri gagal (validasi, RLS, timeout, dll) —
-                        // dicatat di logcat karena sebelumnya gagal total tanpa jejak, membuat order
-                        // yang bermasalah tampak "OFFLINE" selamanya tanpa cara mendiagnosis kenapa.
-                        android.util.Log.e(
-                            "POSManualOrderVM",
-                            "Submit order ${order.id} gagal walau online: HTTP ${orderRes.code()} ${orderRes.errorBody()?.string().orEmpty()}"
                         )
-                        pendingSync = true
-                        syncFailedWhileOnline = true
                     }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    // Layar ditutup di tengah submit — biarkan coroutine mati wajar.
+                    throw e
                 } catch (e: Exception) {
-                    android.util.Log.e("POSManualOrderVM", "Submit order ${order.id} melempar exception walau online", e)
-                    pendingSync = true
-                    syncFailedWhileOnline = true
+                    android.util.Log.e("POSManualOrderVM", "Insert order ${order.id} melempar exception", e)
+                    null
+                }
+                if (orderRes != null && orderRes.isSuccessful && orderRes.body() != null) {
+                    // Nomor dari server, BUKAN tebakan lokal.
+                    serverOrderNumber = orderRes.body()!!.orderNumber
+                    acceptedByServer = true
+                } else {
+                    android.util.Log.e(
+                        "POSManualOrderVM",
+                        "Insert order ${order.id} gagal walau online (timeout/ditolak) — jatuh ke jalur offline"
+                    )
                 }
             }
 
-            if (pendingSync) {
-                // Save QRIS proof locally for later upload
-                qrisProofBitmap.value?.let { bitmap ->
-                    try {
-                        val fileName = "${order.outletId}_${serverOrderNumber}_${LocalDate.now()}_offline.webp"
-                        val context = getApplication<Application>().applicationContext
-                        val file = java.io.File(context.cacheDir, fileName)
-                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                            java.io.FileOutputStream(file).use { out ->
-                                bitmap.compress(webpFormat(), 88, out)
-                            }
+            if (!acceptedByServer && proofBitmap != null) {
+                // Pesanan belum sampai server: bukti transfer ditulis ke disk supaya
+                // OrderSyncEngine bisa mengunggahnya nanti. Kalau sudah diterima server,
+                // bitmap-nya langsung dipakai pushOrderRemainder tanpa mampir ke disk.
+                try {
+                    val fileName = "${order.outletId}_${serverOrderNumber}_${LocalDate.now()}_offline.webp"
+                    val context = getApplication<Application>().applicationContext
+                    val file = java.io.File(context.cacheDir, fileName)
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        java.io.FileOutputStream(file).use { out ->
+                            proofBitmap.compress(webpFormat(), 88, out)
                         }
-                        localPaymentProofPath = file.absolutePath
-                    } catch (e: Exception) {
-                        e.printStackTrace()
                     }
+                    localPaymentProofPath = file.absolutePath
+                } catch (e: Exception) {
+                    android.util.Log.e("POSManualOrderVM", "Gagal menyimpan bukti transfer offline", e)
                 }
             }
 
             val entity = LocalOrderEntity(
                 id = order.id,
                 outletId = order.outletId,
+                // Nomor dari server kalau pesanannya sudah diterima; kalau tidak, tebakan
+                // lokal yang akan dikoreksi markSynced() saat OrderSyncEngine berhasil.
                 orderNumber = serverOrderNumber,
                 customerName = order.customerName,
                 status = order.status.name,
@@ -960,7 +981,15 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                 cancellationStatus = null,
                 cancellationUserName = null,
                 createdAt = order.createdAt,
-                syncState = if (pendingSync) com.sukashawarma.pos.data.local.entity.SyncState.PENDING.name else com.sukashawarma.pos.data.local.entity.SyncState.SYNCED.name,
+                // SYNCED = order DAN seluruh barisnya sudah mendarat di server dalam
+                // satu transaksi; tidak ada lagi sisa yang menyusul, jadi tidak perlu
+                // status antara SENDING seperti waktu order_items masih dikirim
+                // terpisah. PENDING = belum sampai server sama sekali (badge "OFFLINE").
+                syncState = if (acceptedByServer) {
+                    com.sukashawarma.pos.data.local.entity.SyncState.SYNCED.name
+                } else {
+                    com.sukashawarma.pos.data.local.entity.SyncState.PENDING.name
+                },
                 dirtyFields = "",
                 channel = order.channel,
                 isSyncedFromOffline = false,
@@ -984,16 +1013,18 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                 outletName = currentOutletName.value
             )
 
-
-
-            if (pendingSync) {
-                orderErrorMessage.value = if (syncFailedWhileOnline) {
-                    "Order tersimpan lokal (offline) dengan nomor sementara #$serverOrderNumber. " +
-                        "Koneksi internet ada, tapi server menolak/gagal merespons — akan dicoba " +
-                        "sinkron ulang otomatis."
+            if (acceptedByServer) {
+                postSubmitScope.launch {
+                    pushOrderRemainder(order, proofBitmap, serverOrderNumber)
+                }
+            } else {
+                orderErrorMessage.value = if (online) {
+                    "Order tersimpan lokal dengan nomor SEMENTARA #$serverOrderNumber. " +
+                        "Koneksi ada tapi server tidak merespons — nomor final akan " +
+                        "menyusul otomatis saat sinkron dan bisa BERBEDA dari struk ini."
                 } else {
-                    "Order tersimpan lokal (offline) dengan nomor sementara #$serverOrderNumber. " +
-                        "Akan di-sinkronkan otomatis saat koneksi internet tersedia."
+                    "Order tersimpan lokal (offline) dengan nomor SEMENTARA #$serverOrderNumber. " +
+                        "Nomor final dibagikan server saat sinkron dan bisa BERBEDA dari struk ini."
                 }
             }
 
@@ -1007,7 +1038,55 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
             promoSubsidy.value = ""
             cashInput.value = ""
             qrisProofBitmap.value = null
-            isSubmitting.value = false
+    }
+
+    /**
+     * Pekerjaan pelengkap setelah pesanan mendarat di server: pencatatan pemakaian
+     * promo dan upload bukti transfer QRIS.
+     *
+     * Baris order_items TIDAK lagi dikirim di sini — sejak RPC
+     * `create_order_with_items`, item ikut masuk bersama order dalam satu transaksi,
+     * jadi begitu submitOrder selesai pesanan sudah utuh di server. Dulu item dikirim
+     * dari sini, dan justru jeda itulah yang membuat pesanan sempat terbaca tanpa menu.
+     *
+     * Yang tersisa di sini sengaja dibiarkan tidak ditunggu submitOrder: keduanya
+     * tidak menentukan utuh/tidaknya pesanan, dan kasir hanya perlu menunggu nomor
+     * antrean untuk struk — yang sudah didapat sebelum fungsi ini dipanggil.
+     *
+     * Berjalan di [postSubmitScope] (scope aplikasi), jadi tidak ikut mati saat kasir
+     * langsung menutup layar setelah submit.
+     */
+    private suspend fun pushOrderRemainder(
+        order: com.sukashawarma.pos.domain.model.Order,
+        proofBitmap: Bitmap?,
+        serverOrderNumber: Int
+    ) {
+        try {
+            order.appliedPromoIds.forEach { promoId ->
+                try {
+                    api.incrementPromoUsage(
+                        com.sukashawarma.pos.data.remote.dto.IncrementPromoUsagePayload(promoId = promoId)
+                    )
+                } catch (e: Exception) {
+                    android.util.Log.e("POSManualOrderVM", "Gagal increment_promo_usage untuk promo $promoId", e)
+                }
+            }
+            proofBitmap?.let { bitmap ->
+                uploadPaymentProof(
+                    outletId = order.outletId,
+                    orderId = order.id,
+                    orderNumber = serverOrderNumber,
+                    bitmap = bitmap
+                )
+            }
+        } catch (e: Exception) {
+            // SENGAJA tidak menurunkan status order ke PENDING. Pesanannya sendiri —
+            // beserta seluruh barisnya — sudah utuh di server sebelum fungsi ini
+            // dipanggil; yang gagal di sini cuma pelengkap. Menandainya "belum
+            // terkirim" akan membuat pesanan yang sebenarnya sehat tampil sebagai
+            // OFFLINE dan ikut diantre ulang OrderSyncEngine tanpa ada yang perlu
+            // diperbaiki.
+            android.util.Log.e("POSManualOrderVM", "Pelengkap order ${order.id} gagal (order itu sendiri sudah aman di server)", e)
         }
     }
 
@@ -1036,9 +1115,16 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
             if (uploadRes.isSuccessful) {
                 val publicUrl = "${SupabaseClient.BASE_URL}storage/v1/object/public/$objectPath"
                 api.updateOrderStatus(orderIdFilter = "eq.$orderId", patch = mapOf("payment_proof_url" to publicUrl))
+            } else {
+                // Dicatat, bukan ditelan. Bukti pembayaran QRIS yang hilang tanpa jejak
+                // tidak bisa didiagnosis saat rekonsiliasi kas tidak cocok.
+                android.util.Log.e(
+                    "POSManualOrderVM",
+                    "Upload bukti transfer order $orderId gagal: HTTP ${uploadRes.code()}"
+                )
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            android.util.Log.e("POSManualOrderVM", "Upload bukti transfer order $orderId melempar exception", e)
         }
     }
 

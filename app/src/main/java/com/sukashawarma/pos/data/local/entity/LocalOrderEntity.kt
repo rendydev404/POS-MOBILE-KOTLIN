@@ -9,6 +9,18 @@ enum class SyncState {
     /** Sudah sama dengan server. */
     SYNCED,
 
+    /**
+     * Baris `orders` SUDAH diterima server (nomor antreannya asli, bukan tebakan),
+     * tapi `order_items` masih menyusul di latar belakang.
+     *
+     * Sengaja dibedakan dari [PENDING]: pesanan ini tidak offline, jadi kartu order
+     * TIDAK boleh menampilkan badge merah "OFFLINE" — keadaan ini normal dan berumur
+     * ratusan milidetik. Kalau pengiriman sisanya gagal, statusnya diturunkan ke
+     * [PENDING]; kalau prosesnya mati di tengah jalan, getUnsyncedOrders tetap
+     * menjaringnya setelah baris ini dianggap basi.
+     */
+    SENDING,
+
     /** Ada perubahan lokal yang belum naik; masih punya baris di sync_queue. */
     PENDING,
 

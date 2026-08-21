@@ -49,11 +49,21 @@ interface OrderDao {
     @Query("DELETE FROM local_orders WHERE id = :orderId")
     suspend fun deleteOrder(orderId: String)
 
+    /**
+     * Baris SENDING sengaja tidak langsung ikut: pengirimannya sedang berjalan di
+     * POSManualOrderViewModel, dan `orderSyncEvent` diemit tepat saat pesanan disimpan
+     * — tanpa penyaringan ini engine akan mengirim ulang pesanan yang requestnya masih
+     * di udara. Yang sudah lewat [sendingStaleBefore] tetap dijaring, supaya pesanan
+     * yang pengirimannya mati di tengah (aplikasi ditutup, proses dibunuh) tidak
+     * tertinggal selamanya di SENDING.
+     */
     @Query(
-        "SELECT * FROM local_orders WHERE outletId = :outletId AND syncState != 'SYNCED' " +
+        "SELECT * FROM local_orders WHERE outletId = :outletId AND (" +
+            "syncState = 'PENDING' OR syncState = 'FAILED' OR " +
+            "(syncState = 'SENDING' AND createdAt < :sendingStaleBefore)) " +
             "ORDER BY createdAt ASC"
     )
-    suspend fun getUnsyncedOrders(outletId: String): List<LocalOrderEntity>
+    suspend fun getUnsyncedOrders(outletId: String, sendingStaleBefore: Long): List<LocalOrderEntity>
 
     @Query(
         "SELECT COUNT(*) FROM local_orders WHERE outletId = :outletId AND syncState = 'PENDING'"
@@ -74,6 +84,13 @@ interface OrderDao {
             "dirtyFields = '', isSyncedFromOffline = 1 WHERE id = :orderId"
     )
     suspend fun markSynced(orderId: String, serverOrderNumber: Int)
+
+    // markSyncedOnline/markSendFailed dihapus bersama state antara SENDING: sejak
+    // order dan order_items dikirim dalam satu transaksi (RPC create_order_with_items),
+    // pesanan yang diterima server langsung SYNCED — tidak ada lagi sisa yang menyusul
+    // di latar belakang yang perlu ditandai sukses/gagal belakangan. Penanganan baris
+    // SENDING di getUnsyncedOrders sengaja DIPERTAHANKAN untuk baris warisan yang
+    // ditulis versi app sebelumnya dan mungkin masih tersimpan di tablet.
 
     /**
      * Tanpa filter outletId, omzet offline ikut menjumlahkan pesanan outlet lain

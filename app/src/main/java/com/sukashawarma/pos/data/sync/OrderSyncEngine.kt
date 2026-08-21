@@ -25,10 +25,73 @@ class OrderSyncEngine(
 ) {
     private val gson = Gson()
 
+    private fun itemPayloadsOf(
+        entity: com.sukashawarma.pos.data.local.entity.LocalOrderEntity
+    ): List<CreateOrderItemPayload> {
+        val itemType = object : TypeToken<List<OrderItem>>() {}.type
+        val items: List<OrderItem> = gson.fromJson(entity.itemsJson, itemType) ?: emptyList()
+        return items.map { item ->
+            CreateOrderItemPayload(
+                orderId = entity.id,
+                menuItemId = item.menuItemId,
+                menuItemName = item.encodedMenuItemName(),
+                quantity = item.quantity,
+                unitPrice = item.unitPrice.toLong(),
+                subtotal = item.subtotal.toLong()
+            )
+        }
+    }
+
+    /**
+     * Unggah bukti transfer yang tersimpan di disk, lalu tempelkan URL-nya ke order.
+     * Dipakai kedua cabang sukses (insert baru maupun 409 "sudah ada"): begitu barisnya
+     * ditandai SYNCED tidak ada lagi yang akan mencoba ulang, jadi ini kesempatan
+     * terakhirnya. Non-fatal — pesanannya sendiri sudah aman di server.
+     */
+    private suspend fun uploadStoredProof(
+        entity: com.sukashawarma.pos.data.local.entity.LocalOrderEntity,
+        serverOrderNumber: Int
+    ) {
+        val path = entity.localPaymentProofPath ?: return
+        try {
+            val file = File(path)
+            if (!file.exists()) return
+            // Ekstensi & content-type mengikuti file yang benar-benar ditulis saat
+            // offline (sekarang WebP), bukan hardcode jpeg — file lama yang masih .jpg
+            // tetap terkirim dengan benar.
+            val isWebp = file.name.endsWith(".webp", ignoreCase = true)
+            val ext = if (isWebp) "webp" else "jpg"
+            val mime = if (isWebp) "image/webp" else "image/jpeg"
+            val fileName = "${entity.outletId}_${serverOrderNumber}_${java.time.LocalDate.now()}.$ext"
+            val objectPath = "payment_proofs/$fileName"
+            val body = file.asRequestBody(mime.toMediaTypeOrNull())
+
+            val uploadRes = api.uploadPaymentProof(objectPath = objectPath, contentType = mime, file = body)
+            if (uploadRes.isSuccessful) {
+                val publicUrl = "${com.sukashawarma.pos.data.remote.SupabaseClient.BASE_URL}storage/v1/object/public/$objectPath"
+                api.updateOrderStatus(orderIdFilter = "eq.${entity.id}", patch = mapOf("payment_proof_url" to publicUrl))
+                file.delete() // clean up local file
+            } else {
+                // Dicatat, bukan ditelan: bukti pembayaran yang hilang tanpa jejak tidak
+                // bisa didiagnosis saat rekonsiliasi kas tidak cocok.
+                android.util.Log.e(
+                    "OrderSyncEngine",
+                    "Upload bukti transfer order ${entity.id} gagal: HTTP ${uploadRes.code()}"
+                )
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("OrderSyncEngine", "Upload bukti transfer order ${entity.id} melempar exception", e)
+        }
+    }
+
     /** Returns how many offline orders were successfully pushed to the server. */
     suspend fun syncPendingOrders(outletId: String): Int {
         if (outletId.isBlank()) return 0
-        val pending = orderDao.getUnsyncedOrders(outletId)
+        // 60 dtk cukup longgar: pengiriman latar belakang yang sehat selesai dalam
+        // hitungan ratusan milidetik, dan timeout OkHttp terburuk (15 dtk connect +
+        // 15 dtk read, dua request) masih di bawah angka ini.
+        val sendingStaleBefore = System.currentTimeMillis() - 60_000L
+        val pending = orderDao.getUnsyncedOrders(outletId, sendingStaleBefore)
         var syncedCount = 0
 
         for (entity in pending) {
@@ -63,73 +126,36 @@ class OrderSyncEngine(
                     isOfflineSync = true
                 )
 
-                val orderRes = api.createOrder(payload)
+                // Order + seluruh barisnya dalam satu transaksi. Dulu keduanya dikirim
+                // lewat dua request terpisah, dan pengiriman bisa putus tepat di selanya
+                // sehingga pesanan mendarat di server tanpa satu pun baris item —
+                // terbaca sebagai "harga ada, menu kosong" oleh semua device.
+                //
+                // Cabang 409 "duplicate key" tidak diperlukan lagi: fungsi ini idempoten
+                // terhadap id order yang sama (ON CONFLICT DO NOTHING lalu mengembalikan
+                // baris yang sudah ada), jadi kiriman ulang atas order yang sebenarnya
+                // sudah mendarat menghasilkan sukses biasa, bukan tabrakan primary key.
+                val orderRes = api.createOrderWithItems(
+                    com.sukashawarma.pos.data.remote.dto.CreateOrderWithItemsPayload(
+                        order = payload,
+                        items = itemPayloadsOf(entity)
+                    )
+                )
                 if (!orderRes.isSuccessful) {
-                    val errorBody = orderRes.errorBody()?.string().orEmpty()
-                    if (orderRes.code() == 409 || errorBody.contains("duplicate key", ignoreCase = true)) {
-                        // Percobaan sebelumnya sebenarnya sukses di server, cuma responsnya
-                        // gagal diterima klien — tanpa ini, retry akan tabrak unique constraint
-                        // id yang sama terus-menerus dan order tampak "OFFLINE" selamanya.
-                        orderDao.markSynced(entity.id, entity.orderNumber)
-                        syncedCount++
-                        continue
-                    }
                     android.util.Log.e(
                         "OrderSyncEngine",
-                        "Gagal sync order ${entity.id}: HTTP ${orderRes.code()} $errorBody"
+                        "Gagal sync order ${entity.id}: HTTP ${orderRes.code()} ${orderRes.errorBody()?.string().orEmpty()}"
                     )
                     continue // leave syncState != SYNCED, retry next pass
                 }
-                if (orderRes.body().isNullOrEmpty()) {
+                val serverOrderNumber = orderRes.body()?.orderNumber
+                if (serverOrderNumber == null) {
                     android.util.Log.e("OrderSyncEngine", "Sync order ${entity.id} sukses tapi body kosong")
                     continue
                 }
-                val serverOrderNumber = orderRes.body()!!.first().orderNumber
-
-                val itemType = object : TypeToken<List<OrderItem>>() {}.type
-                val items: List<OrderItem> = gson.fromJson(entity.itemsJson, itemType) ?: emptyList()
-                val itemPayloads = items.map { item ->
-                    CreateOrderItemPayload(
-                        orderId = entity.id,
-                        menuItemId = item.menuItemId,
-                        menuItemName = item.encodedMenuItemName(),
-                        quantity = item.quantity,
-                        unitPrice = item.unitPrice.toLong(),
-                        subtotal = item.subtotal.toLong()
-                    )
-                }
-                if (itemPayloads.isNotEmpty()) {
-                    api.createOrderItems(itemPayloads)
-                }
 
                 orderDao.markSynced(entity.id, serverOrderNumber)
-                
-                // Upload local payment proof if it exists
-                entity.localPaymentProofPath?.let { path ->
-                    try {
-                        val file = File(path)
-                        if (file.exists()) {
-                            // Ekstensi & content-type mengikuti file yang benar-benar
-                            // ditulis saat offline (sekarang WebP), bukan hardcode jpeg —
-                            // file lama yang masih .jpg tetap terkirim dengan benar.
-                            val isWebp = file.name.endsWith(".webp", ignoreCase = true)
-                            val ext = if (isWebp) "webp" else "jpg"
-                            val mime = if (isWebp) "image/webp" else "image/jpeg"
-                            val fileName = "${entity.outletId}_${serverOrderNumber}_${java.time.LocalDate.now()}.$ext"
-                            val objectPath = "payment_proofs/$fileName"
-                            val body = file.asRequestBody(mime.toMediaTypeOrNull())
-
-                            val uploadRes = api.uploadPaymentProof(objectPath = objectPath, contentType = mime, file = body)
-                            if (uploadRes.isSuccessful) {
-                                val publicUrl = "${com.sukashawarma.pos.data.remote.SupabaseClient.BASE_URL}storage/v1/object/public/$objectPath"
-                                api.updateOrderStatus(orderIdFilter = "eq.${entity.id}", patch = mapOf("payment_proof_url" to publicUrl))
-                                file.delete() // clean up local file
-                            }
-                        }
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                }
+                uploadStoredProof(entity, serverOrderNumber)
 
                 syncedCount++
             } catch (e: Exception) {

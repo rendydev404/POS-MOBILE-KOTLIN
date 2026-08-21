@@ -282,6 +282,26 @@ data class CreateOrderItemPayload(
     val subtotal: Long
 )
 
+/**
+ * Argumen RPC `create_order_with_items` (migrasi 20260821090000): order beserta
+ * seluruh barisnya dikirim dalam SATU request supaya keduanya mendarat di
+ * database sebagai satu transaksi.
+ *
+ * Menggantikan pasangan POST /orders + POST /order_items yang terpisah. Di
+ * antara kedua request lama itu ada jendela waktu di mana order sudah ada di
+ * server tanpa satu pun barisnya — dan pembaca mana pun yang kebetulan
+ * menyalip di jendela itu (device lain, atau device ini sendiri yang me-resync
+ * karena event realtime `orders`) menyimpan pesanan "harga ada, menu kosong"
+ * secara permanen.
+ *
+ * `orderId` di tiap item diabaikan server (fungsi memakai id dari p_order),
+ * tapi tetap dikirim apa adanya supaya tipe payload-nya sama dengan jalur lama.
+ */
+data class CreateOrderWithItemsPayload(
+    @SerializedName("p_order") val order: CreateOrderPayload,
+    @SerializedName("p_items") val items: List<CreateOrderItemPayload>
+)
+
 data class IncrementPromoUsagePayload(
     @SerializedName("p_promo_id") val promoId: String,
     @SerializedName("p_increment_amount") val incrementAmount: Int = 1
