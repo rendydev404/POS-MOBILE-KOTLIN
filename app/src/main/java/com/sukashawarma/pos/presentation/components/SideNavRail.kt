@@ -181,7 +181,7 @@ fun SideNavRail(
 
             // 5. Kontrol Device Pelanggan
             SidebarItem(
-                label = "Kontrol Device Pela...",
+                label = "Control Dev..",
                 icon = Icons.Default.Tv,
                 isSelected = currentTab == POSTab.KIOSK_CONTROL,
                 onClick = { onTabSelected(POSTab.KIOSK_CONTROL) }

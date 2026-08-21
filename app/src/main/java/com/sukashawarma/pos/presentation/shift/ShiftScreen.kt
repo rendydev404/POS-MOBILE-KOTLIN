@@ -167,7 +167,7 @@ fun ShiftScreen(
                     HorizontalDivider(color = SlateBorder)
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    ShiftDetailRow("ESTIMASI UANG LACI", "Rp ${String.format("%,.0f", expectedCash)}", isBold = true)
+                    ShiftDetailRow("ESTIMASI PENJUALAN CASH", "Rp ${String.format("%,.0f", expectedCash)}", isBold = true)
 
                     Spacer(modifier = Modifier.height(16.dp))
                     OutlinedTextField(
