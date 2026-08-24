@@ -55,17 +55,15 @@ fun MenuManagementScreen(
         color = SlateSurface,
         border = androidx.compose.foundation.BorderStroke(1.dp, SlateBorder)
     ) {
-        Column(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(16.dp)
         ) {
+        val isNarrow = maxWidth < 600.dp
+        Column(modifier = Modifier.fillMaxSize()) {
             // Header
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            val titleBlock: @Composable () -> Unit = {
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Icon(Icons.Default.RestaurantMenu, contentDescription = null, tint = AmberPrimary)
@@ -83,14 +81,14 @@ fun MenuManagementScreen(
                         modifier = Modifier.padding(top = 4.dp, start = 32.dp)
                     )
                 }
-
-                // Search Bar
+            }
+            val searchField: @Composable (Modifier) -> Unit = { fieldModifier ->
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { viewModel.searchQuery.value = it },
                     placeholder = { Text("Cari menu...") },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                    modifier = Modifier.width(300.dp),
+                    modifier = fieldModifier,
                     shape = RoundedCornerShape(12.dp),
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
@@ -98,6 +96,22 @@ fun MenuManagementScreen(
                         unfocusedBorderColor = SlateBorder
                     )
                 )
+            }
+
+            if (isNarrow) {
+                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    titleBlock()
+                    searchField(Modifier.fillMaxWidth())
+                }
+            } else {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    titleBlock()
+                    searchField(Modifier.widthIn(max = 300.dp).weight(1f, fill = false))
+                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -172,6 +186,7 @@ fun MenuManagementScreen(
                     }
                 }
             }
+        }
         }
     }
 }

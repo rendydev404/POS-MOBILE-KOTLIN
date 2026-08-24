@@ -185,68 +185,105 @@ fun BriefingBanner(
                 val barColor = if (isDone || isGreen) Color(0xFF0A7D2C) else if (isYellow) Color(0xFFF29744) else Color(0xFFEF4444)
                 val amountColor = if (isDone || isGreen) Color(0xFF0A7D2C) else if (isYellow) Color(0xFF643400) else Color(0xFFB91C1C)
 
-                Row(
+                BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(bgColor)
                         .border(1.dp, borderColor)
-                        .padding(horizontal = 24.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
                 ) {
-                    Icon(
-                        imageVector = if (isDone) Icons.Default.Star else Icons.Default.Info,
-                        contentDescription = "Target",
-                        tint = amountColor,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = if (isDone) "TARGET TERCAPAI!" else "TARGET HARI INI",
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 12.sp,
-                        color = amountColor,
-                        modifier = Modifier.width(130.dp)
-                    )
-                    
-                    // Progress Bar
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(10.dp)
-                            .clip(CircleShape)
-                            .background(Color.Black.copy(alpha = 0.05f))
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxHeight()
-                                .fillMaxWidth(fraction = (pct / 100).toFloat())
-                                .clip(CircleShape)
-                                .background(barColor)
-                        )
-                    }
+                    val isNarrow = maxWidth < 680.dp
 
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column(horizontalAlignment = Alignment.End) {
+                    val labelBlock: @Composable () -> Unit = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = formatRupiahCompact(target.omzetToday),
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 14.sp,
-                                color = amountColor
+                            Icon(
+                                imageVector = if (isDone) Icons.Default.Star else Icons.Default.Info,
+                                contentDescription = "Target",
+                                tint = amountColor,
+                                modifier = Modifier.size(20.dp)
                             )
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = " / ${formatRupiahCompact(target.targetAmount)}",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                                color = Color(0xFFA98B73)
+                                text = if (isDone) "TARGET TERCAPAI!" else "TARGET HARI INI",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 12.sp,
+                                color = amountColor,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                             )
                         }
-                        Text(
-                            text = "$pctRaw%",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 10.sp,
-                            color = amountColor
-                        )
+                    }
+                    val progressBar: @Composable (Modifier) -> Unit = { barModifier ->
+                        Box(
+                            modifier = barModifier
+                                .height(10.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.05f))
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxHeight()
+                                    .fillMaxWidth(fraction = (pct / 100).toFloat())
+                                    .clip(CircleShape)
+                                    .background(barColor)
+                            )
+                        }
+                    }
+                    val amountBlock: @Composable () -> Unit = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = formatRupiahCompact(target.omzetToday),
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 13.sp,
+                                    color = amountColor
+                                )
+                                Text(
+                                    text = " / ${formatRupiahCompact(target.targetAmount)}",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = Color(0xFFA98B73)
+                                )
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = amountColor.copy(alpha = 0.12f)
+                            ) {
+                                Text(
+                                    text = "$pctRaw%",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    color = amountColor,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    if (isNarrow) {
+                        Column {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                labelBlock()
+                                amountBlock()
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            progressBar(Modifier.fillMaxWidth())
+                        }
+                    } else {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            labelBlock()
+                            Spacer(modifier = Modifier.width(16.dp))
+                            progressBar(Modifier.weight(1f))
+                            Spacer(modifier = Modifier.width(16.dp))
+                            amountBlock()
+                        }
                     }
                 }
                 

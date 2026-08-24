@@ -3,6 +3,8 @@ package com.sukashawarma.pos.presentation.reports
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -81,22 +83,58 @@ fun ReportsScreen(
                 item { OfflineDataBanner() }
             }
             item { KPICards(analytics) }
-            item {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Box(modifier = Modifier.weight(1f)) { StatusTransaksi(analytics) }
-                    Box(modifier = Modifier.weight(1f)) { DistribusiPembayaran(analytics) }
-                    Box(modifier = Modifier.weight(1f)) { TotalMenuTerjual(analytics) }
-                }
-            }
-            item {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Box(modifier = Modifier.weight(1f)) { TrenPendapatanChart(analytics) }
-                    Box(modifier = Modifier.weight(1f)) { DistribusiPerJamChart(analytics) }
-                }
-            }
+            item { MiddleAnalyticsSection(analytics) }
+            item { ChartsSection(analytics) }
             item { Top10Products(analytics) }
             item { TransactionHistoryTable(analytics.orders, searchQuery, viewModel::updateSearchQuery) }
             item { LaporanLaciCash(analytics) }
+        }
+    }
+}
+
+@Composable
+fun MiddleAnalyticsSection(analytics: AnalyticsData) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val isNarrow = maxWidth < 860.dp
+        val isVeryNarrow = maxWidth < 560.dp
+        if (isVeryNarrow) {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
+                StatusTransaksi(analytics)
+                DistribusiPembayaran(analytics)
+                TotalMenuTerjual(analytics)
+            }
+        } else if (isNarrow) {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Box(modifier = Modifier.weight(1f)) { StatusTransaksi(analytics) }
+                    Box(modifier = Modifier.weight(1f)) { DistribusiPembayaran(analytics) }
+                }
+                TotalMenuTerjual(analytics)
+            }
+        } else {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Box(modifier = Modifier.weight(1f)) { StatusTransaksi(analytics) }
+                Box(modifier = Modifier.weight(1f)) { DistribusiPembayaran(analytics) }
+                Box(modifier = Modifier.weight(1f)) { TotalMenuTerjual(analytics) }
+            }
+        }
+    }
+}
+
+@Composable
+fun ChartsSection(analytics: AnalyticsData) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val isNarrow = maxWidth < 760.dp
+        if (isNarrow) {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
+                TrenPendapatanChart(analytics)
+                DistribusiPerJamChart(analytics)
+            }
+        } else {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Box(modifier = Modifier.weight(1f)) { TrenPendapatanChart(analytics) }
+                Box(modifier = Modifier.weight(1f)) { DistribusiPerJamChart(analytics) }
+            }
         }
     }
 }
@@ -117,100 +155,128 @@ fun HeaderAndFilters(
     onPaymentChanged: (String) -> Unit,
     onStatusChanged: (String) -> Unit
 ) {
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Row(
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+        val isNarrow = maxWidth < 960.dp
+
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Column {
-                Text("Laporan & Analitik Cabang", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF111827))
-                Text("Insight bisnis Anda secara real-time", fontSize = 12.sp, color = Color(0xFF6B7280))
+            val titleBlock: @Composable () -> Unit = {
+                Column {
+                    Text("Laporan & Analitik Cabang", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF111827))
+                    Text("Insight bisnis Anda secara real-time", fontSize = 12.sp, color = Color(0xFF6B7280))
+                }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            FilterDropdown(
-                selected = when (channel) {
-                    "all" -> "Semua Channel"
-                    "food_apps" -> "Semua Food Apps"
-                    "offline" -> "POS Kasir"
-                    "website" -> "Website Online"
-                    "endorse" -> "Endorse"
-                    "gofood" -> "GoFood"
-                    "grabfood" -> "GrabFood"
-                    "shopeefood" -> "ShopeeFood"
-                    "tiktokgo" -> "TikTok Go"
-                    else -> channel.capitalize()
-                },
-                options = listOf(
-                    "Semua Channel" to "all",
-                    "Semua Food Apps" to "food_apps",
-                    "POS Kasir" to "offline",
-                    "Website Online" to "website",
-                    "Endorse" to "endorse",
-                    "GoFood" to "gofood",
-                    "GrabFood" to "grabfood",
-                    "ShopeeFood" to "shopeefood",
-                    "TikTok Go" to "tiktokgo"
-                ),
-                onSelect = { onChannelChanged(it) }
-            )
-            
-            FilterDropdown(
-                selected = when (payment) {
-                    "all" -> "Semua Metode"
-                    "cash" -> "Tunai"
-                    "qris" -> "QRIS"
-                    "card" -> "Kartu"
-                    else -> "Semua Metode"
-                },
-                options = listOf("Semua Metode" to "all", "Tunai" to "cash", "QRIS" to "qris", "Kartu" to "card"),
-                onSelect = { onPaymentChanged(it) }
-            )
+            val filterRow: @Composable () -> Unit = {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    item {
+                        FilterDropdown(
+                            selected = when (channel) {
+                                "all" -> "Semua Channel"
+                                "food_apps" -> "Semua Food Apps"
+                                "offline" -> "POS Kasir"
+                                "website" -> "Website Online"
+                                "endorse" -> "Endorse"
+                                "gofood" -> "GoFood"
+                                "grabfood" -> "GrabFood"
+                                "shopeefood" -> "ShopeeFood"
+                                "tiktokgo" -> "TikTok Go"
+                                else -> channel.capitalize()
+                            },
+                            options = listOf(
+                                "Semua Channel" to "all",
+                                "Semua Food Apps" to "food_apps",
+                                "POS Kasir" to "offline",
+                                "Website Online" to "website",
+                                "Endorse" to "endorse",
+                                "GoFood" to "gofood",
+                                "GrabFood" to "grabfood",
+                                "ShopeeFood" to "shopeefood",
+                                "TikTok Go" to "tiktokgo"
+                            ),
+                            onSelect = { onChannelChanged(it) }
+                        )
+                    }
 
-            FilterDropdown(
-                selected = when (status) {
-                    "all" -> "Semua Status"
-                    "completed" -> "Selesai"
-                    "cancelled" -> "Dibatalkan"
-                    else -> "Semua Status"
-                },
-                options = listOf("Semua Status" to "all", "Selesai" to "completed", "Dibatalkan" to "cancelled"),
-                onSelect = { onStatusChanged(it) }
-            )
+                    item {
+                        FilterDropdown(
+                            selected = when (payment) {
+                                "all" -> "Semua Metode"
+                                "cash" -> "Tunai"
+                                "qris" -> "QRIS"
+                                "card" -> "Kartu"
+                                else -> "Semua Metode"
+                            },
+                            options = listOf("Semua Metode" to "all", "Tunai" to "cash", "QRIS" to "qris", "Kartu" to "card"),
+                            onSelect = { onPaymentChanged(it) }
+                        )
+                    }
 
-                FilterDropdown(
-                    selected = range.label,
-                    options = DateRange.values().map { it.label to it.name },
-                    onSelect = { name -> onRangeChanged(DateRange.valueOf(name)) }
-                )
+                    item {
+                        FilterDropdown(
+                            selected = when (status) {
+                                "all" -> "Semua Status"
+                                "completed" -> "Selesai"
+                                "cancelled" -> "Dibatalkan"
+                                else -> "Semua Status"
+                            },
+                            options = listOf("Semua Status" to "all", "Selesai" to "completed", "Dibatalkan" to "cancelled"),
+                            onSelect = { onStatusChanged(it) }
+                        )
+                    }
+
+                    item {
+                        FilterDropdown(
+                            selected = range.label,
+                            options = DateRange.values().map { it.label to it.name },
+                            onSelect = { name -> onRangeChanged(DateRange.valueOf(name)) }
+                        )
+                    }
+                }
             }
-        }
 
-        if (range == DateRange.CUSTOM) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                ReportDatePickerField(
-                    label = "Tanggal mulai",
-                    date = customStartDate.toReportLocalDateOrNull(),
-                    onDatePicked = { date -> onCustomDateChanged(date.toString(), customEndDate) },
-                    modifier = Modifier.weight(1f)
-                )
-                ReportDatePickerField(
-                    label = "Tanggal akhir",
-                    date = customEndDate.toReportLocalDateOrNull(),
-                    onDatePicked = { date -> onCustomDateChanged(customStartDate, date.toString()) },
-                    modifier = Modifier.weight(1f)
-                )
+            if (isNarrow) {
+                titleBlock()
+                filterRow()
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    titleBlock()
+                    filterRow()
+                }
             }
-            customDateError?.let { error ->
-                Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+
+            if (range == DateRange.CUSTOM) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    ReportDatePickerField(
+                        label = "Tanggal mulai",
+                        date = customStartDate.toReportLocalDateOrNull(),
+                        onDatePicked = { date -> onCustomDateChanged(date.toString(), customEndDate) },
+                        modifier = Modifier.weight(1f)
+                    )
+                    ReportDatePickerField(
+                        label = "Tanggal akhir",
+                        date = customEndDate.toReportLocalDateOrNull(),
+                        onDatePicked = { date -> onCustomDateChanged(customStartDate, date.toString()) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                customDateError?.let { error ->
+                    Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                }
             }
         }
     }
@@ -347,26 +413,44 @@ fun OfflineDataBanner(isOnline: Boolean = false) {
 
 @Composable
 fun KPICards(data: AnalyticsData) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        KPICard(Modifier.weight(1f), "Omzet Kotor", formatRupiah(data.grossRevenue), "", Color(0xFFF59E0B), Icons.Default.MonetizationOn)
-        KPICardLight(Modifier.weight(1f), "Pesanan Sukses", "${data.totalOrders}", "Transaksi berhasil diproses", Color(0xFF3B82F6), Icons.Default.ShoppingBag)
-        KPICardLight(Modifier.weight(1f), "Rata-rata / Order", formatRupiah(data.avgOrderValue), "Rata-rata belanja per pesanan", Color(0xFFA855F7), Icons.Default.ShowChart)
-        KPICardLight(Modifier.weight(1f), "Jam Tersibuk", data.peakHour?.let { "${it.toString().padStart(2, '0')}:00" } ?: "—", "Jam dengan pesanan terbanyak", Color(0xFF6366F1), Icons.Default.AccessTime)
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val isNarrow = maxWidth < 760.dp
+        if (isNarrow) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    KPICard(Modifier.weight(1f), "Omzet Kotor", formatRupiah(data.grossRevenue), "Pendapatan kotor", Color(0xFFF59E0B), Icons.Default.MonetizationOn)
+                    KPICardLight(Modifier.weight(1f), "Pesanan Sukses", "${data.totalOrders}", "Transaksi diproses", Color(0xFF3B82F6), Icons.Default.ShoppingBag)
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    KPICardLight(Modifier.weight(1f), "Rata-rata / Order", formatRupiah(data.avgOrderValue), "Rata-rata belanja", Color(0xFFA855F7), Icons.Default.ShowChart)
+                    KPICardLight(Modifier.weight(1f), "Jam Tersibuk", data.peakHour?.let { "${it.toString().padStart(2, '0')}:00" } ?: "—", "Pesanan terbanyak", Color(0xFF6366F1), Icons.Default.AccessTime)
+                }
+            }
+        } else {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                KPICard(Modifier.weight(1f), "Omzet Kotor", formatRupiah(data.grossRevenue), "", Color(0xFFF59E0B), Icons.Default.MonetizationOn)
+                KPICardLight(Modifier.weight(1f), "Pesanan Sukses", "${data.totalOrders}", "Transaksi berhasil diproses", Color(0xFF3B82F6), Icons.Default.ShoppingBag)
+                KPICardLight(Modifier.weight(1f), "Rata-rata / Order", formatRupiah(data.avgOrderValue), "Rata-rata belanja per pesanan", Color(0xFFA855F7), Icons.Default.ShowChart)
+                KPICardLight(Modifier.weight(1f), "Jam Tersibuk", data.peakHour?.let { "${it.toString().padStart(2, '0')}:00" } ?: "—", "Jam dengan pesanan terbanyak", Color(0xFF6366F1), Icons.Default.AccessTime)
+            }
+        }
     }
 }
 
 @Composable
 fun KPICard(modifier: Modifier, title: String, value: String, subtitle: String, color: Color, icon: androidx.compose.ui.graphics.vector.ImageVector) {
     Surface(modifier = modifier, shape = RoundedCornerShape(16.dp), color = color, shadowElevation = 2.dp) {
-        Column(modifier = Modifier.padding(20.dp)) {
+        Column(modifier = Modifier.padding(16.dp)) {
             Box(modifier = Modifier.size(32.dp).background(Color.White.copy(alpha = 0.2f), RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
                 Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
             }
             Spacer(modifier = Modifier.height(8.dp))
-            Text(title.uppercase(), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.8f))
-            Text(value, fontSize = 24.sp, fontWeight = FontWeight.Black, color = Color.White)
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(subtitle, fontSize = 10.sp, color = Color.White.copy(alpha = 0.9f))
+            Text(title.uppercase(), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.8f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(value, fontSize = 20.sp, fontWeight = FontWeight.Black, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (subtitle.isNotBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(subtitle, fontSize = 10.sp, color = Color.White.copy(alpha = 0.9f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
     }
 }
@@ -374,15 +458,17 @@ fun KPICard(modifier: Modifier, title: String, value: String, subtitle: String, 
 @Composable
 fun KPICardLight(modifier: Modifier, title: String, value: String, subtitle: String, iconColor: Color, icon: androidx.compose.ui.graphics.vector.ImageVector) {
     Surface(modifier = modifier, shape = RoundedCornerShape(16.dp), color = Color.White, shadowElevation = 2.dp) {
-        Column(modifier = Modifier.padding(20.dp)) {
+        Column(modifier = Modifier.padding(16.dp)) {
             Box(modifier = Modifier.size(32.dp).background(iconColor.copy(alpha = 0.1f), RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
                 Icon(icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(18.dp))
             }
             Spacer(modifier = Modifier.height(8.dp))
-            Text(title.uppercase(), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF9CA3AF))
-            Text(value, fontSize = 24.sp, fontWeight = FontWeight.Black, color = Color(0xFF111827))
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(subtitle, fontSize = 10.sp, color = Color(0xFF9CA3AF))
+            Text(title.uppercase(), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF9CA3AF), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(value, fontSize = 20.sp, fontWeight = FontWeight.Black, color = Color(0xFF111827), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (subtitle.isNotBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(subtitle, fontSize = 10.sp, color = Color(0xFF9CA3AF), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
     }
 }
@@ -401,18 +487,18 @@ fun StatusTransaksi(data: AnalyticsData) {
 
             // Selesai
             Row(modifier = Modifier.fillMaxWidth().background(Color(0xFFECFDF5), RoundedCornerShape(12.dp)).border(1.dp, Color(0xFFD1FAE5), RoundedCornerShape(12.dp)).padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.weight(1f)) {
                     Box(modifier = Modifier.size(32.dp).background(Color(0xFFD1FAE5), RoundedCornerShape(16.dp)), contentAlignment = Alignment.Center) {
                         Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF059669), modifier = Modifier.size(16.dp))
                     }
                     Column {
-                        Text("Selesai", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF064E3B))
-                        Text("Pembayaran sukses", fontSize = 10.sp, color = Color(0xFF059669))
+                        Text("Selesai", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF064E3B), maxLines = 1)
+                        Text("Pembayaran sukses", fontSize = 10.sp, color = Color(0xFF059669), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
                 Column(horizontalAlignment = Alignment.End) {
-                    Text("${data.totalOrders}", fontWeight = FontWeight.Black, fontSize = 18.sp, color = Color(0xFF047857))
-                    Text("$successRate%", fontWeight = FontWeight.Bold, fontSize = 10.sp, color = Color(0xFF10B981))
+                    Text("${data.totalOrders}", fontWeight = FontWeight.Black, fontSize = 18.sp, color = Color(0xFF047857), maxLines = 1)
+                    Text("$successRate%", fontWeight = FontWeight.Bold, fontSize = 10.sp, color = Color(0xFF10B981), maxLines = 1)
                 }
             }
 
@@ -420,18 +506,18 @@ fun StatusTransaksi(data: AnalyticsData) {
 
             // Dibatalkan
             Row(modifier = Modifier.fillMaxWidth().background(Color(0xFFFEF2F2), RoundedCornerShape(12.dp)).border(1.dp, Color(0xFFFEE2E2), RoundedCornerShape(12.dp)).padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.weight(1f)) {
                     Box(modifier = Modifier.size(32.dp).background(Color(0xFFFEE2E2), RoundedCornerShape(16.dp)), contentAlignment = Alignment.Center) {
                         Icon(Icons.Default.Cancel, contentDescription = null, tint = Color(0xFFDC2626), modifier = Modifier.size(16.dp))
                     }
                     Column {
-                        Text("Dibatalkan", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF7F1D1D))
-                        Text("Kadaluarsa / Batal Kasir", fontSize = 10.sp, color = Color(0xFFDC2626))
+                        Text("Dibatalkan", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF7F1D1D), maxLines = 1)
+                        Text("Kadaluarsa / Batal Kasir", fontSize = 10.sp, color = Color(0xFFDC2626), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
                 Column(horizontalAlignment = Alignment.End) {
-                    Text("${data.canceledCount}", fontWeight = FontWeight.Black, fontSize = 18.sp, color = Color(0xFFB91C1C))
-                    Text("$failureRate%", fontWeight = FontWeight.Bold, fontSize = 10.sp, color = Color(0xFFEF4444))
+                    Text("${data.canceledCount}", fontWeight = FontWeight.Black, fontSize = 18.sp, color = Color(0xFFB91C1C), maxLines = 1)
+                    Text("$failureRate%", fontWeight = FontWeight.Bold, fontSize = 10.sp, color = Color(0xFFEF4444), maxLines = 1)
                 }
             }
         }
@@ -680,22 +766,36 @@ fun Top10Products(data: AnalyticsData) {
 @Composable
 fun TransactionHistoryTable(orders: List<OrderDto>, searchQuery: String, onSearchQueryChange: (String) -> Unit) {
     Surface(shape = RoundedCornerShape(16.dp), color = Color.White, shadowElevation = 2.dp) {
-        Column(modifier = Modifier.padding(20.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        BoxWithConstraints(modifier = Modifier.padding(20.dp)) {
+        val isNarrow = maxWidth < 560.dp
+        Column {
+            val titleBlock: @Composable () -> Unit = {
                 Column {
                     Text("Histori Transaksi Detail", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF111827))
                     Text("Semua transaksi sukses pada periode ini", fontSize = 12.sp, color = Color(0xFF9CA3AF))
                 }
-                
+            }
+            val searchField: @Composable (Modifier) -> Unit = { fieldModifier ->
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = onSearchQueryChange,
                     placeholder = { Text("Cari no antrian / item...", fontSize = 14.sp) },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF9CA3AF)) },
-                    modifier = Modifier.width(300.dp).height(50.dp),
+                    modifier = fieldModifier.height(50.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(unfocusedBorderColor = Color(0xFFE5E7EB), focusedBorderColor = ShawarmaOrange)
                 )
+            }
+            if (isNarrow) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    titleBlock()
+                    searchField(Modifier.fillMaxWidth())
+                }
+            } else {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    titleBlock()
+                    searchField(Modifier.widthIn(max = 300.dp).weight(1f, fill = false))
+                }
             }
             Spacer(modifier = Modifier.height(16.dp))
             
@@ -707,67 +807,67 @@ fun TransactionHistoryTable(orders: List<OrderDto>, searchQuery: String, onSearc
             }
 
             Surface(shape = RoundedCornerShape(12.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF3F4F6))) {
-                LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp, max = 400.dp)) {
-                    item {
-                        Row(modifier = Modifier.fillMaxWidth().background(Color(0xFFF9FAFB)).padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("No. Antrian", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color(0xFF6B7280), modifier = Modifier.weight(0.5f))
-                            Text("Waktu", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color(0xFF6B7280), modifier = Modifier.weight(1f))
-                            Text("Nama Item", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color(0xFF6B7280), modifier = Modifier.weight(2f))
-                            Text("Channel", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color(0xFF6B7280), modifier = Modifier.weight(0.8f))
-                            Text("Metode Bayar", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color(0xFF6B7280), modifier = Modifier.weight(0.8f))
-                            Text("Total Transaksi", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color(0xFF6B7280), modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.End)
-                        }
-                        HorizontalDivider(color = Color(0xFFF3F4F6))
-                    }
-                    if (filteredOrders.isEmpty()) {
+                val tableScroll = rememberScrollState()
+                Box(modifier = Modifier.fillMaxWidth().horizontalScroll(tableScroll)) {
+                    LazyColumn(modifier = Modifier.widthIn(min = 680.dp).heightIn(min = 100.dp, max = 400.dp)) {
                         item {
-                            com.sukashawarma.pos.presentation.components.EmptyState(
-                                title = "Data tidak ditemukan",
-                                icon = Icons.Default.Search,
-                                minHeight = 140.dp
-                            )
+                            Row(modifier = Modifier.fillMaxWidth().background(Color(0xFFF9FAFB)).padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("No. Antrian", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color(0xFF6B7280), modifier = Modifier.weight(0.6f))
+                                Text("Waktu", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color(0xFF6B7280), modifier = Modifier.weight(1f))
+                                Text("Nama Item", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color(0xFF6B7280), modifier = Modifier.weight(2f))
+                                Text("Channel", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color(0xFF6B7280), modifier = Modifier.weight(0.9f))
+                                Text("Metode Bayar", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color(0xFF6B7280), modifier = Modifier.weight(0.9f))
+                                Text("Total Transaksi", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color(0xFF6B7280), modifier = Modifier.weight(1.2f), textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                            }
+                            HorizontalDivider(color = Color(0xFFF3F4F6))
                         }
-                    } else {
-                        items(filteredOrders) { order ->
-                            Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(0.5f)) {
-                                    Text("#${order.orderNumber}", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF111827))
-                                    if (order.isSyncedFromOffline == true) {
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Surface(shape = RoundedCornerShape(4.dp), color = Color(0xFF10B981).copy(alpha = 0.12f)) {
-                                            Text("SYNC", color = Color(0xFF10B981), fontSize = 8.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
+                        if (filteredOrders.isEmpty()) {
+                            item {
+                                com.sukashawarma.pos.presentation.components.EmptyState(
+                                    title = "Data tidak ditemukan",
+                                    icon = Icons.Default.Search,
+                                    minHeight = 140.dp
+                                )
+                            }
+                        } else {
+                            items(filteredOrders) { order ->
+                                Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(0.6f)) {
+                                        Text("#${order.orderNumber}", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF111827))
+                                        if (order.isSyncedFromOffline == true) {
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Surface(shape = RoundedCornerShape(4.dp), color = Color(0xFF10B981).copy(alpha = 0.12f)) {
+                                                Text("SYNC", color = Color(0xFF10B981), fontSize = 8.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
+                                            }
+                                        }
+                                    }
+                                    val dateStr = com.sukashawarma.pos.domain.gate.JakartaTime.dateTimeStringOf(order.createdAt)
+                                    Text(dateStr, fontSize = 12.sp, color = Color(0xFF6B7280), modifier = Modifier.weight(1f))
+                                    val itemsStr = order.orderItems?.joinToString(", ") { it.displayName } ?: ""
+                                    Text(itemsStr, fontSize = 14.sp, color = Color(0xFF4B5563), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(2f))
+                                    Box(modifier = Modifier.weight(0.9f)) {
+                                        com.sukashawarma.pos.presentation.components.OrderSourceBadge(source = order.source, channel = order.channel)
+                                    }
+                                    Text(order.paymentMethod?.uppercase() ?: "-", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2563EB), modifier = Modifier.weight(0.9f).background(Color(0xFFEFF6FF), RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 4.dp))
+                                    Column(modifier = Modifier.weight(1.2f), horizontalAlignment = Alignment.End) {
+                                        Text(formatRupiah(order.totalAmount), fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF111827), textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                                        val subsidy = order.promoSubsidy?.takeIf { it > 0.0 }
+                                        if (subsidy != null) {
+                                            Text("Potongan App: -${formatRupiah(subsidy)}", color = Color(0xFFEF4444), fontSize = 10.sp, fontWeight = FontWeight.Medium, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                                        }
+                                        val discount = order.discountAmount?.takeIf { it > 0.0 }
+                                        if (discount != null) {
+                                            Text("Diskon: -${formatRupiah(discount)}", color = Color(0xFFF59E0B), fontSize = 10.sp, fontWeight = FontWeight.Medium, textAlign = androidx.compose.ui.text.style.TextAlign.End)
                                         }
                                     }
                                 }
-                                // Membuang offset lalu mem-parse sebagai LocalDateTime membaca
-                                // jam APA ADANYA: baris server ber-offset "+07:00" kebetulan
-                                // benar, tapi baris dari cache Room berformat UTC ("…Z") tampil
-                                // mundur 7 jam — dan pesanan dini hari WIB ikut salah tanggal.
-                                val dateStr = com.sukashawarma.pos.domain.gate.JakartaTime.dateTimeStringOf(order.createdAt)
-                                Text(dateStr, fontSize = 12.sp, color = Color(0xFF6B7280), modifier = Modifier.weight(1f))
-                                val itemsStr = order.orderItems?.joinToString(", ") { it.displayName } ?: ""
-                                Text(itemsStr, fontSize = 14.sp, color = Color(0xFF4B5563), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(2f))
-                                Box(modifier = Modifier.weight(0.8f)) {
-                                    com.sukashawarma.pos.presentation.components.OrderSourceBadge(source = order.source, channel = order.channel)
-                                }
-                                Text(order.paymentMethod?.uppercase() ?: "-", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2563EB), modifier = Modifier.weight(0.8f).background(Color(0xFFEFF6FF), RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 4.dp))
-                                Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
-                                    Text(formatRupiah(order.totalAmount), fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF111827), textAlign = androidx.compose.ui.text.style.TextAlign.End)
-                                    val subsidy = order.promoSubsidy?.takeIf { it > 0.0 }
-                                    if (subsidy != null) {
-                                        Text("Potongan App: -${formatRupiah(subsidy)}", color = Color(0xFFEF4444), fontSize = 10.sp, fontWeight = FontWeight.Medium, textAlign = androidx.compose.ui.text.style.TextAlign.End)
-                                    }
-                                    val discount = order.discountAmount?.takeIf { it > 0.0 }
-                                    if (discount != null) {
-                                        Text("Diskon: -${formatRupiah(discount)}", color = Color(0xFFF59E0B), fontSize = 10.sp, fontWeight = FontWeight.Medium, textAlign = androidx.compose.ui.text.style.TextAlign.End)
-                                    }
-                                }
+                                HorizontalDivider(color = Color(0xFFF3F4F6))
                             }
-                            HorizontalDivider(color = Color(0xFFF3F4F6))
                         }
                     }
                 }
             }
+        }
         }
     }
 }

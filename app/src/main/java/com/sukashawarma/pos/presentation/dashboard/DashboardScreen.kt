@@ -117,18 +117,18 @@ fun DashboardScreen(
             alerts = criticalStockAlerts
         )
 
-        Column(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(16.dp)
         ) {
+        val isHeaderNarrow = maxWidth < 700.dp
+        Column(modifier = Modifier.fillMaxSize()) {
             // 3. Top Header Row (Title + Outlet Location Pill + Action Buttons)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+            // Layar sempit: tombol "Pesanan Baru" + kartu omzet pindah ke bawah judul,
+            // bukan dipepetkan sejajar — dulu overflow/kepotong di portrait.
+            val titleBlock: @Composable (Modifier) -> Unit = { titleModifier ->
+                Column(modifier = titleModifier) {
                     Text(
                         text = "Order",
                         style = MaterialTheme.typography.headlineLarge,
@@ -158,66 +158,82 @@ fun DashboardScreen(
                         }
                     }
                 }
+            }
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+            val actionsBlock: @Composable () -> Unit = {
+                // Warna/label berasal dari runtime config dan dapat berubah
+                // realtime tanpa mengunduh atau memasang APK baru.
+                Button(
+                    onClick = onNewOrderClick,
+                    colors = ButtonDefaults.buttonColors(containerColor = newOrderButtonColor),
+                    shape = RoundedCornerShape(24.dp),
+                    modifier = Modifier.height(44.dp)
                 ) {
-                    // Warna/label berasal dari runtime config dan dapat berubah
-                    // realtime tanpa mengunduh atau memasang APK baru.
-                    Button(
-                        onClick = onNewOrderClick,
-                        colors = ButtonDefaults.buttonColors(containerColor = newOrderButtonColor),
-                        shape = RoundedCornerShape(24.dp),
-                        modifier = Modifier.height(44.dp)
-                    ) {
-                        Icon(Icons.Default.AddCircle, contentDescription = null, tint = Color.White)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(newOrderButtonLabel, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
-                    }
+                    Icon(Icons.Default.AddCircle, contentDescription = null, tint = Color.White)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(newOrderButtonLabel, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
+                }
 
-                    // PENDAPATAN LUNAS Pill Card (Matching Screenshot)
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = CreamSurface,
-                        border = androidx.compose.foundation.BorderStroke(1.dp, CreamBorder)
+                // PENDAPATAN LUNAS Pill Card (Matching Screenshot)
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = CreamSurface,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, CreamBorder)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = ShawarmaOrangeLight,
+                            modifier = Modifier.size(32.dp)
                         ) {
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = ShawarmaOrangeLight,
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, tint = ShawarmaOrange, modifier = Modifier.size(18.dp))
-                                }
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text("OMZET KOTOR HARI INI", style = MaterialTheme.typography.bodySmall, fontSize = 9.sp, color = TextDarkMuted, fontWeight = FontWeight.Bold)
-                                Text("Rp ${String.format("%,.0f", omzetKotorHariIni)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextDarkPrimary)
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, tint = ShawarmaOrange, modifier = Modifier.size(18.dp))
                             }
                         }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text("OMZET KOTOR HARI INI", style = MaterialTheme.typography.bodySmall, fontSize = 9.sp, color = TextDarkMuted, fontWeight = FontWeight.Bold)
+                            Text("Rp ${String.format("%,.0f", omzetKotorHariIni)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextDarkPrimary)
+                        }
                     }
+                }
+            }
+
+            if (isHeaderNarrow) {
+                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    titleBlock(Modifier)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) { actionsBlock() }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    titleBlock(Modifier.weight(1f).padding(end = 12.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) { actionsBlock() }
                 }
             }
 
             Spacer(modifier = Modifier.height(12.dp))
 
             // 4. Status Bar & Source Filters (Matching Screenshot)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            val printerStatusPill: @Composable () -> Unit = {
                 Surface(
                     shape = RoundedCornerShape(6.dp),
                     color = if (printerConnectionStatus == com.sukashawarma.pos.presentation.printer.ConnectionStatus.CONNECTED) TwEmerald50 else CreamSurface,
                     border = androidx.compose.foundation.BorderStroke(1.dp, if (printerConnectionStatus == com.sukashawarma.pos.presentation.printer.ConnectionStatus.CONNECTED) TwEmerald100 else CreamBorder),
-                    modifier = Modifier.clickable { showPrinterDialog = true }.wrapContentWidth().padding(end = 12.dp)
+                    modifier = Modifier.clickable { showPrinterDialog = true }.wrapContentWidth()
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -226,22 +242,24 @@ fun DashboardScreen(
                         val icon = Icons.Default.Print
                         val tint = if (printerConnectionStatus == com.sukashawarma.pos.presentation.printer.ConnectionStatus.CONNECTED) TwEmerald600 else TextDarkMuted
                         val text = if (printerConnectionStatus == com.sukashawarma.pos.presentation.printer.ConnectionStatus.CONNECTED) "Terhubung" else "Belum Terhubung"
-                        
+
                         Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = text, 
-                            style = MaterialTheme.typography.bodySmall, 
-                            fontSize = 11.sp, 
-                            color = tint, 
+                            text = text,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontSize = 11.sp,
+                            color = tint,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
                     }
                 }
+            }
 
-                // Filters: Semua | Online | Offline
+            // Filters: Semua | Online | Offline
+            val sourceFilterGroup: @Composable () -> Unit = {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier
@@ -266,6 +284,22 @@ fun DashboardScreen(
                             )
                         }
                     }
+                }
+            }
+
+            if (isHeaderNarrow) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    printerStatusPill()
+                    sourceFilterGroup()
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    printerStatusPill()
+                    sourceFilterGroup()
                 }
             }
 
@@ -469,7 +503,12 @@ fun DashboardScreen(
             ) {
                 val availableWidth = maxWidth
 
-                if (availableWidth >= 480.dp) {
+                // 480dp dulu cukup karena app selalu landscape (lebar selalu berlimpah).
+                // Sekarang portrait diizinkan, lebar konten bisa pas-pasan di atas 480dp
+                // (mis. tablet portrait dikurangi rail navigasi) — 3 kolom di situ berarti
+                // tiap kolom cuma ~150dp, judul kolom dan kartu order jadi terpotong.
+                // 840dp memastikan tiap kolom minimal ~270dp, cukup untuk OrderCard.
+                if (availableWidth >= 840.dp) {
                     // 3 Kolom Penuh untuk Tablet. Papan digulung bersama (bukan per kolom)
                     // supaya tiap kartu bisa memanjang ke bawah sesuai banyaknya orderan.
                     EqualHeightBoardRow(
@@ -522,6 +561,7 @@ fun DashboardScreen(
             }
         }
     }
+}
 }
 
 /**

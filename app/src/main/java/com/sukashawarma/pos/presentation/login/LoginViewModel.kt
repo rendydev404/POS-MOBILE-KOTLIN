@@ -9,10 +9,18 @@ import com.sukashawarma.pos.data.remote.SessionTokenHolder
 import com.sukashawarma.pos.data.remote.SignInPayload
 import com.sukashawarma.pos.data.remote.SupabaseClient
 import com.sukashawarma.pos.domain.model.UserSession
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 
 private const val LOGIN_EMAIL_DOMAIN = "@outlet.local"
+internal const val AUTO_LOGIN_TIMEOUT_MS = 1_000L
+
+/** Shared deadline for the complete silent-session flow, not each HTTP request. */
+internal suspend fun <T> runAutoLoginWithinDeadline(block: suspend CoroutineScope.() -> T): T =
+    withTimeout(AUTO_LOGIN_TIMEOUT_MS, block)
 
 class LoginViewModel(application: Application) : AndroidViewModel(application) {
     private val api = SupabaseClient.api
@@ -44,46 +52,57 @@ class LoginViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             try {
-                val authRes = authApi.refreshSession(payload = com.sukashawarma.pos.data.remote.RefreshTokenPayload(refreshToken))
-                if (!authRes.isSuccessful || authRes.body() == null) {
-                    if (authRes.code() in 400..499) {
-                        SessionTokenHolder.clear()
-                        AuthPrefs.clear()
-                        isCheckingSession.value = false
-                        return@launch
-                    } else {
-                        restoreOfflineSession()
-                        return@launch
+                // Jangan mengunci kasir pada layar loader ketika DNS/Wi-Fi/server
+                // lambat. `withTimeout` membatalkan semua request Retrofit di
+                // dalam blok ini sehingga hasil yang datang terlambat tidak dapat
+                // menimpa login manual yang sudah dimulai kasir.
+                runAutoLoginWithinDeadline {
+                    val authRes = authApi.refreshSession(payload = com.sukashawarma.pos.data.remote.RefreshTokenPayload(refreshToken))
+                    if (!authRes.isSuccessful || authRes.body() == null) {
+                        if (authRes.code() in 400..499) {
+                            SessionTokenHolder.clear()
+                            AuthPrefs.clear()
+                            isCheckingSession.value = false
+                            return@runAutoLoginWithinDeadline
+                        } else {
+                            restoreOfflineSession()
+                            return@runAutoLoginWithinDeadline
+                        }
                     }
-                }
-                val token = authRes.body()!!
+                    val token = authRes.body()!!
 
-                SessionTokenHolder.accessToken = token.access_token
-                SessionTokenHolder.refreshToken = token.refresh_token
-                AuthPrefs.setRefreshToken(token.refresh_token)
+                    SessionTokenHolder.accessToken = token.access_token
+                    SessionTokenHolder.refreshToken = token.refresh_token
+                    AuthPrefs.setRefreshToken(token.refresh_token)
 
-                val staffRes = api.getStaffById("eq.${token.user.id}")
-                val staff = staffRes.body()?.firstOrNull()
-                
-                if (staff == null || staff.isActive == false || staff.outletId.isNullOrBlank()) {
-                    SessionTokenHolder.clear()
+                    val staffRes = api.getStaffById("eq.${token.user.id}")
+                    val staff = staffRes.body()?.firstOrNull()
+
+                    if (staff == null || staff.isActive == false || staff.outletId.isNullOrBlank()) {
+                        SessionTokenHolder.clear()
+                        isCheckingSession.value = false
+                        return@runAutoLoginWithinDeadline
+                    }
+
+                    val outletRes = api.getOutletById("eq.${staff.outletId}")
+                    val outlet = outletRes.body()?.firstOrNull()
+
+                    val session = UserSession(
+                        staffId = staff.id,
+                        username = staff.name ?: staff.username ?: "Staff",
+                        role = staff.role ?: "kasir",
+                        outletId = staff.outletId,
+                        outletName = outlet?.name ?: "Unknown Outlet"
+                    )
+
+                    SessionPrefs.setSession(staff.id, staff.outletId, session.outletName, session.username, session.role)
+                    activeSession.value = session
                     isCheckingSession.value = false
-                    return@launch
                 }
-
-                val outletRes = api.getOutletById("eq.${staff.outletId}")
-                val outlet = outletRes.body()?.firstOrNull()
-
-                val session = UserSession(
-                    staffId = staff.id,
-                    username = staff.name ?: staff.username ?: "Staff",
-                    role = staff.role ?: "kasir",
-                    outletId = staff.outletId,
-                    outletName = outlet?.name ?: "Unknown Outlet"
-                )
-                
-                SessionPrefs.setSession(staff.id, staff.outletId, session.outletName, session.username, session.role)
-                activeSession.value = session
+            } catch (e: TimeoutCancellationException) {
+                // Timeout auto-login bukan kegagalan login manual. Buka form agar
+                // kasir dapat langsung mencoba kembali tanpa menunggu jaringan.
+                errorMessage.value = "Sesi otomatis tidak dapat dimuat. Silakan login."
                 isCheckingSession.value = false
             } catch (e: Exception) {
                 // Network error, restore offline session

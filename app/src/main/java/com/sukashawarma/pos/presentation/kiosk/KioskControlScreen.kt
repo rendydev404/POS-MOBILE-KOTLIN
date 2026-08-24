@@ -5,6 +5,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -25,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -63,7 +65,7 @@ fun KioskControlScreen(
     logoutTarget?.let { target ->
         AlertDialog(
             onDismissRequest = { logoutTarget = null },
-            title = { Text(if (target.first == "all") "Logout semua device?" else "Logout device?") },
+            title = { Text(if (target.first == "all") "Logout semua device?" else "Logout device?", fontWeight = FontWeight.Bold) },
             text = {
                 Text(
                     if (target.first == "all")
@@ -72,12 +74,15 @@ fun KioskControlScreen(
                 )
             },
             confirmButton = {
-                TextButton(onClick = {
-                    viewModel.logout(target.first, target.second)
-                    logoutTarget = null
-                }) { Text("Logout", color = Color(0xFFDC2626)) }
+                Button(
+                    onClick = {
+                        viewModel.logout(target.first, target.second)
+                        logoutTarget = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626))
+                ) { Text("Logout", color = Color.White) }
             },
-            dismissButton = { TextButton(onClick = { logoutTarget = null }) { Text("Batal") } }
+            dismissButton = { OutlinedButton(onClick = { logoutTarget = null }) { Text("Batal") } }
         )
     }
 
@@ -96,85 +101,202 @@ fun KioskControlScreen(
         )
     }
 
-    Box(modifier.fillMaxSize().background(CreamBackground)) {
-        Column(Modifier.fillMaxSize().padding(20.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Kontrol Device Pelanggan", fontWeight = FontWeight.Black, fontSize = 25.sp)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Device yang sedang aktif di cabang Anda.  ", color = Color(0xFF6B7280), fontSize = 13.sp)
-                        Box(Modifier.size(8.dp).background(if (realtimeConnected) Color(0xFF10B981) else Color(0xFFD1D5DB), CircleShape))
-                        Spacer(Modifier.width(5.dp))
-                        Text(
-                            if (realtimeConnected) "Terhubung" else "Menghubungkan…",
-                            color = if (realtimeConnected) Color(0xFF059669) else Color(0xFF9CA3AF),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-                OutlinedButton(onClick = viewModel::refresh, enabled = isOnline) {
-                    Icon(Icons.Default.Refresh, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(7.dp))
-                    Text("Refresh")
-                }
-                Spacer(Modifier.width(8.dp))
-                Button(
-                    onClick = {
-                        showPairing = true
-                        viewModel.loadAccounts()
-                    },
-                    enabled = isOnline,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5))
-                ) {
-                    Icon(Icons.Default.QrCode, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(7.dp))
-                    Text("Hubungkan via QR")
-                }
-                Spacer(Modifier.width(8.dp))
-                Button(
-                    onClick = { logoutTarget = "all" to "Semua device" },
-                    enabled = isOnline && devices.isNotEmpty() && busyTarget == null,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
-                ) {
-                    if (busyTarget == "all") CircularProgressIndicator(Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
-                    else Icon(Icons.Default.Logout, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(7.dp))
-                    Text("Logout Semua Device")
-                }
-            }
+    BoxWithConstraints(modifier = modifier.fillMaxSize().background(CreamBackground)) {
+        val isNarrow = maxWidth < 820.dp
 
-            Spacer(Modifier.height(18.dp))
-            Surface(shape = RoundedCornerShape(16.dp), color = Color(0xFFFFFBEB), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A))) {
-                Row(Modifier.fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Surface(shape = CircleShape, color = Color(0xFFFEF3C7)) {
-                        Icon(Icons.Default.Warning, null, tint = ShawarmaOrange, modifier = Modifier.padding(8.dp).size(19.dp))
-                    }
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(if (isNarrow) 14.dp else 20.dp)
+        ) {
+            // Header Section
+            if (isNarrow) {
+                // Portrait tablet layout: Title on top, action buttons row below
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
                     Column {
-                        Text("Panduan Mengelola Banyak Device", color = Color(0xFF78350F), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("Kontrol Device Pelanggan", fontWeight = FontWeight.Black, fontSize = 22.sp, color = Color(0xFF111827))
+                        Spacer(Modifier.height(2.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Device aktif di cabang Anda. ", color = Color(0xFF6B7280), fontSize = 12.sp)
+                            Box(Modifier.size(8.dp).background(if (realtimeConnected) Color(0xFF10B981) else Color(0xFFD1D5DB), CircleShape))
+                            Spacer(Modifier.width(5.dp))
+                            Text(
+                                if (realtimeConnected) "Terhubung" else "Menghubungkan…",
+                                color = if (realtimeConnected) Color(0xFF059669) else Color(0xFF9CA3AF),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        item {
+                            OutlinedButton(
+                                onClick = viewModel::refresh,
+                                enabled = isOnline,
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                            ) {
+                                Icon(Icons.Default.Refresh, null, Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Refresh", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                        item {
+                            Button(
+                                onClick = {
+                                    showPairing = true
+                                    viewModel.loadAccounts()
+                                },
+                                enabled = isOnline,
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5)),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                            ) {
+                                Icon(Icons.Default.QrCode, null, Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Hubungkan via QR", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        if (devices.isNotEmpty()) {
+                            item {
+                                Button(
+                                    onClick = { logoutTarget = "all" to "Semua device" },
+                                    enabled = isOnline && busyTarget == null,
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                                ) {
+                                    if (busyTarget == "all") CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                                    else Icon(Icons.Default.Logout, null, Modifier.size(16.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Logout Semua", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Landscape layout: side by side
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Kontrol Device Pelanggan", fontWeight = FontWeight.Black, fontSize = 24.sp, color = Color(0xFF111827))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Device yang sedang aktif di cabang Anda.  ", color = Color(0xFF6B7280), fontSize = 13.sp)
+                            Box(Modifier.size(8.dp).background(if (realtimeConnected) Color(0xFF10B981) else Color(0xFFD1D5DB), CircleShape))
+                            Spacer(Modifier.width(5.dp))
+                            Text(
+                                if (realtimeConnected) "Terhubung" else "Menghubungkan…",
+                                color = if (realtimeConnected) Color(0xFF059669) else Color(0xFF9CA3AF),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    OutlinedButton(
+                        onClick = viewModel::refresh,
+                        enabled = isOnline,
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        Icon(Icons.Default.Refresh, null, Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Refresh", fontSize = 12.sp)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            showPairing = true
+                            viewModel.loadAccounts()
+                        },
+                        enabled = isOnline,
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5)),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                    ) {
+                        Icon(Icons.Default.QrCode, null, Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Hubungkan via QR", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                    if (devices.isNotEmpty()) {
+                        Spacer(Modifier.width(8.dp))
+                        Button(
+                            onClick = { logoutTarget = "all" to "Semua device" },
+                            enabled = isOnline && busyTarget == null,
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                        ) {
+                            if (busyTarget == "all") CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                            else Icon(Icons.Default.Logout, null, Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Logout Semua Device", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            // Guidance Banner
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                color = Color(0xFFFFFBEB),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A))
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(shape = CircleShape, color = Color(0xFFFEF3C7)) {
+                        Icon(Icons.Default.Warning, null, tint = ShawarmaOrange, modifier = Modifier.padding(6.dp).size(18.dp))
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text("Panduan Mengelola Device Pelanggan", color = Color(0xFF78350F), fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         Text(
-                            "Cocokkan ID Device (misal: Device-45) di pojok kiri atas layar pelanggan dengan daftar ini sebelum logout.",
-                            color = Color(0xFF92400E), fontSize = 12.sp, lineHeight = 18.sp
+                            "Cocokkan ID Device di pojok kiri atas layar pelanggan dengan daftar ini sebelum melakukan logout.",
+                            color = Color(0xFF92400E), fontSize = 11.sp, lineHeight = 16.sp
                         )
                     }
                 }
             }
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(14.dp))
+
+            // Device List / Empty State Container
             Surface(
-                modifier = Modifier.fillMaxSize(),
-                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                shape = RoundedCornerShape(16.dp),
                 color = Color.White,
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF3F4F6))
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
             ) {
                 if (devices.isEmpty()) {
-                    DeviceEmptyState()
+                    DeviceEmptyState(
+                        onPairClick = {
+                            showPairing = true
+                            viewModel.loadAccounts()
+                        },
+                        isOnline = isOnline
+                    )
                 } else {
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(300.dp),
-                        contentPadding = PaddingValues(16.dp),
+                        columns = GridCells.Adaptive(minSize = if (isNarrow) 260.dp else 300.dp),
+                        contentPadding = PaddingValues(14.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxSize()
                     ) {
                         gridItems(devices, key = { it.userId }) { device ->
                             DeviceCard(
@@ -208,45 +330,88 @@ fun KioskControlScreen(
 
 @Composable
 private fun DeviceCard(device: KioskPresence, isBusy: Boolean, enabled: Boolean, onLogout: () -> Unit) {
-    Surface(shape = RoundedCornerShape(16.dp), color = Color.White, border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF3F4F6))) {
-        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = Color.White,
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Box {
                 Surface(shape = RoundedCornerShape(12.dp), color = Color(0xFFECFDF5)) {
-                    Icon(Icons.Default.Devices, null, tint = Color(0xFF059669), modifier = Modifier.padding(11.dp).size(23.dp))
+                    Icon(Icons.Default.Devices, null, tint = Color(0xFF059669), modifier = Modifier.padding(10.dp).size(22.dp))
                 }
-                Box(Modifier.align(Alignment.TopEnd).size(11.dp).background(Color(0xFF10B981), CircleShape))
+                Box(Modifier.align(Alignment.TopEnd).size(10.dp).background(Color(0xFF10B981), CircleShape))
             }
-            Spacer(Modifier.width(11.dp))
+            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(device.deviceLabel, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(device.deviceLabel, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF111827), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(2.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Wifi, null, tint = Color(0xFF059669), modifier = Modifier.size(12.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Online", color = Color(0xFF059669), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
+            Spacer(Modifier.width(8.dp))
             Button(
                 onClick = onLogout,
                 enabled = enabled,
-                contentPadding = PaddingValues(horizontal = 13.dp, vertical = 8.dp),
+                shape = RoundedCornerShape(8.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF111827))
             ) {
-                if (isBusy) CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
-                else Icon(Icons.Default.Logout, null, Modifier.size(16.dp))
+                if (isBusy) CircularProgressIndicator(Modifier.size(14.dp), color = Color.White, strokeWidth = 2.dp)
+                else Icon(Icons.Default.Logout, null, Modifier.size(14.dp))
                 Spacer(Modifier.width(5.dp))
-                Text("Logout", fontSize = 12.sp)
+                Text("Logout", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     }
 }
 
 @Composable
-private fun DeviceEmptyState() = Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(Icons.Default.Devices, null, tint = Color(0xFFE5E7EB), modifier = Modifier.size(52.dp))
-        Spacer(Modifier.height(8.dp))
-        Text("Tidak ada device online", color = Color(0xFF9CA3AF), fontWeight = FontWeight.Bold)
-        Text("Device yang menyala akan muncul otomatis di sini.", color = Color(0xFF9CA3AF), fontSize = 11.sp)
+private fun DeviceEmptyState(onPairClick: () -> Unit, isOnline: Boolean) = Box(
+    modifier = Modifier.fillMaxSize().padding(24.dp),
+    contentAlignment = Alignment.Center
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Surface(
+            shape = CircleShape,
+            color = Color(0xFFF3F4F6),
+            modifier = Modifier.size(64.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.Devices, null, tint = Color(0xFF9CA3AF), modifier = Modifier.size(32.dp))
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Text("Tidak Ada Device Online", color = Color(0xFF374151), fontWeight = FontWeight.Bold, fontSize = 15.sp)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Device pelanggan yang aktif di cabang Anda akan muncul otomatis di sini.",
+            color = Color(0xFF6B7280),
+            fontSize = 12.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 24.dp)
+        )
+        Spacer(Modifier.height(16.dp))
+        Button(
+            onClick = onPairClick,
+            enabled = isOnline,
+            shape = RoundedCornerShape(10.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5)),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            Icon(Icons.Default.QrCode, null, Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Hubungkan Device Baru", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        }
     }
 }
 

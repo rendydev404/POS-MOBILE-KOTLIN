@@ -60,7 +60,9 @@ fun LoginScreen(
     ) {
         Surface(
             modifier = Modifier
-                .width(480.dp)
+                .padding(horizontal = 16.dp)
+                .widthIn(max = 480.dp)
+                .fillMaxWidth()
                 .wrapContentHeight(),
             shape = RoundedCornerShape(16.dp),
             color = SlateSurface,

@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -30,6 +31,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -79,115 +81,139 @@ fun OrderHistoryScreen(
             }
         }
     }
-
-    Surface(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .padding(16.dp),
-        shape = RoundedCornerShape(12.dp),
-        color = CreamSurface,
-        border = androidx.compose.foundation.BorderStroke(1.dp, CreamBorder)
+            .padding(16.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp)
+        val isScreenNarrow = maxWidth < 760.dp
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            shape = RoundedCornerShape(12.dp),
+            color = CreamSurface,
+            border = androidx.compose.foundation.BorderStroke(1.dp, CreamBorder)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
             ) {
-                Column {
-                    Text(
-                        text = "Histori & Bonus",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = TextDarkPrimary
-                    )
-                    if (selectedTab == 0 && dateFilter == "today") {
-                        val isRealtimeConnected by com.sukashawarma.pos.data.remote.GlobalEventBus.isRealtimeConnected.collectAsState()
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(7.dp)
-                                    .clip(RoundedCornerShape(50))
-                                    .background(if (isRealtimeConnected) Color(0xFF10B981) else Color(0xFFCBD5E1))
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
+                val titleBlock: @Composable () -> Unit = {
+                    Column {
+                        Text(
+                            text = "Histori & Bonus",
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = TextDarkPrimary
+                        )
+                        if (selectedTab == 0 && dateFilter == "today") {
+                            val isRealtimeConnected by com.sukashawarma.pos.data.remote.GlobalEventBus.isRealtimeConnected.collectAsState()
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(7.dp)
+                                        .clip(RoundedCornerShape(50))
+                                        .background(if (isRealtimeConnected) Color(0xFF10B981) else Color(0xFFCBD5E1))
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (isRealtimeConnected) "Suka Shawarma - Update realtime aktif" else "Suka Shawarma - Menyambungkan realtime...",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = TextDarkSecondary
+                                )
+                            }
+                        } else {
                             Text(
-                                text = if (isRealtimeConnected) "Suka Shawarma - Update realtime aktif" else "Suka Shawarma - Menyambungkan realtime...",
+                                text = "Suka Shawarma",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = TextDarkSecondary
                             )
                         }
-                    } else {
-                        Text(
-                            text = "Suka Shawarma",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = TextDarkSecondary
-                        )
                     }
                 }
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
+                val tabsBlock: @Composable () -> Unit = {
                     Row(
-                        modifier = Modifier
-                            .background(Color(0xFFF3F4F6), RoundedCornerShape(20.dp))
-                            .padding(4.dp)
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Box(
+                        Row(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(if (selectedTab == 0) Color.White else Color.Transparent)
-                                .clickable { selectedTab = 0 }
-                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                                .background(Color(0xFFF3F4F6), RoundedCornerShape(20.dp))
+                                .padding(4.dp)
                         ) {
-                            Text("Histori Pesanan", fontWeight = FontWeight.SemiBold, color = if (selectedTab == 0) Color.Black else Color.Gray)
-                        }
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(if (selectedTab == 1) Color.White else Color.Transparent)
-                                .clickable { selectedTab = 1 }
-                                .padding(horizontal = 16.dp, vertical = 8.dp)
-                        ) {
-                            Text("Lihat Bonus", fontWeight = FontWeight.SemiBold, color = if (selectedTab == 1) Color.Black else Color.Gray)
-                        }
-                    }
-
-                    IconButton(
-                        onClick = {
-                            if (selectedTab == 0) {
-                                viewModel.fetchOrderHistory()
-                            } else {
-                                viewModel.fetchBonusData(selectedMonth, selectedYear)
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = if (selectedTab == 0) Color.White else Color.Transparent,
+                                onClick = { selectedTab = 0 }
+                            ) {
+                                Text(
+                                    "Histori Pesanan",
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (selectedTab == 0) Color.Black else Color.Gray,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                                )
                             }
-                        },
-                        modifier = Modifier
-                            .background(Color(0xFFF3F4F6), RoundedCornerShape(8.dp))
-                            .size(40.dp)
-                    ) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = if (selectedTab == 1) Color.White else Color.Transparent,
+                                onClick = { selectedTab = 1 }
+                            ) {
+                                Text(
+                                    "Lihat Bonus",
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (selectedTab == 1) Color.Black else Color.Gray,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                                )
+                            }
+                        }
+
+                        IconButton(
+                            onClick = {
+                                if (selectedTab == 0) {
+                                    viewModel.fetchOrderHistory()
+                                } else {
+                                    viewModel.fetchBonusData(selectedMonth, selectedYear)
+                                }
+                            },
+                            modifier = Modifier
+                                .background(Color(0xFFF3F4F6), RoundedCornerShape(8.dp))
+                                .size(40.dp)
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                        }
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(16.dp))
+                if (isScreenNarrow) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        titleBlock()
+                        tabsBlock()
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        titleBlock()
+                        tabsBlock()
+                    }
+                }
 
-            if (selectedTab == 0) {
-                OrderHistoryContent(viewModel = viewModel)
-            } else {
-                BonusCrewContent(
-                    viewModel = viewModel,
-                    selectedMonth = selectedMonth,
-                    selectedYear = selectedYear,
-                    onMonthChange = { selectedMonth = it },
-                    onYearChange = { selectedYear = it }
-                )
+                Spacer(modifier = Modifier.height(16.dp))
+
+                if (selectedTab == 0) {
+                    OrderHistoryContent(viewModel = viewModel)
+                } else {
+                    BonusCrewContent(
+                        viewModel = viewModel,
+                        selectedMonth = selectedMonth,
+                        selectedYear = selectedYear,
+                        onMonthChange = { selectedMonth = it },
+                        onYearChange = { selectedYear = it }
+                    )
+                }
             }
         }
     }
@@ -202,9 +228,9 @@ fun SummaryCard(title: String, amount: String, titleColor: Color, textColor: Col
         border = if (bgColor == Color.White) androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB)) else null
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(title, color = titleColor, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            Text(title, color = titleColor, fontWeight = FontWeight.Bold, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(modifier = Modifier.height(4.dp))
-            Text(amount, color = textColor, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text(amount, color = textColor, fontWeight = FontWeight.Bold, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -391,9 +417,6 @@ fun OrderHistoryContent(viewModel: OrderHistoryViewModel) {
         searchQuery.isEmpty() || order.orderNumber.toString().contains(searchQuery) || (order.customerName?.contains(searchQuery, ignoreCase = true) == true)
     }
 
-    // Angka ini datang dari agregasi database, bukan dari `ordersHistory` yang hanya
-    // memuat 100-200 baris teratas — menjumlahkan daftar itu selalu di bawah nilai
-    // sebenarnya begitu rentangnya lebih dari sehari.
     val summary by viewModel.revenueSummary.collectAsState()
     val isSummaryFromCache by viewModel.isSummaryFromLocalCache.collectAsState()
     val isOnline by com.sukashawarma.pos.data.remote.NetworkMonitor.isOnline.collectAsState()
@@ -402,14 +425,30 @@ fun OrderHistoryContent(viewModel: OrderHistoryViewModel) {
         summary.byPayment.firstOrNull { it.paymentMethod.equals(method, true) }?.gross ?: 0.0
 
     Column(modifier = Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            SummaryCard("TUNAI / CASH", "Rp ${String.format("%,.0f", grossOf("cash"))}", Color(0xFF10B981), Color(0xFF10B981), Color.White, Modifier.weight(1f))
-            SummaryCard("QRIS", "Rp ${String.format("%,.0f", grossOf("qris"))}", Color(0xFF3B82F6), Color(0xFF3B82F6), Color.White, Modifier.weight(1f))
-            SummaryCard("DEBIT / CARD", "Rp ${String.format("%,.0f", grossOf("card"))}", Color(0xFF8B5CF6), Color(0xFF8B5CF6), Color.White, Modifier.weight(1f))
-            SummaryCard("OMZET KOTOR", "Rp ${String.format("%,.0f", summary.gross)}", Color.White, Color.White, ShawarmaOrange, Modifier.weight(1f))
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val isNarrow = maxWidth < 760.dp
+            if (isNarrow) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        SummaryCard("TUNAI / CASH", "Rp ${String.format("%,.0f", grossOf("cash"))}", Color(0xFF10B981), Color(0xFF10B981), Color.White, Modifier.weight(1f))
+                        SummaryCard("QRIS", "Rp ${String.format("%,.0f", grossOf("qris"))}", Color(0xFF3B82F6), Color(0xFF3B82F6), Color.White, Modifier.weight(1f))
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        SummaryCard("DEBIT / CARD", "Rp ${String.format("%,.0f", grossOf("card"))}", Color(0xFF8B5CF6), Color(0xFF8B5CF6), Color.White, Modifier.weight(1f))
+                        SummaryCard("OMZET KOTOR", "Rp ${String.format("%,.0f", summary.gross)}", Color.White, Color.White, ShawarmaOrange, Modifier.weight(1f))
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    SummaryCard("TUNAI / CASH", "Rp ${String.format("%,.0f", grossOf("cash"))}", Color(0xFF10B981), Color(0xFF10B981), Color.White, Modifier.weight(1f))
+                    SummaryCard("QRIS", "Rp ${String.format("%,.0f", grossOf("qris"))}", Color(0xFF3B82F6), Color(0xFF3B82F6), Color.White, Modifier.weight(1f))
+                    SummaryCard("DEBIT / CARD", "Rp ${String.format("%,.0f", grossOf("card"))}", Color(0xFF8B5CF6), Color(0xFF8B5CF6), Color.White, Modifier.weight(1f))
+                    SummaryCard("OMZET KOTOR", "Rp ${String.format("%,.0f", summary.gross)}", Color.White, Color.White, ShawarmaOrange, Modifier.weight(1f))
+                }
+            }
         }
 
         if (isSummaryFromCache && !isOnline) {
@@ -428,49 +467,76 @@ fun OrderHistoryContent(viewModel: OrderHistoryViewModel) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(
-                modifier = Modifier
-                    .background(Color(0xFFF3F4F6), RoundedCornerShape(20.dp))
-                    .padding(4.dp)
-            ) {
-                // "Diproses" menggantikan label "Menunggu" yang lama: tidak ada
-                // pesanan berstatus `pending` di database, yang ada `preparing`.
-                listOf(
-                    "Semua Pesanan" to OrderStatusFilter.ALL,
-                    "Diproses" to OrderStatusFilter.WAITING,
-                    "Selesai" to OrderStatusFilter.DONE,
-                    "Dibatalkan" to OrderStatusFilter.CANCELLED
-                ).forEach { (filter, filterKey) ->
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(if (selectedFilter == filterKey) Color(0xFF1F2937) else Color.Transparent)
-                            .clickable { viewModel.selectedPaymentFilter.value = filterKey }
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
-                    ) {
-                        Text(filter, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (selectedFilter == filterKey) Color.White else Color(0xFF4B5563))
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val isFiltersNarrow = maxWidth < 840.dp
+            val statusPills: @Composable () -> Unit = {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier
+                        .background(Color(0xFFF3F4F6), RoundedCornerShape(20.dp))
+                        .padding(4.dp)
+                ) {
+                    // "Diproses" menggantikan label "Menunggu" yang lama: tidak ada
+                    // pesanan berstatus `pending` di database, yang ada `preparing`.
+                    items(listOf(
+                        "Semua Pesanan" to OrderStatusFilter.ALL,
+                        "Diproses" to OrderStatusFilter.WAITING,
+                        "Selesai" to OrderStatusFilter.DONE,
+                        "Dibatalkan" to OrderStatusFilter.CANCELLED
+                    )) { (filter, filterKey) ->
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(if (selectedFilter == filterKey) Color(0xFF1F2937) else Color.Transparent)
+                                .clickable { viewModel.selectedPaymentFilter.value = filterKey }
+                                .padding(horizontal = 14.dp, vertical = 8.dp)
+                        ) {
+                            Text(filter, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (selectedFilter == filterKey) Color.White else Color(0xFF4B5563))
+                        }
                     }
                 }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterDropdown(labelFor(dateFilterOptions, dateFilter), dateFilterOptions) { picked ->
-                    viewModel.dateFilter.value = picked
-                    if (picked != "custom") {
-                        viewModel.customStartDate.value = null
-                        viewModel.customEndDate.value = null
+            val dropdowns: @Composable () -> Unit = {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    item {
+                        FilterDropdown(labelFor(dateFilterOptions, dateFilter), dateFilterOptions) { picked ->
+                            viewModel.dateFilter.value = picked
+                            if (picked != "custom") {
+                                viewModel.customStartDate.value = null
+                                viewModel.customEndDate.value = null
+                            }
+                        }
+                    }
+                    item {
+                        FilterDropdown(labelFor(channelFilterOptions, channelFilter), channelFilterOptions) { picked ->
+                            viewModel.selectedChannelFilter.value = picked
+                        }
+                    }
+                    item {
+                        FilterDropdown(labelFor(paymentMethodOptions, paymentMethodFilter), paymentMethodOptions) { picked ->
+                            viewModel.selectedPaymentMethodFilter.value = picked
+                        }
                     }
                 }
-                FilterDropdown(labelFor(channelFilterOptions, channelFilter), channelFilterOptions) { picked ->
-                    viewModel.selectedChannelFilter.value = picked
+            }
+
+            if (isFiltersNarrow) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                    statusPills()
+                    dropdowns()
                 }
-                FilterDropdown(labelFor(paymentMethodOptions, paymentMethodFilter), paymentMethodOptions) { picked ->
-                    viewModel.selectedPaymentMethodFilter.value = picked
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    statusPills()
+                    dropdowns()
                 }
             }
         }
@@ -491,7 +557,6 @@ fun OrderHistoryContent(viewModel: OrderHistoryViewModel) {
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-
         if (isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = ShawarmaOrange)
@@ -566,6 +631,25 @@ private fun OrderRow(
     onMarkCompleted: () -> Unit
 ) {
     var isExpanded by remember { mutableStateOf(false) }
+    val isCancelled = OrderStatusFilter.isCancelled(order)
+    val statusText = when {
+        isCancelled -> "Dibatalkan"
+        order.status.equals("completed", true) -> "Selesai"
+        order.status.lowercase() in listOf("pending", "preparing", "ready") -> "Diproses"
+        else -> order.status
+    }
+    val statusColor = when {
+        isCancelled -> Color(0xFFEF4444)
+        order.status.equals("completed", true) -> Color(0xFF10B981)
+        order.status.lowercase() in listOf("pending", "preparing", "ready") -> ShawarmaOrange
+        else -> Color.Gray
+    }
+    val badgeColor = when (order.paymentMethod?.uppercase()) {
+        "CASH" -> Color(0xFF10B981)
+        "QRIS" -> Color(0xFF3B82F6)
+        else -> Color(0xFF8B5CF6)
+    }
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -575,144 +659,248 @@ private fun OrderRow(
         border = androidx.compose.foundation.BorderStroke(1.dp, CreamBorder)
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text("#${order.orderNumber}", fontWeight = FontWeight.Bold, color = Color(0xFF6B7280), modifier = Modifier.width(40.dp))
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val isNarrow = maxWidth < 720.dp
 
-                Column(modifier = Modifier.weight(2.2f)) {
-                    // Pembatalan yang sudah disetujui didahulukan: kolom `status`-nya
-                    // bisa saja masih "completed" sehingga badge-nya salah menulis
-                    // "Selesai". `preparing`/`ready` juga dulu tampil mentah.
-                    val isCancelled = OrderStatusFilter.isCancelled(order)
-                    val statusText = when {
-                        isCancelled -> "Dibatalkan"
-                        order.status.equals("completed", true) -> "Selesai"
-                        order.status.lowercase() in listOf("pending", "preparing", "ready") -> "Diproses"
-                        else -> order.status
-                    }
-                    val statusColor = when {
-                        isCancelled -> Color(0xFFEF4444)
-                        order.status.equals("completed", true) -> Color(0xFF10B981)
-                        order.status.lowercase() in listOf("pending", "preparing", "ready") -> ShawarmaOrange
-                        else -> Color.Gray
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(statusText, color = statusColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        com.sukashawarma.pos.presentation.components.OrderSourceBadge(source = order.source, channel = order.channel)
-                        if (order.isSyncedFromOffline == true) {
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Surface(shape = RoundedCornerShape(8.dp), color = Color(0xFF10B981).copy(alpha = 0.12f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)) {
-                                    Icon(Icons.Default.Refresh, contentDescription = "Sync", tint = Color(0xFF10B981), modifier = Modifier.size(10.dp))
-                                    Spacer(modifier = Modifier.width(2.dp))
+                if (isNarrow) {
+                    // Portrait tablet / compact structured card layout
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Top line: #OrderNo, Status, Channel, Sync, and Date/Time
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = Color(0xFFF3F4F6)
+                                ) {
                                     Text(
-                                        "SYNC",
-                                        color = Color(0xFF10B981),
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold
+                                        "#${order.orderNumber}",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        color = Color(0xFF374151),
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                     )
+                                }
+                                Text(statusText, color = statusColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                com.sukashawarma.pos.presentation.components.OrderSourceBadge(source = order.source, channel = order.channel)
+                                if (order.isSyncedFromOffline == true) {
+                                    Surface(shape = RoundedCornerShape(4.dp), color = Color(0xFF10B981).copy(alpha = 0.12f)) {
+                                        Text("SYNC", color = Color(0xFF10B981), fontSize = 8.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
+                                    }
+                                }
+                            }
+
+                            val dateStr = JakartaTime.dateTimeStringOf(order.createdAt)
+                            Text(dateStr, color = Color(0xFF9CA3AF), fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                        }
+
+                        // Middle line: Customer name • item count • Cashier
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    order.customerName ?: "Pelanggan Walk-in",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = Color(0xFF111827),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text("${order.orderItems?.size ?: 0} item", color = Color(0xFF6B7280), fontSize = 12.sp)
+                                    if (order.cashierName != null) {
+                                        Text("•", color = Color(0xFFD1D5DB), fontSize = 12.sp)
+                                        Text("Kasir: ${order.cashierName}", color = Color(0xFF6B7280), fontSize = 12.sp)
+                                    }
+                                }
+                            }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        text = "Rp ${String.format("%,.0f", order.totalAmount)}",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp,
+                                        color = Color(0xFF111827)
+                                    )
+                                    val subsidy = order.promoSubsidy?.takeIf { it > 0.0 }
+                                    if (subsidy != null) {
+                                        Text("-Rp ${String.format("%,.0f", subsidy)}", color = Color(0xFFEF4444), fontSize = 9.sp, fontWeight = FontWeight.Medium)
+                                    }
+                                    val discount = order.discountAmount?.takeIf { it > 0.0 }
+                                    if (discount != null) {
+                                        Text("-Rp ${String.format("%,.0f", discount)}", color = Color(0xFFF59E0B), fontSize = 9.sp, fontWeight = FontWeight.Medium)
+                                    }
+                                }
+                                Surface(shape = RoundedCornerShape(12.dp), color = badgeColor.copy(alpha = 0.1f)) {
+                                    Text(
+                                        order.paymentMethod?.uppercase() ?: "N/A",
+                                        color = badgeColor,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                                Icon(
+                                    if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                    contentDescription = null,
+                                    tint = Color(0xFF9CA3AF),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+
+                        if (order.status.equals("cancelled", true) && order.cancellationUserName != null) {
+                            Text(
+                                "Dibatalkan oleh: ${order.cancellationUserName}",
+                                color = Color(0xFFEF4444),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        } else if (!order.status.equals("cancelled", true) && order.cancellationStatus == "pending_approval") {
+                            Surface(shape = RoundedCornerShape(4.dp), color = Color(0xFFFEF9C3), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A))) {
+                                Text(
+                                    "MENUNGGU PERSETUJUAN BATAL" + if (order.cancellationUserName != null) " (Oleh: ${order.cancellationUserName})" else "",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFA16207),
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    // Landscape wide table-like row (original)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("#${order.orderNumber}", fontWeight = FontWeight.Bold, color = Color(0xFF6B7280), modifier = Modifier.width(40.dp))
+
+                        Column(modifier = Modifier.weight(2.2f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(statusText, color = statusColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                com.sukashawarma.pos.presentation.components.OrderSourceBadge(source = order.source, channel = order.channel)
+                                if (order.isSyncedFromOffline == true) {
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Surface(shape = RoundedCornerShape(8.dp), color = Color(0xFF10B981).copy(alpha = 0.12f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)) {
+                                            Icon(Icons.Default.Refresh, contentDescription = "Sync", tint = Color(0xFF10B981), modifier = Modifier.size(10.dp))
+                                            Spacer(modifier = Modifier.width(2.dp))
+                                            Text(
+                                                "SYNC",
+                                                color = Color(0xFF10B981),
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            Text(order.customerName ?: "Pelanggan Walk-in", fontWeight = FontWeight.Bold)
+
+                            if (order.status.equals("cancelled", true) && order.cancellationUserName != null) {
+                                Text(
+                                    "Dibatalkan oleh: ${order.cancellationUserName}",
+                                    color = Color(0xFFEF4444),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            } else if (!order.status.equals("cancelled", true) && order.cancellationStatus == "pending_approval") {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Surface(shape = RoundedCornerShape(4.dp), color = Color(0xFFFEF9C3), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A))) {
+                                        Text(
+                                            "MENUNGGU PERSETUJUAN BATAL",
+                                            fontSize = 8.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFFA16207),
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                    if (order.cancellationUserName != null) {
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("(Oleh: ${order.cancellationUserName})", fontSize = 9.sp, color = Color(0xFFA16207))
+                                    }
                                 }
                             }
                         }
-                    }
-                    Text(order.customerName ?: "Pelanggan Walk-in", fontWeight = FontWeight.Bold)
 
-                    if (order.status.equals("cancelled", true) && order.cancellationUserName != null) {
-                        Text(
-                            "Dibatalkan oleh: ${order.cancellationUserName}",
-                            color = Color(0xFFEF4444),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    } else if (!order.status.equals("cancelled", true) && order.cancellationStatus == "pending_approval") {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Surface(shape = RoundedCornerShape(4.dp), color = Color(0xFFFEF9C3), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFDE68A))) {
+                        Column(modifier = Modifier.weight(2f)) {
+                            Text(JakartaTime.dateStringOf(order.createdAt), color = Color(0xFF6B7280), fontSize = 12.sp)
+                            Text(JakartaTime.timeStringOf(order.createdAt), color = Color(0xFF9CA3AF), fontSize = 12.sp)
+                        }
+
+                        Column(modifier = Modifier.weight(1.3f)) {
+                            Text("${order.orderItems?.size ?: 0} item", color = Color(0xFF6B7280), fontSize = 13.sp)
+                        }
+
+                        Column(modifier = Modifier.weight(1.5f)) {
+                            if (order.cashierName != null) {
+                                Text("Kasir", color = Color(0xFF9CA3AF), fontSize = 12.sp)
+                                Text(order.cashierName, color = Color(0xFF374151), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            }
+                        }
+
+                        Row(modifier = Modifier.weight(2.5f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
+                            Column(horizontalAlignment = Alignment.End) {
                                 Text(
-                                    "MENUNGGU PERSETUJUAN BATAL",
-                                    fontSize = 8.sp,
+                                    text = "Rp ${String.format("%,.0f", order.totalAmount)}",
                                     fontWeight = FontWeight.Bold,
-                                    color = Color(0xFFA16207),
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                    color = Color(0xFF111827)
+                                )
+                                val subsidy = order.promoSubsidy?.takeIf { it > 0.0 }
+                                if (subsidy != null) {
+                                    Text("-Rp ${String.format("%,.0f", subsidy)}", color = Color(0xFFEF4444), fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                                }
+                                val discount = order.discountAmount?.takeIf { it > 0.0 }
+                                if (discount != null) {
+                                    Text("-Rp ${String.format("%,.0f", discount)}", color = Color(0xFFF59E0B), fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Surface(shape = RoundedCornerShape(16.dp), color = badgeColor.copy(alpha = 0.1f)) {
+                                Text(
+                                    order.paymentMethod?.uppercase() ?: "N/A",
+                                    color = badgeColor,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                 )
                             }
-                            if (order.cancellationUserName != null) {
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("(Oleh: ${order.cancellationUserName})", fontSize = 9.sp, color = Color(0xFFA16207))
-                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Icon(
+                                if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                contentDescription = null,
+                                tint = Color(0xFF9CA3AF),
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
                     }
                 }
-
-                Column(modifier = Modifier.weight(2f)) {
-                    // Dulu tanggal & jam dipotong langsung dari string mentah
-                    // (`take(10)` / `takeLast(8).take(5)`). Itu mengabaikan zona waktu
-                    // DAN bergantung pada panjang string yang ternyata tidak tetap:
-                    // server mengirim "…T19:53:02.046521+07:00" sehingga kolom jam
-                    // menampilkan potongan offset ("21+07"), sedangkan baris dari cache
-                    // Room berformat UTC ("…Z") sehingga jamnya mundur 7 jam dan
-                    // pesanan dini hari tampil bertanggal kemarin.
-                    Text(JakartaTime.dateStringOf(order.createdAt), color = Color(0xFF6B7280), fontSize = 12.sp)
-                    Text(JakartaTime.timeStringOf(order.createdAt), color = Color(0xFF9CA3AF), fontSize = 12.sp)
-                }
-
-                Column(modifier = Modifier.weight(1.3f)) {
-                    Text("${order.orderItems?.size ?: 0} item", color = Color(0xFF6B7280), fontSize = 13.sp)
-                }
-
-                Column(modifier = Modifier.weight(1.5f)) {
-                    if (order.cashierName != null) {
-                        Text("Kasir", color = Color(0xFF9CA3AF), fontSize = 12.sp)
-                        Text(order.cashierName, color = Color(0xFF374151), fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                    }
-                }
-
-                Row(modifier = Modifier.weight(2.5f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text(
-                            text = "Rp ${String.format("%,.0f", order.totalAmount)}",
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF111827)
-                        )
-                        val subsidy = order.promoSubsidy?.takeIf { it > 0.0 }
-                        if (subsidy != null) {
-                            Text("-Rp ${String.format("%,.0f", subsidy)}", color = Color(0xFFEF4444), fontSize = 10.sp, fontWeight = FontWeight.Medium)
-                        }
-                        val discount = order.discountAmount?.takeIf { it > 0.0 }
-                        if (discount != null) {
-                            Text("-Rp ${String.format("%,.0f", discount)}", color = Color(0xFFF59E0B), fontSize = 10.sp, fontWeight = FontWeight.Medium)
-                        }
-                    }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    val badgeColor = when (order.paymentMethod?.uppercase()) {
-                        "CASH" -> Color(0xFF10B981)
-                        "QRIS" -> Color(0xFF3B82F6)
-                        else -> Color(0xFF8B5CF6)
-                    }
-                    Surface(shape = RoundedCornerShape(16.dp), color = badgeColor.copy(alpha = 0.1f)) {
-                        Text(
-                            order.paymentMethod?.uppercase() ?: "N/A",
-                            color = badgeColor,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Icon(
-                        if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                        contentDescription = null,
-                        tint = Color(0xFF9CA3AF),
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-
             if (isExpanded && order.orderItems != null && order.orderItems.isNotEmpty()) {
                 Column(
                     modifier = Modifier
@@ -901,6 +1089,7 @@ private fun OrderRow(
         }
     }
 }
+}
 
 @Composable
 fun BonusCrewContent(
@@ -920,214 +1109,303 @@ fun BonusCrewContent(
     val displayCrewCount = if (simulatedCrewCount > 0) simulatedCrewCount else (if (activeCrewCount > 0) activeCrewCount else 1)
     val bonusPerPerson = if (displayCrewCount > 0) Math.floor(totalBonusPool / displayCrewCount) else 0.0
 
-    Row(
-        modifier = Modifier.fillMaxSize(),
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        // Left Column: Filter & Summary
-        Column(
-            modifier = Modifier.weight(0.35f),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val isNarrow = maxWidth < 860.dp
+
+        val filterSummaryBlock: @Composable (Modifier) -> Unit = { colModifier ->
+            Column(
+                modifier = colModifier,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    color = CreamBackground,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, CreamBorder)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Pilih Bulan & Tahun", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = {
+                                    var newMonth = selectedMonth - 1
+                                    var newYear = selectedYear
+                                    if (newMonth < 1) { newMonth = 12; newYear-- }
+                                    onMonthChange(newMonth)
+                                    onYearChange(newYear)
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = CreamBorder)
+                            ) { Text("<", color = TextDarkPrimary) }
+
+                            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                                Text(
+                                    "$selectedMonth / $selectedYear",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            Button(
+                                onClick = {
+                                    var newMonth = selectedMonth + 1
+                                    var newYear = selectedYear
+                                    if (newMonth > 12) { newMonth = 1; newYear++ }
+                                    onMonthChange(newMonth)
+                                    onYearChange(newYear)
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = CreamBorder)
+                            ) { Text(">", color = TextDarkPrimary) }
+                        }
+                    }
+                }
+
+                if (isNarrow) {
+                    // Summary Cards horizontal row in narrow / portrait tablet
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Summary Card 1: Target Tercapai
+                        Surface(
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp),
+                            color = ShawarmaOrange,
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Surface(shape = RoundedCornerShape(8.dp), color = Color.White.copy(alpha = 0.2f)) {
+                                        Icon(Icons.Default.Print, contentDescription = null, tint = Color.White, modifier = Modifier.padding(6.dp).size(16.dp))
+                                    }
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Target Tercapai", color = Color.White, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(if (isLoading) "-" else "$totalDaysReached", color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                                Text("Hari di bulan ini", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+
+                        // Summary Card 2: Estimasi Bonus Per Orang
+                        Surface(
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp),
+                            color = Color.White,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, CreamBorder)
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Surface(shape = RoundedCornerShape(8.dp), color = StatusCompleted.copy(alpha = 0.2f)) {
+                                        Icon(Icons.Default.MonetizationOn, contentDescription = null, tint = StatusCompleted, modifier = Modifier.padding(6.dp).size(16.dp))
+                                    }
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Bonus / Orang", color = TextDarkSecondary, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(if (isLoading) "-" else "Rp ${String.format("%,.0f", bonusPerPerson)}", color = TextDarkPrimary, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text("Dibagi $displayCrewCount orang", color = TextDarkMuted, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+
+                        // Summary Card 3: Total Terkumpul
+                        Surface(
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp),
+                            color = Color.White,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, CreamBorder)
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Surface(shape = RoundedCornerShape(8.dp), color = Color(0xFFE0F2FE)) {
+                                        Icon(Icons.Default.MonetizationOn, contentDescription = null, tint = Color(0xFF0284C7), modifier = Modifier.padding(6.dp).size(16.dp))
+                                    }
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Total Terkumpul", color = TextDarkSecondary, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(if (isLoading) "-" else "Rp ${String.format("%,.0f", totalBonusPool)}", color = TextDarkPrimary, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text("Total sebelum dibagi", color = TextDarkMuted, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                } else {
+                    // Summary Card 1: Target Tercapai
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        color = ShawarmaOrange,
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(shape = RoundedCornerShape(8.dp), color = Color.White.copy(alpha = 0.2f)) {
+                                    Icon(Icons.Default.Print, contentDescription = null, tint = Color.White, modifier = Modifier.padding(8.dp))
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Target Tercapai", color = Color.White, style = MaterialTheme.typography.titleSmall)
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(if (isLoading) "-" else "$totalDaysReached", color = Color.White, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                            Text("Hari di bulan ini", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+
+                    // Summary Card 2: Estimasi Bonus Per Orang
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color.White,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, CreamBorder)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(shape = RoundedCornerShape(8.dp), color = StatusCompleted.copy(alpha = 0.2f)) {
+                                    Icon(Icons.Default.MonetizationOn, contentDescription = null, tint = StatusCompleted, modifier = Modifier.padding(8.dp))
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Bonus Per Orang", color = TextDarkSecondary, style = MaterialTheme.typography.titleSmall)
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(if (isLoading) "-" else "Rp ${String.format("%,.0f", bonusPerPerson)}", color = TextDarkPrimary, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                            Text("Estimasi dibagikan ke $displayCrewCount orang", color = TextDarkMuted, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+
+                    // Summary Card 3: Total Terkumpul
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color.White,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, CreamBorder)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(shape = RoundedCornerShape(8.dp), color = Color(0xFFE0F2FE)) {
+                                    Icon(Icons.Default.MonetizationOn, contentDescription = null, tint = Color(0xFF0284C7), modifier = Modifier.padding(8.dp))
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Total Terkumpul", color = TextDarkSecondary, style = MaterialTheme.typography.titleSmall)
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(if (isLoading) "-" else "Rp ${String.format("%,.0f", totalBonusPool)}", color = TextDarkPrimary, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                            Text("Keseluruhan sebelum dibagi", color = TextDarkMuted, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+
+                // Bonus Simulation Card
+                if (dailyBreakdown.isNotEmpty()) {
+                    val lastDay = dailyBreakdown.last()
+                    BonusSimulationCard(
+                        targetAmount = lastDay.targetAmount,
+                        perItemBonus = lastDay.perItemBonus,
+                        crewCount = displayCrewCount,
+                        onCrewCountChange = { viewModel.simulatedCrewCount.value = it }
+                    )
+                }
+            }
+        }
+
+        val tableBlock: @Composable (Modifier) -> Unit = { surfModifier ->
             Surface(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = surfModifier,
                 shape = RoundedCornerShape(10.dp),
                 color = CreamBackground,
                 border = androidx.compose.foundation.BorderStroke(1.dp, CreamBorder)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Pilih Bulan & Tahun", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(12.dp))
+                Column(modifier = Modifier.fillMaxSize()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Rincian Penjualan per Hari", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("Lihat rekam jejak pencapaian target harian outletmu", style = MaterialTheme.typography.bodySmall, color = TextDarkMuted)
+                    }
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
-                            onClick = {
-                                var newMonth = selectedMonth - 1
-                                var newYear = selectedYear
-                                if (newMonth < 1) { newMonth = 12; newYear-- }
-                                onMonthChange(newMonth)
-                                onYearChange(newYear)
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = CreamBorder)
-                        ) { Text("<", color = TextDarkPrimary) }
-
-                        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                            Text(
-                                "$selectedMonth / $selectedYear",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
+                    if (isLoading) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = ShawarmaOrange)
+                        }
+                    } else if (dailyBreakdown.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            com.sukashawarma.pos.presentation.components.EmptyState(
+                                title = "Belum ada data untuk bulan ini",
+                                icon = Icons.Default.CalendarMonth
                             )
                         }
-
-                        Button(
-                            onClick = {
-                                var newMonth = selectedMonth + 1
-                                var newYear = selectedYear
-                                if (newMonth > 12) { newMonth = 1; newYear++ }
-                                onMonthChange(newMonth)
-                                onYearChange(newYear)
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = CreamBorder)
-                        ) { Text(">", color = TextDarkPrimary) }
-                    }
-                }
-            }
-
-            // Summary Card 1: Target Tercapai
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(10.dp),
-                color = ShawarmaOrange,
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(shape = RoundedCornerShape(8.dp), color = Color.White.copy(alpha = 0.2f)) {
-                            Icon(Icons.Default.Print, contentDescription = null, tint = Color.White, modifier = Modifier.padding(8.dp))
+                    } else {
+                        // Table header
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFFF3F4F6))
+                                .padding(horizontal = 16.dp, vertical = 10.dp)
+                        ) {
+                            Text("Tanggal", modifier = Modifier.weight(1.2f), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextDarkMuted)
+                            Text("Total Penjualan", modifier = Modifier.weight(1.3f), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextDarkMuted)
+                            Text("Target Hari Ini", modifier = Modifier.weight(1.3f), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextDarkMuted)
+                            Text("Bonus", modifier = Modifier.weight(1.2f), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextDarkMuted)
+                            Text("Status", modifier = Modifier.weight(0.8f), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextDarkMuted, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                         }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Target Tercapai", color = Color.White, style = MaterialTheme.typography.titleSmall)
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(if (isLoading) "-" else "$totalDaysReached", color = Color.White, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                    Text("Hari di bulan ini", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.bodySmall)
-                }
-            }
 
-            // Summary Card 2: Estimasi Bonus Per Orang
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(10.dp),
-                color = Color.White,
-                border = androidx.compose.foundation.BorderStroke(1.dp, CreamBorder)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(shape = RoundedCornerShape(8.dp), color = StatusCompleted.copy(alpha = 0.2f)) {
-                            Icon(Icons.Default.MonetizationOn, contentDescription = null, tint = StatusCompleted, modifier = Modifier.padding(8.dp))
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Bonus Per Orang", color = TextDarkSecondary, style = MaterialTheme.typography.titleSmall)
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(if (isLoading) "-" else "Rp ${String.format("%,.0f", bonusPerPerson)}", color = TextDarkPrimary, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    Text("Estimasi dibagikan ke $displayCrewCount orang", color = TextDarkMuted, style = MaterialTheme.typography.bodySmall)
-                }
-            }
+                        LazyColumn(modifier = if (isNarrow) Modifier.heightIn(max = 420.dp) else Modifier.fillMaxSize()) {
+                            items(dailyBreakdown.reversed()) { day ->
+                                val dateStr = day.date ?: ""
+                                val isToday = if (dateStr.isNotEmpty()) java.time.LocalDate.parse(dateStr.split("T")[0]) == java.time.LocalDate.now() else false
 
-            // Summary Card 3: Total Terkumpul
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(10.dp),
-                color = Color.White,
-                border = androidx.compose.foundation.BorderStroke(1.dp, CreamBorder)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(shape = RoundedCornerShape(8.dp), color = Color(0xFFE0F2FE)) {
-                            Icon(Icons.Default.MonetizationOn, contentDescription = null, tint = Color(0xFF0284C7), modifier = Modifier.padding(8.dp))
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Total Terkumpul", color = TextDarkSecondary, style = MaterialTheme.typography.titleSmall)
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(if (isLoading) "-" else "Rp ${String.format("%,.0f", totalBonusPool)}", color = TextDarkPrimary, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    Text("Keseluruhan sebelum dibagi", color = TextDarkMuted, style = MaterialTheme.typography.bodySmall)
-                }
-            }
-
-            // Bonus Simulation Card
-            if (dailyBreakdown.isNotEmpty()) {
-                val lastDay = dailyBreakdown.last()
-                BonusSimulationCard(
-                    targetAmount = lastDay.targetAmount,
-                    perItemBonus = lastDay.perItemBonus,
-                    crewCount = displayCrewCount,
-                    onCrewCountChange = { viewModel.simulatedCrewCount.value = it }
-                )
-            }
-        }
-
-        // Right Column: Daily Breakdown Table
-        Surface(
-            modifier = Modifier.weight(0.65f).fillMaxHeight(),
-            shape = RoundedCornerShape(10.dp),
-            color = CreamBackground,
-            border = androidx.compose.foundation.BorderStroke(1.dp, CreamBorder)
-        ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Rincian Penjualan per Hari", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("Lihat rekam jejak pencapaian target harian outletmu", style = MaterialTheme.typography.bodySmall, color = TextDarkMuted)
-                }
-
-                if (isLoading) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = ShawarmaOrange)
-                    }
-                } else if (dailyBreakdown.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        com.sukashawarma.pos.presentation.components.EmptyState(
-                            title = "Belum ada data untuk bulan ini",
-                            icon = Icons.Default.CalendarMonth
-                        )
-                    }
-                } else {
-                    // Table header
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color(0xFFF3F4F6))
-                            .padding(horizontal = 16.dp, vertical = 10.dp)
-                    ) {
-                        Text("Tanggal", modifier = Modifier.weight(1.2f), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextDarkMuted)
-                        Text("Total Penjualan", modifier = Modifier.weight(1.3f), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextDarkMuted)
-                        Text("Target Hari Ini", modifier = Modifier.weight(1.3f), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextDarkMuted)
-                        Text("Bonus", modifier = Modifier.weight(1.2f), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextDarkMuted)
-                        Text("Status", modifier = Modifier.weight(0.8f), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextDarkMuted, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    }
-
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(dailyBreakdown.reversed()) { day ->
-                            val dateStr = day.date ?: ""
-                            val isToday = if (dateStr.isNotEmpty()) java.time.LocalDate.parse(dateStr.split("T")[0]) == java.time.LocalDate.now() else false
-
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(if (isToday) ShawarmaOrange.copy(alpha = 0.08f) else Color.White)
-                                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(modifier = Modifier.weight(1.2f), verticalAlignment = Alignment.CenterVertically) {
-                                    Text((day.date ?: "").split("T")[0], fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (isToday) ShawarmaOrange else TextDarkPrimary)
-                                    if (isToday) {
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Surface(color = ShawarmaOrange.copy(alpha = 0.2f), shape = RoundedCornerShape(4.dp)) {
-                                            Text("HARI INI", fontSize = 8.sp, color = ShawarmaOrange, modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp), fontWeight = FontWeight.Bold)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(if (isToday) ShawarmaOrange.copy(alpha = 0.08f) else Color.White)
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(modifier = Modifier.weight(1.2f), verticalAlignment = Alignment.CenterVertically) {
+                                        Text((day.date ?: "").split("T")[0], fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (isToday) ShawarmaOrange else TextDarkPrimary)
+                                        if (isToday) {
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Surface(color = ShawarmaOrange.copy(alpha = 0.2f), shape = RoundedCornerShape(4.dp)) {
+                                                Text("HARI INI", fontSize = 8.sp, color = ShawarmaOrange, modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp), fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    }
+                                    Text("Rp ${String.format("%,.0f", day.dailySales)}", modifier = Modifier.weight(1.3f), fontSize = 12.sp, color = TextDarkPrimary, fontWeight = FontWeight.Medium)
+                                    Text("Rp ${String.format("%,.0f", day.targetAmount)}", modifier = Modifier.weight(1.3f), fontSize = 12.sp, color = TextDarkSecondary)
+                                    Text(
+                                        if (day.isReached) "+ Rp ${String.format("%,.0f", day.bonusAmount)}" else "-",
+                                        modifier = Modifier.weight(1.2f),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (day.isReached) StatusCompleted else TextDarkMuted
+                                    )
+                                    Box(modifier = Modifier.weight(0.8f), contentAlignment = Alignment.Center) {
+                                        if (day.isReached) {
+                                            Icon(Icons.Default.CheckCircle, contentDescription = "Tercapai", tint = StatusCompleted, modifier = Modifier.size(18.dp))
+                                        } else {
+                                            Icon(Icons.Default.Cancel, contentDescription = "Tidak Tercapai", tint = Color(0xFFEF4444), modifier = Modifier.size(18.dp))
                                         }
                                     }
                                 }
-                                Text("Rp ${String.format("%,.0f", day.dailySales)}", modifier = Modifier.weight(1.3f), fontSize = 12.sp, color = TextDarkPrimary, fontWeight = FontWeight.Medium)
-                                Text("Rp ${String.format("%,.0f", day.targetAmount)}", modifier = Modifier.weight(1.3f), fontSize = 12.sp, color = TextDarkSecondary)
-                                Text(
-                                    if (day.isReached) "+ Rp ${String.format("%,.0f", day.bonusAmount)}" else "-",
-                                    modifier = Modifier.weight(1.2f),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (day.isReached) StatusCompleted else TextDarkMuted
-                                )
-                                Box(modifier = Modifier.weight(0.8f), contentAlignment = Alignment.Center) {
-                                    if (day.isReached) {
-                                        Icon(Icons.Default.CheckCircle, contentDescription = "Tercapai", tint = StatusCompleted, modifier = Modifier.size(18.dp))
-                                    } else {
-                                        Icon(Icons.Default.Cancel, contentDescription = "Tidak Tercapai", tint = Color(0xFFEF4444), modifier = Modifier.size(18.dp))
-                                    }
-                                }
+                                androidx.compose.material3.HorizontalDivider(color = CreamBorder, thickness = 0.5.dp)
                             }
-                            Divider(color = CreamBorder, thickness = 0.5.dp)
                         }
                     }
                 }
+            }
+        }
+
+        if (isNarrow) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                item { filterSummaryBlock(Modifier.fillMaxWidth()) }
+                item { tableBlock(Modifier.fillMaxWidth()) }
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                filterSummaryBlock(Modifier.weight(0.35f))
+                tableBlock(Modifier.weight(0.65f).fillMaxHeight())
             }
         }
     }

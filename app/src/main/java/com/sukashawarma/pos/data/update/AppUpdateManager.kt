@@ -485,10 +485,10 @@ object AppUpdateManager {
                         }
                     }
 
-                    val callbackIntent = Intent(context, UpdateInstallResultActivity::class.java).apply {
-                        action = UpdateInstallResultActivity.ACTION_INSTALL_STATUS
+                    val callbackIntent = Intent(context, UpdateInstallResultReceiver::class.java).apply {
+                        action = UpdateInstallResultReceiver.ACTION_INSTALL_STATUS
                     }
-                    val callback = PendingIntent.getActivity(
+                    val callback = PendingIntent.getBroadcast(
                         context,
                         versionCode,
                         callbackIntent,

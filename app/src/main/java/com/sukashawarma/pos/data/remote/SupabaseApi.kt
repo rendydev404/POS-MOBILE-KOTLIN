@@ -30,14 +30,16 @@ interface SupabaseApi {
     @GET("rest/v1/outlet_staff")
     suspend fun getStaffById(
         @Query("id") idFilter: String,
-        @Query("select") select: String = "*"
+        @Query("select") select: String =
+            "id,username,name,role,outlet_id,is_active,inactive_reason"
     ): Response<List<StaffProfileDto>>
 
     // Fetch Single Outlet by ID
     @GET("rest/v1/outlets")
     suspend fun getOutletById(
         @Query("id") idFilter: String,
-        @Query("select") select: String = "*"
+        @Query("select") select: String =
+            "id,slug,name,address,phone,type,is_active,inactive_reason"
     ): Response<List<OutletDto>>
 
     // Fetch Outlets

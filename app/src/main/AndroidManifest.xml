@@ -19,6 +19,13 @@
     <!-- Audio & Haptics -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="application/vnd.android.package-archive" />
+        </intent>
+    </queries>
+
     <!-- Push Notifications (FCM) & Foreground Service -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -39,7 +46,8 @@
     <!-- Hardware Feature Declarations -->
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
-    <uses-feature android:name="android.hardware.screen.landscape" android:required="true" />
+    <uses-feature android:name="android.hardware.screen.landscape" android:required="false" />
+    <uses-feature android:name="android.hardware.screen.portrait" android:required="false" />
 
     <!-- Android 11+ menyembunyikan paket lain: tanpa ini Chrome tidak terlihat
          dan menu "Stok Outlet" selalu jatuh ke browser default. -->
@@ -69,8 +77,7 @@
             android:exported="true"
             android:launchMode="singleTop"
             android:label="@string/app_name"
-            android:screenOrientation="landscape"
-            android:configChanges="orientation|keyboardHidden|screenSize|smallestScreenSize"
+            android:configChanges="orientation|keyboardHidden|screenSize|smallestScreenSize|screenLayout"
             android:theme="@style/Theme.SukaShawarmaPOS">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -78,13 +85,9 @@
             </intent-filter>
         </activity>
 
-        <activity
-            android:name=".data.update.UpdateInstallResultActivity"
-            android:excludeFromRecents="true"
-            android:exported="false"
-            android:launchMode="singleTop"
-            android:noHistory="true"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <receiver
+            android:name=".data.update.UpdateInstallResultReceiver"
+            android:exported="false" />
 
         <service
             android:name=".data.notification.POSFirebaseMessagingService"
