@@ -55,6 +55,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.sukashawarma.pos.domain.model.*
@@ -317,7 +318,7 @@ fun POSManualOrderScreen(
 
     orderErrorMessage?.let { message ->
         Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.BottomCenter) {
-            Surface(shape = RoundedCornerShape(12.dp), color = TwRed600.copy(alpha = 0.96f)) {
+            Surface(shape = RoundedCornerShape(12.dp), color = TwAmber600.copy(alpha = 0.96f)) {
                 Row(
                     modifier = Modifier.padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -1223,9 +1224,16 @@ private fun ItemDetailModal(viewModel: POSManualOrderViewModel, menu: MenuItem) 
     val menuItems by viewModel.menuItems.collectAsState()
     val upsellItems by viewModel.upsellItems.collectAsState()
 
-    Dialog(onDismissRequest = { viewModel.closeItemModal() }) {
-        Surface(shape = RoundedCornerShape(20.dp), color = Color.White) {
-            Column(modifier = Modifier.width(480.dp)) {
+    Dialog(
+        onDismissRequest = { viewModel.closeItemModal() },
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = Color.White,
+            modifier = Modifier.padding(horizontal = 16.dp).widthIn(max = 480.dp).fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
                 // Header
                 Row(
                     modifier = Modifier
@@ -1503,9 +1511,16 @@ private fun QrisModal(
         }
     }
 
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(shape = RoundedCornerShape(24.dp), color = Color.White) {
-            Column(modifier = Modifier.width(480.dp)) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = Color.White,
+            modifier = Modifier.padding(horizontal = 16.dp).widthIn(max = 480.dp).fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
                 Box(modifier = Modifier.fillMaxWidth().height(4.dp).background(TwBlue500))
 
                 Column(
@@ -1645,11 +1660,19 @@ private fun OrderSuccessOverlay(
         onDismissRequest = { 
             if (printStep == 2) onDismiss() 
         },
-        properties = androidx.compose.ui.window.DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)
+        properties = androidx.compose.ui.window.DialogProperties(
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false,
+            usePlatformDefaultWidth = false
+        )
     ) {
-        Surface(shape = RoundedCornerShape(20.dp), color = Color.White) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = Color.White,
+            modifier = Modifier.padding(horizontal = 16.dp).widthIn(max = 320.dp).fillMaxWidth()
+        ) {
             Column(
-                modifier = Modifier.padding(28.dp).width(320.dp),
+                modifier = Modifier.padding(28.dp).fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = TwEmerald500, modifier = Modifier.size(48.dp))
