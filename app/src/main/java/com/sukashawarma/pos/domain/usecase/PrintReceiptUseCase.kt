@@ -80,9 +80,14 @@ class PrintReceiptUseCase {
             .separator(charWidth)
 
         // Double Height Nomor Antrean
+        val queueNumberLabel = if (order.isOffline) "SEMENTARA ${order.orderNumber}" else "No. ${order.orderNumber}"
         builder.alignCenter()
-            .size(1, 2).bold(true).textLine("No. ${order.orderNumber}")
+            .size(1, 2).bold(true).textLine(queueNumberLabel)
             .size(1, 1).bold(false)
+        if (order.isOffline) {
+            builder.textLine("Belum mendapat nomor server")
+        }
+        builder
             .separator(charWidth)
 
         // Items
@@ -149,9 +154,14 @@ class PrintReceiptUseCase {
         }
 
         // Double Height Nomor Antrean
+        val queueNumberLabel = if (order.isOffline) "SEMENTARA ${order.orderNumber}" else "No. ${order.orderNumber}"
         builder.alignCenter().newline()
-            .size(1, 2).bold(true).textLine("No. ${order.orderNumber}")
+            .size(1, 2).bold(true).textLine(queueNumberLabel)
             .size(1, 1).bold(false).newline()
+        if (order.isOffline) {
+            builder.textLine("BELUM MENDAPAT NOMOR SERVER")
+        }
+        builder
             .separator(charWidth)
             .alignLeft()
 

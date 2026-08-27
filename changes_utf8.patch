@@ -1,0 +1,1590 @@
+﻿diff --git a/.gitignore b/.gitignore
+index 80746d3..593c848 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -24,3 +24,5 @@ release/
+ # Crash/replay dump JVM dari sesi gradle lokal.
+ hs_err_pid*.log
+ replay_pid*.log
++testsprite_tests/tmp/
++testsprite_tests/tmp/config.json
+diff --git a/app/build.gradle.kts b/app/build.gradle.kts
+index 1cdb553..d875204 100644
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -7,6 +7,12 @@ plugins {
+     id("com.google.gms.google-services")
+ }
+ 
++kapt {
++    arguments {
++        arg("room.schemaLocation", "$projectDir/schemas")
++    }
++}
++
+ // Kredensial keystore release dibaca dari local.properties (git-ignored),
+ // BUKAN di-hardcode di sini ΓÇö file ini ikut ter-commit ke repo, keystore-nya
+ // tidak boleh. Lihat local.properties untuk cara isinya.
+@@ -33,8 +39,8 @@ android {
+         applicationId = "com.sukashawarma.pos"
+         minSdk = 26
+         targetSdk = 34
+-        versionCode = 77
+-        versionName = "1.0.76"
++        versionCode = 81
++        versionName = "1.0.80"
+ 
+         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+         vectorDrawables {
+@@ -46,6 +52,12 @@ android {
+         buildConfigField("String", "SUPABASE_ANON_KEY", "\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtocGtvcmVhYXVjdnlxZmh5bmZxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5NjMyOTIsImV4cCI6MjA5NjUzOTI5Mn0.RdsvP6OKs6aiRnqqd02BYiv5gzbh4uGqO88dapo0Gso\"")
+     }
+ 
++    sourceSets {
++        getByName("androidTest") {
++            assets.srcDir("$projectDir/schemas")
++        }
++    }
++
+     signingConfigs {
+         if (hasReleaseSigning) {
+             create("release") {
+diff --git a/app/src/main/java/com/sukashawarma/pos/data/local/AppDatabase.kt b/app/src/main/java/com/sukashawarma/pos/data/local/AppDatabase.kt
+index 56ab068..a8c9778 100644
+--- a/app/src/main/java/com/sukashawarma/pos/data/local/AppDatabase.kt
++++ b/app/src/main/java/com/sukashawarma/pos/data/local/AppDatabase.kt
+@@ -26,7 +26,7 @@ import com.sukashawarma.pos.data.local.entity.SyncQueueEntity
+         LocalImageCacheEntity::class
+     ],
+     version = 11,
+-    exportSchema = false
++    exportSchema = true
+ )
+ abstract class AppDatabase : RoomDatabase() {
+     abstract fun orderDao(): OrderDao
+diff --git a/app/src/main/java/com/sukashawarma/pos/data/remote/SupabaseApi.kt b/app/src/main/java/com/sukashawarma/pos/data/remote/SupabaseApi.kt
+index 5932d1c..97db266 100644
+--- a/app/src/main/java/com/sukashawarma/pos/data/remote/SupabaseApi.kt
++++ b/app/src/main/java/com/sukashawarma/pos/data/remote/SupabaseApi.kt
+@@ -232,6 +232,9 @@ interface SupabaseApi {
+     @POST("rest/v1/rpc/get_petty_cash_balance")
+     suspend fun getPettyCashBalance(@Body payload: OutletIdPayload): Response<Double>
+ 
++    @POST("rest/v1/rpc/get_petty_cash_snapshot")
++    suspend fun getPettyCashSnapshot(@Body payload: OutletIdPayload): Response<PettyCashSnapshotDto>
++
+     // Omzet diagregasi di database, bukan dengan menarik semua baris `orders` lalu
+     // menjumlahkannya di klien ΓÇö cara lama selalu terpotong limit baris PostgREST.
+     @POST("rest/v1/rpc/pos_revenue_summary_guarded")
+diff --git a/app/src/main/java/com/sukashawarma/pos/data/remote/dto/SupabaseDtos.kt b/app/src/main/java/com/sukashawarma/pos/data/remote/dto/SupabaseDtos.kt
+index 71f679d..4894729 100644
+--- a/app/src/main/java/com/sukashawarma/pos/data/remote/dto/SupabaseDtos.kt
++++ b/app/src/main/java/com/sukashawarma/pos/data/remote/dto/SupabaseDtos.kt
+@@ -101,7 +101,9 @@ data class PromoDto(
+     @SerializedName("end_date") val endDate: String?,
+     @SerializedName("daily_start_time") val dailyStartTime: String?,
+     @SerializedName("daily_end_time") val dailyEndTime: String?,
+-    @SerializedName("apply_to_food_apps") val applyToFoodApps: Boolean?
++    @SerializedName("apply_to_food_apps") val applyToFoodApps: Boolean?,
++    @SerializedName("buy_quantity") val buyQuantity: Int? = null,
++    @SerializedName("get_quantity") val getQuantity: Int? = null
+ )
+ 
+ // Mirrors the real `orders` table columns (see supabase/migrations) ΓÇö it has no
+@@ -151,7 +153,13 @@ data class OrderItemDto(
+     @SerializedName("or_menu_item") val orMenuItem: MenuItemRefDto? = null,
+     val quantity: Int,
+     @SerializedName("unit_price") val unitPrice: Double,
+-    val subtotal: Double
++    val subtotal: Double,
++    @SerializedName("is_promo_reward") val isPromoReward: Boolean = false,
++    @SerializedName("promo_id") val promoId: String? = null,
++    @SerializedName("promo_name") val promoName: String? = null,
++    @SerializedName("promo_buy_quantity") val promoBuyQuantity: Int? = null,
++    @SerializedName("promo_get_quantity") val promoGetQuantity: Int? = null,
++    @SerializedName("original_unit_price") val originalUnitPrice: Double? = null
+ ) {
+     val resolvedName: String
+         get() = menuItemName ?: menuItem?.name ?: orMenuItem?.name ?: "Unknown Item"
+@@ -249,6 +257,23 @@ data class OutletIdPayload(
+     @SerializedName("p_outlet_id") val outletId: String
+ )
+ 
++data class PettyCashSnapshotDto(
++    @SerializedName("shift_id") val shiftId: String? = null,
++    @SerializedName("shift_status") val shiftStatus: String? = null,
++    @SerializedName("has_active_shift") val hasActiveShift: Boolean = false,
++    @SerializedName("starting_balance") val startingBalance: Double = 0.0,
++    @SerializedName("carry_balance") val carryBalance: Double = 0.0,
++    @SerializedName("topups_total") val topupsTotal: Double = 0.0,
++    @SerializedName("expenses_total") val expensesTotal: Double = 0.0,
++    @SerializedName("adjustments_total") val adjustmentsTotal: Double = 0.0,
++    @SerializedName("current_balance") val currentBalance: Double = 0.0,
++    @SerializedName("opening_balance") val openingBalance: Double? = null,
++    @SerializedName("pending_adjustment_id") val pendingAdjustmentId: String? = null,
++    @SerializedName("pending_note") val pendingNote: String? = null,
++    @SerializedName("last_adjustment_note") val lastAdjustmentNote: String? = null,
++    @SerializedName("last_adjustment_at") val lastAdjustmentAt: String? = null
++)
++
+ data class AddPettyCashPayload(
+     @SerializedName("p_category") val category: String,
+     @SerializedName("p_amount") val amount: Double,
+@@ -279,7 +304,13 @@ data class CreateOrderItemPayload(
+     @SerializedName("menu_item_name") val menuItemName: String,
+     val quantity: Int,
+     @SerializedName("unit_price") val unitPrice: Long,
+-    val subtotal: Long
++    val subtotal: Long,
++    @SerializedName("is_promo_reward") val isPromoReward: Boolean = false,
++    @SerializedName("promo_id") val promoId: String? = null,
++    @SerializedName("promo_name") val promoName: String? = null,
++    @SerializedName("promo_buy_quantity") val promoBuyQuantity: Int? = null,
++    @SerializedName("promo_get_quantity") val promoGetQuantity: Int? = null,
++    @SerializedName("original_unit_price") val originalUnitPrice: Long? = null
+ )
+ 
+ /**
+diff --git a/app/src/main/java/com/sukashawarma/pos/data/remote/realtime/POSRealtimeService.kt b/app/src/main/java/com/sukashawarma/pos/data/remote/realtime/POSRealtimeService.kt
+index c84314e..4ea3a59 100644
+--- a/app/src/main/java/com/sukashawarma/pos/data/remote/realtime/POSRealtimeService.kt
++++ b/app/src/main/java/com/sukashawarma/pos/data/remote/realtime/POSRealtimeService.kt
+@@ -162,7 +162,7 @@ class POSRealtimeService : Service() {
+                 GlobalEventBus.targetRefreshEvent.tryEmit(Unit)
+             } else if (table == "bypass_requests") {
+                 GlobalEventBus.bypassRequestEvent.tryEmit(Unit)
+-            } else if (table == "petty_cash_topups" || table == "petty_cash_expenses" || table == "shifts") {
++            } else if (table == "petty_cash_topups" || table == "petty_cash_expenses" || table == "petty_cash_adjustments" || table == "shifts") {
+                 val recordOutletId = record.optString("outlet_id", "")
+                 
+                 // Hanya memproses (dan refresh UI) jika outlet sesuai
+diff --git a/app/src/main/java/com/sukashawarma/pos/data/sync/OrderSyncEngine.kt b/app/src/main/java/com/sukashawarma/pos/data/sync/OrderSyncEngine.kt
+index 5b23967..2d6bd38 100644
+--- a/app/src/main/java/com/sukashawarma/pos/data/sync/OrderSyncEngine.kt
++++ b/app/src/main/java/com/sukashawarma/pos/data/sync/OrderSyncEngine.kt
+@@ -12,6 +12,8 @@ import java.time.format.DateTimeFormatter
+ import java.io.File
+ import okhttp3.MediaType.Companion.toMediaTypeOrNull
+ import okhttp3.RequestBody.Companion.asRequestBody
++import kotlinx.coroutines.sync.Mutex
++import kotlinx.coroutines.sync.withLock
+ 
+ /**
+  * Fase 3: drains `local_orders` rows saved while offline (isPendingSync = true) to
+@@ -24,6 +26,12 @@ class OrderSyncEngine(
+     private val api: SupabaseApi
+ ) {
+     private val gson = Gson()
++    /**
++     * Pemicu sync datang dari beberapa tempat (koneksi kembali, jumlah pending
++     * berubah, retry berkala, dan tombol kasir). Satu mutex memastikan order yang
++     * sama tidak dikirim bersamaan oleh dua pemicu tersebut.
++     */
++    private val syncMutex = Mutex()
+ 
+     private fun itemPayloadsOf(
+         entity: com.sukashawarma.pos.data.local.entity.LocalOrderEntity
+@@ -37,7 +45,13 @@ class OrderSyncEngine(
+                 menuItemName = item.encodedMenuItemName(),
+                 quantity = item.quantity,
+                 unitPrice = item.unitPrice.toLong(),
+-                subtotal = item.subtotal.toLong()
++                subtotal = item.subtotal.toLong(),
++                isPromoReward = item.isPromoReward,
++                promoId = item.promoId,
++                promoName = item.promoName,
++                promoBuyQuantity = item.promoBuyQuantity,
++                promoGetQuantity = item.promoGetQuantity,
++                originalUnitPrice = item.originalUnitPrice?.toLong()
+             )
+         }
+     }
+@@ -85,8 +99,8 @@ class OrderSyncEngine(
+     }
+ 
+     /** Returns how many offline orders were successfully pushed to the server. */
+-    suspend fun syncPendingOrders(outletId: String): Int {
+-        if (outletId.isBlank()) return 0
++    suspend fun syncPendingOrders(outletId: String): Int = syncMutex.withLock {
++        if (outletId.isBlank()) return@withLock 0
+         // 60 dtk cukup longgar: pengiriman latar belakang yang sehat selesai dalam
+         // hitungan ratusan milidetik, dan timeout OkHttp terburuk (15 dtk connect +
+         // 15 dtk read, dua request) masih di bawah angka ini.
+@@ -96,70 +110,9 @@ class OrderSyncEngine(
+ 
+         for (entity in pending) {
+             try {
+-                val createdAtIso = DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(entity.createdAt))
+-                val payload = CreateOrderPayload(
+-                    id = entity.id,
+-                    orderNumber = entity.orderNumber,
+-                    outletId = entity.outletId,
+-                    customerName = entity.customerName,
+-                    status = entity.status.lowercase(),
+-                    source = entity.source.lowercase(),
+-                    paymentMethod = entity.paymentMethod.lowercase(),
+-                    discountAmount = entity.discountAmount.toLong(),
+-                    promoSubsidy = entity.promoSubsidy.toLong(),
+-                    totalAmount = entity.totalAmount.toLong(),
+-                    amountReceived = entity.amountReceived.toLong(),
+-                    changeAmount = entity.changeAmount.toLong(),
+-                    createdAt = createdAtIso,
+-                    channel = entity.channel,
+-                    pickupTime = entity.effectiveReleaseTime.takeIf { it > 0L }?.let {
+-                        DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(it + 20 * 60_000L))
+-                    },
+-                    releaseTime = entity.effectiveReleaseTime.takeIf { it > 0L }?.let {
+-                        DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(it))
+-                    },
+-                    // Ikut dikirim seperti jalur online di POSManualOrderViewModel.submitOrder.
+-                    // Tanpa ini setiap pesanan yang dibuat saat offline mendarat di server
+-                    // tanpa nama kasir ΓÇö padahal Room menyimpannya ΓÇö sehingga atribusi dan
+-                    // perhitungan bonus kasir untuk transaksi offline permanen kosong.
+-                    cashierName = entity.cashierName,
+-                    isOfflineSync = true
+-                )
+-
+-                // Order + seluruh barisnya dalam satu transaksi. Dulu keduanya dikirim
+-                // lewat dua request terpisah, dan pengiriman bisa putus tepat di selanya
+-                // sehingga pesanan mendarat di server tanpa satu pun baris item ΓÇö
+-                // terbaca sebagai "harga ada, menu kosong" oleh semua device.
+-                //
+-                // Cabang 409 "duplicate key" tidak diperlukan lagi: fungsi ini idempoten
+-                // terhadap id order yang sama (ON CONFLICT DO NOTHING lalu mengembalikan
+-                // baris yang sudah ada), jadi kiriman ulang atas order yang sebenarnya
+-                // sudah mendarat menghasilkan sukses biasa, bukan tabrakan primary key.
+-                val orderRes = api.createOrderWithItems(
+-                    com.sukashawarma.pos.data.remote.dto.CreateOrderWithItemsPayload(
+-                        order = payload,
+-                        items = itemPayloadsOf(entity)
+-                    )
+-                )
+-                if (!orderRes.isSuccessful) {
+-                    android.util.Log.e(
+-                        "OrderSyncEngine",
+-                        "Gagal sync order ${entity.id}: HTTP ${orderRes.code()} ${orderRes.errorBody()?.string().orEmpty()}"
+-                    )
+-                    continue // leave syncState != SYNCED, retry next pass
+-                }
+-                val serverOrderNumber = orderRes.body()?.orderNumber
+-                if (serverOrderNumber == null) {
+-                    android.util.Log.e("OrderSyncEngine", "Sync order ${entity.id} sukses tapi body kosong")
+-                    continue
+-                }
+-
+-                orderDao.markSynced(entity.id, serverOrderNumber)
+-                uploadStoredProof(entity, serverOrderNumber)
+-
+-                syncedCount++
++                if (pushOrder(entity)) syncedCount++
+             } catch (e: Exception) {
+-                e.printStackTrace()
++                android.util.Log.e("OrderSyncEngine", "Sync order ${entity.id} melempar exception", e)
+                 // Network hiccup mid-loop ΓÇö stop here, remaining orders retry next trigger.
+                 break
+             }
+@@ -170,6 +123,86 @@ class OrderSyncEngine(
+             com.sukashawarma.pos.data.remote.GlobalEventBus.orderSyncEvent.tryEmit(Unit)
+             com.sukashawarma.pos.data.remote.GlobalEventBus.targetRefreshEvent.tryEmit(Unit)
+         }
+-        return syncedCount
++        return@withLock syncedCount
++    }
++
++    /**
++     * Mencoba satu order tertentu. Dipakai tombol "Coba Kirim Sekarang" dan
++     * aksi status supaya order lokal selalu dibuat di server sebelum di-PATCH.
++     */
++    suspend fun syncOrder(orderId: String): Boolean = syncMutex.withLock {
++        val entity = orderDao.getOrderById(orderId) ?: return@withLock false
++        if (entity.syncState == com.sukashawarma.pos.data.local.entity.SyncState.SYNCED.name) {
++            return@withLock true
++        }
++
++        val synced = try {
++            pushOrder(entity)
++        } catch (e: Exception) {
++            android.util.Log.e("OrderSyncEngine", "Sync manual order $orderId melempar exception", e)
++            false
++        }
++        if (synced) {
++            com.sukashawarma.pos.data.remote.GlobalEventBus.orderSyncEvent.tryEmit(Unit)
++            com.sukashawarma.pos.data.remote.GlobalEventBus.targetRefreshEvent.tryEmit(Unit)
++        }
++        synced
++    }
++
++    /** Satu-satunya implementasi pengiriman order agar retry otomatis dan manual identik. */
++    private suspend fun pushOrder(
++        entity: com.sukashawarma.pos.data.local.entity.LocalOrderEntity
++    ): Boolean {
++        val createdAtIso = DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(entity.createdAt))
++        val payload = CreateOrderPayload(
++            id = entity.id,
++            orderNumber = entity.orderNumber,
++            outletId = entity.outletId,
++            customerName = entity.customerName,
++            status = entity.status.lowercase(),
++            source = entity.source.lowercase(),
++            paymentMethod = entity.paymentMethod.lowercase(),
++            discountAmount = entity.discountAmount.toLong(),
++            promoSubsidy = entity.promoSubsidy.toLong(),
++            totalAmount = entity.totalAmount.toLong(),
++            amountReceived = entity.amountReceived.toLong(),
++            changeAmount = entity.changeAmount.toLong(),
++            createdAt = createdAtIso,
++            channel = entity.channel,
++            pickupTime = entity.effectiveReleaseTime.takeIf { it > 0L }?.let {
++                DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(it + 20 * 60_000L))
++            },
++            releaseTime = entity.effectiveReleaseTime.takeIf { it > 0L }?.let {
++                DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(it))
++            },
++            cashierName = entity.cashierName,
++            isOfflineSync = true
++        )
++
++        // RPC ini idempoten terhadap UUID order. Bila respons percobaan pertama
++        // terputus sesudah server menyimpan, pengiriman ulang mengambil baris yang
++        // sama dan tidak membuat transaksi kedua.
++        val orderRes = api.createOrderWithItems(
++            com.sukashawarma.pos.data.remote.dto.CreateOrderWithItemsPayload(
++                order = payload,
++                items = itemPayloadsOf(entity)
++            )
++        )
++        if (!orderRes.isSuccessful) {
++            android.util.Log.e(
++                "OrderSyncEngine",
++                "Gagal sync order ${entity.id}: HTTP ${orderRes.code()} ${orderRes.errorBody()?.string().orEmpty()}"
++            )
++            return false
++        }
++        val serverOrderNumber = orderRes.body()?.orderNumber
++        if (serverOrderNumber == null) {
++            android.util.Log.e("OrderSyncEngine", "Sync order ${entity.id} sukses tapi body kosong")
++            return false
++        }
++
++        orderDao.markSynced(entity.id, serverOrderNumber)
++        uploadStoredProof(entity, serverOrderNumber)
++        return true
+     }
+ }
+diff --git a/app/src/main/java/com/sukashawarma/pos/domain/model/CartLine.kt b/app/src/main/java/com/sukashawarma/pos/domain/model/CartLine.kt
+index 56972b4..5fab07f 100644
+--- a/app/src/main/java/com/sukashawarma/pos/domain/model/CartLine.kt
++++ b/app/src/main/java/com/sukashawarma/pos/domain/model/CartLine.kt
+@@ -16,7 +16,14 @@ data class CartLine(
+     val quantity: Int,
+     val note: String = "",
+     val parentId: String? = null,
+-    val packageChoices: Map<String, String> = emptyMap()
++    val packageChoices: Map<String, String> = emptyMap(),
++    /** Baris hadiah sistem; kasir tidak boleh mengubah quantity atau harganya. */
++    val isPromoReward: Boolean = false,
++    val promoId: String? = null,
++    val promoName: String? = null,
++    val promoBuyQuantity: Int? = null,
++    val promoGetQuantity: Int? = null,
++    val sourceCartItemId: String? = null
+ ) {
+     val subtotal: Double get() = unitPrice * quantity
+ }
+diff --git a/app/src/main/java/com/sukashawarma/pos/domain/model/Order.kt b/app/src/main/java/com/sukashawarma/pos/domain/model/Order.kt
+index 7b76b63..fc66d25 100644
+--- a/app/src/main/java/com/sukashawarma/pos/domain/model/Order.kt
++++ b/app/src/main/java/com/sukashawarma/pos/domain/model/Order.kt
+@@ -29,7 +29,13 @@ data class OrderItem(
+     val unitPrice: Double,
+     val subtotal: Double = unitPrice * quantity,
+     val note: String = "",
+-    val isChild: Boolean = false
++    val isChild: Boolean = false,
++    val isPromoReward: Boolean = false,
++    val promoId: String? = null,
++    val promoName: String? = null,
++    val promoBuyQuantity: Int? = null,
++    val promoGetQuantity: Int? = null,
++    val originalUnitPrice: Double? = null
+ ) {
+     /**
+      * `order_items` (Supabase) tidak punya kolom note sendiri ΓÇö [note] harus
+diff --git a/app/src/main/java/com/sukashawarma/pos/domain/model/Promo.kt b/app/src/main/java/com/sukashawarma/pos/domain/model/Promo.kt
+index a833b3d..17f2597 100644
+--- a/app/src/main/java/com/sukashawarma/pos/domain/model/Promo.kt
++++ b/app/src/main/java/com/sukashawarma/pos/domain/model/Promo.kt
+@@ -7,7 +7,8 @@ enum class PromoScope {
+ 
+ enum class DiscountType {
+     PERCENTAGE, // Persentase (e.g. 10%)
+-    NOMINAL     // Nominal Rupiah (e.g. Rp 5.000)
++    NOMINAL,    // Nominal Rupiah (e.g. Rp 5.000)
++    BUY_ONE_GET_ONE
+ }
+ 
+ data class Promo(
+@@ -27,5 +28,8 @@ data class Promo(
+     val endDate: Long? = null,
+     val dailyStartTime: String? = null,
+     val dailyEndTime: String? = null,
+-    val applyToFoodApps: Boolean = false
++    val applyToFoodApps: Boolean = false,
++    /** Konfigurasi Buy X Get Y; promo B1G1 lama tetap 1/1. */
++    val buyQuantity: Int = 1,
++    val getQuantity: Int = 1
+ )
+diff --git a/app/src/main/java/com/sukashawarma/pos/domain/usecase/CalculateCartUseCase.kt b/app/src/main/java/com/sukashawarma/pos/domain/usecase/CalculateCartUseCase.kt
+index fada786..c3b3f69 100644
+--- a/app/src/main/java/com/sukashawarma/pos/domain/usecase/CalculateCartUseCase.kt
++++ b/app/src/main/java/com/sukashawarma/pos/domain/usecase/CalculateCartUseCase.kt
+@@ -76,6 +76,37 @@ class CalculateCartUseCase {
+         val appliedPromoIds = mutableSetOf<String>()
+         val appliedPromoNames = mutableSetOf<String>()
+ 
++        // B1G1 berlaku hanya pada transaksi POS offline. Baris hadiah Rp0 dibuat
++        // oleh keranjang; kalkulator hanya menetapkan eksklusivitas dan audit promo.
++        // Tidak ada pemeriksaan stok di sini karena stok aplikasi bisa tertinggal dari
++        // kondisi fisik outlet.
++        val buyOneGetOnePromo = if (!isFoodAppChannel &&
++            (channel.isNullOrBlank() || channel.equals("endorse", ignoreCase = true))) {
++            eligiblePromos.firstOrNull { promo ->
++                promo.discountType == DiscountType.BUY_ONE_GET_ONE &&
++                    promo.scope == PromoScope.ITEM &&
++                    promo.menuItemId != null &&
++                    items.any {
++                        it.menuItemId == promo.menuItemId &&
++                            !it.isPromoReward &&
++                            it.quantity >= promo.buyQuantity
++                    }
++            }
++        } else null
++
++        if (buyOneGetOnePromo != null) {
++            appliedPromoIds += buyOneGetOnePromo.id
++            appliedPromoNames += buyOneGetOnePromo.name
++            return CartCalculationResult(
++                subtotal = subtotal,
++                totalDiscount = 0.0,
++                promoSubsidy = 0.0,
++                finalTotal = subtotal,
++                appliedPromoIds = appliedPromoIds,
++                appliedPromoNames = appliedPromoNames.toList()
++            )
++        }
++
+         var itemDiscountTotal = 0.0
+         val itemPromos = eligiblePromos.filter { it.scope == PromoScope.ITEM && it.menuItemId != null }
+         val globalPromo = eligiblePromos.firstOrNull {
+@@ -88,6 +119,7 @@ class CalculateCartUseCase {
+                 val itemDiscount = when (matchingPromo.discountType) {
+                     DiscountType.PERCENTAGE -> item.subtotal * (matchingPromo.discountValue / 100.0)
+                     DiscountType.NOMINAL -> matchingPromo.discountValue * item.quantity
++                    DiscountType.BUY_ONE_GET_ONE -> 0.0
+                 }
+                 itemDiscountTotal += itemDiscount
+                 appliedPromoIds += matchingPromo.id
+@@ -101,6 +133,7 @@ class CalculateCartUseCase {
+             when (globalPromo.discountType) {
+                 DiscountType.PERCENTAGE -> subtotal * (globalPromo.discountValue / 100.0)
+                 DiscountType.NOMINAL -> globalPromo.discountValue
++                DiscountType.BUY_ONE_GET_ONE -> 0.0
+             }
+         } else 0.0
+ 
+diff --git a/app/src/main/java/com/sukashawarma/pos/domain/usecase/PrintReceiptUseCase.kt b/app/src/main/java/com/sukashawarma/pos/domain/usecase/PrintReceiptUseCase.kt
+index e599745..6ec873d 100644
+--- a/app/src/main/java/com/sukashawarma/pos/domain/usecase/PrintReceiptUseCase.kt
++++ b/app/src/main/java/com/sukashawarma/pos/domain/usecase/PrintReceiptUseCase.kt
+@@ -80,9 +80,14 @@ class PrintReceiptUseCase {
+             .separator(charWidth)
+ 
+         // Double Height Nomor Antrean
++        val queueNumberLabel = if (order.isOffline) "SEMENTARA ${order.orderNumber}" else "No. ${order.orderNumber}"
+         builder.alignCenter()
+-            .size(1, 2).bold(true).textLine("No. ${order.orderNumber}")
++            .size(1, 2).bold(true).textLine(queueNumberLabel)
+             .size(1, 1).bold(false)
++        if (order.isOffline) {
++            builder.textLine("Belum mendapat nomor server")
++        }
++        builder
+             .separator(charWidth)
+ 
+         // Items
+@@ -149,9 +154,14 @@ class PrintReceiptUseCase {
+         }
+ 
+         // Double Height Nomor Antrean
++        val queueNumberLabel = if (order.isOffline) "SEMENTARA ${order.orderNumber}" else "No. ${order.orderNumber}"
+         builder.alignCenter().newline()
+-            .size(1, 2).bold(true).textLine("No. ${order.orderNumber}")
++            .size(1, 2).bold(true).textLine(queueNumberLabel)
+             .size(1, 1).bold(false).newline()
++        if (order.isOffline) {
++            builder.textLine("BELUM MENDAPAT NOMOR SERVER")
++        }
++        builder
+             .separator(charWidth)
+             .alignLeft()
+ 
+diff --git a/app/src/main/java/com/sukashawarma/pos/presentation/components/OrderCard.kt b/app/src/main/java/com/sukashawarma/pos/presentation/components/OrderCard.kt
+index ffdda4b..b8b8695 100644
+--- a/app/src/main/java/com/sukashawarma/pos/presentation/components/OrderCard.kt
++++ b/app/src/main/java/com/sukashawarma/pos/presentation/components/OrderCard.kt
+@@ -69,6 +69,7 @@ fun OrderCard(
+     onPrintCustomer: (Order) -> Unit,
+     onReprint: (Order) -> Unit = {},
+     onAcceptOrder: (Order) -> Unit = {},
++    onRetrySync: (Order) -> Unit = {},
+     isStatusUpdating: Boolean = false,
+     isHighlighted: Boolean = false,
+     modifier: Modifier = Modifier
+@@ -348,7 +349,11 @@ fun OrderCard(
+             ) {
+                 Column(modifier = Modifier.weight(1f)) {
+                     Text(
+-                        text = "Nomor Antrian #${order.orderNumber}",
++                        text = if (order.isOffline) {
++                            "Nomor Sementara #${order.orderNumber}"
++                        } else {
++                            "Nomor Antrian #${order.orderNumber}"
++                        },
+                         color = TextSlateDark,
+                         fontSize = 18.sp,
+                         fontWeight = FontWeight.ExtraBold
+@@ -386,7 +391,7 @@ fun OrderCard(
+                                 )
+                                 Spacer(modifier = Modifier.width(5.dp))
+                                 Text(
+-                                    text = if (isOffline) "OFFLINE" else "SYNC",
++                                    text = if (isOffline) "BELUM KE SERVER" else "SYNC",
+                                     color = if (isOffline) Color(0xFF991B1B) else Color(0xFF065F46),
+                                     fontSize = 10.sp,
+                                     fontWeight = FontWeight.Bold,
+@@ -394,6 +399,25 @@ fun OrderCard(
+                                 )
+                             }
+                         }
++                        if (isOffline) {
++                            TextButton(
++                                onClick = { onRetrySync(order) },
++                                enabled = !isStatusUpdating,
++                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
++                            ) {
++                                Icon(
++                                    imageVector = Icons.Default.Sync,
++                                    contentDescription = null,
++                                    modifier = Modifier.size(14.dp)
++                                )
++                                Spacer(modifier = Modifier.width(4.dp))
++                                Text(
++                                    text = if (isStatusUpdating) "Sedang mengirimΓÇª" else "Coba Kirim Sekarang",
++                                    fontSize = 11.sp,
++                                    fontWeight = FontWeight.Bold
++                                )
++                            }
++                        }
+                     }
+                     if (!order.cashierName.isNullOrBlank()) {
+                         Spacer(modifier = Modifier.height(8.dp))
+@@ -1018,7 +1042,7 @@ fun OrderCard(
+                                 ) {
+                                     Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                     Spacer(modifier = Modifier.width(4.dp))
+-                                    Text("Terima", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
++                                    Text(if (order.isOffline) "Kirim & Terima" else "Terima", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                 }
+                             } else {
+                                 Button(
+@@ -1039,7 +1063,14 @@ fun OrderCard(
+                                         Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                     }
+                                     Spacer(modifier = Modifier.width(4.dp))
+-                                    Text(if (isStatusUpdating) "Menyimpan" else "Selesai", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
++                                    Text(
++                                        if (isStatusUpdating) "MengirimΓÇª" else if (order.isOffline) "Kirim & Selesai" else "Selesai",
++                                        color = Color.White,
++                                        fontWeight = FontWeight.Bold,
++                                        fontSize = 13.sp,
++                                        maxLines = 1,
++                                        overflow = TextOverflow.Ellipsis
++                                    )
+                                 }
+                             }
+                             
+diff --git a/app/src/main/java/com/sukashawarma/pos/presentation/dashboard/DashboardScreen.kt b/app/src/main/java/com/sukashawarma/pos/presentation/dashboard/DashboardScreen.kt
+index a6a73a6..c6932d3 100644
+--- a/app/src/main/java/com/sukashawarma/pos/presentation/dashboard/DashboardScreen.kt
++++ b/app/src/main/java/com/sukashawarma/pos/presentation/dashboard/DashboardScreen.kt
+@@ -267,21 +267,39 @@ fun DashboardScreen(
+                         .border(1.dp, CreamBorder, RoundedCornerShape(8.dp))
+                         .padding(4.dp)
+                 ) {
+-                    listOf("Semua", "≡ƒîÉ Online", "≡ƒô▒ Offline").forEach { filter ->
+-                        val isSelected = activeSourceFilter == filter
++                    val filters = listOf(
++                        "Semua" to null,
++                        "Online" to Icons.Default.Public,
++                        "Offline" to Icons.Default.Smartphone
++                    )
++                    filters.forEach { (label, icon) ->
++                        val isSelected = activeSourceFilter == label
+                         Box(
+                             modifier = Modifier
+                                 .clip(RoundedCornerShape(6.dp))
+                                 .background(if (isSelected) ShawarmaOrangeLight else Color.Transparent)
+-                                .clickable { activeSourceFilter = filter }
++                                .clickable { activeSourceFilter = label }
+                                 .padding(horizontal = 12.dp, vertical = 6.dp)
+                         ) {
+-                            Text(
+-                                text = filter,
+-                                style = MaterialTheme.typography.bodyMedium,
+-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+-                                color = if (isSelected) ShawarmaOrange else TextDarkSecondary
+-                            )
++                            Row(
++                                horizontalArrangement = Arrangement.spacedBy(4.dp),
++                                verticalAlignment = Alignment.CenterVertically
++                            ) {
++                                if (icon != null) {
++                                    Icon(
++                                        imageVector = icon,
++                                        contentDescription = null,
++                                        modifier = Modifier.size(14.dp),
++                                        tint = if (isSelected) ShawarmaOrange else TextDarkSecondary
++                                    )
++                                }
++                                Text(
++                                    text = label,
++                                    style = MaterialTheme.typography.bodyMedium,
++                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
++                                    color = if (isSelected) ShawarmaOrange else TextDarkSecondary
++                                )
++                            }
+                         }
+                     }
+                 }
+@@ -310,8 +328,8 @@ fun DashboardScreen(
+             val filteredPending = remember(pendingOrders, activeSourceFilter) {
+                 pendingOrders.filter { order ->
+                     when (activeSourceFilter) {
+-                        "≡ƒîÉ Online" -> order.source == com.sukashawarma.pos.domain.model.OrderSource.ONLINE
+-                        "≡ƒô▒ Offline" -> order.source == com.sukashawarma.pos.domain.model.OrderSource.POS || order.source == com.sukashawarma.pos.domain.model.OrderSource.KIOSK
++                        "Online" -> order.source == com.sukashawarma.pos.domain.model.OrderSource.ONLINE
++                        "Offline" -> order.source == com.sukashawarma.pos.domain.model.OrderSource.POS || order.source == com.sukashawarma.pos.domain.model.OrderSource.KIOSK
+                         else -> true
+                     }
+                 }
+@@ -320,8 +338,8 @@ fun DashboardScreen(
+             val filteredPreparing = remember(preparingOrders, activeSourceFilter) {
+                 preparingOrders.filter { order ->
+                     when (activeSourceFilter) {
+-                        "≡ƒîÉ Online" -> order.source == com.sukashawarma.pos.domain.model.OrderSource.ONLINE
+-                        "≡ƒô▒ Offline" -> order.source == com.sukashawarma.pos.domain.model.OrderSource.POS || order.source == com.sukashawarma.pos.domain.model.OrderSource.KIOSK
++                        "Online" -> order.source == com.sukashawarma.pos.domain.model.OrderSource.ONLINE
++                        "Offline" -> order.source == com.sukashawarma.pos.domain.model.OrderSource.POS || order.source == com.sukashawarma.pos.domain.model.OrderSource.KIOSK
+                         else -> true
+                     }
+                 }
+@@ -335,8 +353,8 @@ fun DashboardScreen(
+             val filteredCompleted = remember(completedOrders, activeSourceFilter) {
+                 completedOrders.filter { order ->
+                     when (activeSourceFilter) {
+-                        "≡ƒîÉ Online" -> order.source == com.sukashawarma.pos.domain.model.OrderSource.ONLINE
+-                        "≡ƒô▒ Offline" -> order.source == com.sukashawarma.pos.domain.model.OrderSource.POS || order.source == com.sukashawarma.pos.domain.model.OrderSource.KIOSK
++                        "Online" -> order.source == com.sukashawarma.pos.domain.model.OrderSource.ONLINE
++                        "Offline" -> order.source == com.sukashawarma.pos.domain.model.OrderSource.POS || order.source == com.sukashawarma.pos.domain.model.OrderSource.KIOSK
+                         else -> true
+                     }
+                 }
+@@ -357,6 +375,7 @@ fun DashboardScreen(
+                                 isStatusUpdating = order.id in updatingOrderIds,
+                                 isHighlighted = order.id == highlightedOrderId,
+                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
++                                onRetrySync = { o -> viewModel.retryOrderSync(o) },
+                                 onCancelOrder = { o, reason -> 
+                                     viewModel.requestCancellation(
+                                         order = o, 
+@@ -419,6 +438,7 @@ fun DashboardScreen(
+                                 isStatusUpdating = order.id in updatingOrderIds,
+                                 isHighlighted = order.id == highlightedOrderId,
+                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
++                                onRetrySync = { o -> viewModel.retryOrderSync(o) },
+                                 onCancelOrder = { o, reason -> 
+                                     viewModel.requestCancellation(
+                                         order = o, 
+@@ -467,6 +487,7 @@ fun DashboardScreen(
+                                 isStatusUpdating = order.id in updatingOrderIds,
+                                 isHighlighted = order.id == highlightedOrderId,
+                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
++                                onRetrySync = { o -> viewModel.retryOrderSync(o) },
+                                 onCancelOrder = { o, reason -> 
+                                     viewModel.requestCancellation(
+                                         order = o, 
+diff --git a/app/src/main/java/com/sukashawarma/pos/presentation/dashboard/DashboardViewModel.kt b/app/src/main/java/com/sukashawarma/pos/presentation/dashboard/DashboardViewModel.kt
+index 11ae0c9..948eba5 100644
+--- a/app/src/main/java/com/sukashawarma/pos/presentation/dashboard/DashboardViewModel.kt
++++ b/app/src/main/java/com/sukashawarma/pos/presentation/dashboard/DashboardViewModel.kt
+@@ -22,6 +22,7 @@ import com.sukashawarma.pos.domain.model.*
+ import com.sukashawarma.pos.domain.usecase.PrintReceiptUseCase
+ import com.sukashawarma.pos.domain.usecase.OrderStatusUpdateGuard
+ import com.sukashawarma.pos.domain.usecase.OrderStatusUpdatePolicy
++import com.sukashawarma.pos.domain.usecase.OrderSyncRetryPolicy
+ import com.google.gson.Gson
+ import com.google.gson.reflect.TypeToken
+ import kotlinx.coroutines.flow.*
+@@ -240,6 +241,28 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
+                 }
+             }
+         }
++        viewModelScope.launch {
++            var retryDelayMs = OrderSyncRetryPolicy.INITIAL_DELAY_MS
++            while (isActive) {
++                delay(retryDelayMs)
++
++                val outletId = currentOutletId.value
++                if (!NetworkMonitor.isOnline.value || outletId.isBlank()) {
++                    retryDelayMs = OrderSyncRetryPolicy.INITIAL_DELAY_MS
++                    continue
++                }
++                if (pendingSyncCount.value <= 0) {
++                    retryDelayMs = OrderSyncRetryPolicy.INITIAL_DELAY_MS
++                    continue
++                }
++
++                val synced = trySyncPendingOrders(outletId)
++                retryDelayMs = OrderSyncRetryPolicy.afterAttempt(
++                    previousDelayMs = retryDelayMs,
++                    syncedAnyOrder = synced > 0
++                )
++            }
++        }
+         viewModelScope.launch {
+             merge(
+                 currentOutletId.map { },
+@@ -274,16 +297,13 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
+     }
+ 
+     /** Fase 3: drains any orders saved locally while offline, then refreshes from the server. */
+-    private suspend fun trySyncPendingOrders(outletId: String) {
+-        if (outletId.isBlank()) return
+-        val synced = syncEngine.syncPendingOrders(outletId)
+-        if (synced > 0) {
+-            syncOrdersFromServer(outletId)
+-        }
++    private suspend fun trySyncPendingOrders(outletId: String): Int {
++        if (outletId.isBlank()) return 0
++        // OrderSyncEngine mengirim event refresh setelah berhasil. Tidak perlu
++        // menarik server sekali lagi di sini karena itu menggandakan request.
++        return syncEngine.syncPendingOrders(outletId)
+     }
+ 
+-    /** Periodic sync loop removed in favor of NetworkMonitor trigger */
+-
+     override fun onCleared() {
+         super.onCleared()
+         // Service handles background connection independently now,
+@@ -543,6 +563,30 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
+         _updatingOrderIds.update { it + order.id }
+         viewModelScope.launch {
+             try {
++                val localOrder = orderDao.getOrderById(order.id)
++                val needsSync = localOrder != null &&
++                    localOrder.syncState != com.sukashawarma.pos.data.local.entity.SyncState.SYNCED.name
++                if (needsSync) {
++                    if (!NetworkMonitor.isOnline.value) {
++                        _statusUpdateErrors.tryEmit(
++                            "Order sementara #${order.orderNumber} masih aman di tablet. " +
++                                "Hubungkan internet lalu coba lagi; aplikasi juga akan mengirimnya otomatis."
++                        )
++                        return@launch
++                    }
++
++                    _statusUpdateErrors.tryEmit(
++                        "Order sementara #${order.orderNumber} sedang dikirim ke serverΓÇª"
++                    )
++                    if (!syncEngine.syncOrder(order.id)) {
++                        _statusUpdateErrors.tryEmit(
++                            "Order sementara #${order.orderNumber} masih aman di tablet, " +
++                                "tetapi server belum merespons. Aplikasi akan mencoba lagi otomatis."
++                        )
++                        return@launch
++                    }
++                }
++
+                 // Order Website tidak pernah dapat cashier_name saat dibuat (dibuat oleh
+                 // customer, bukan kasir) ΓÇö dicatat saat kasir benar-benar menyelesaikannya.
+                 val cashierNameToRecord = currentCashierName.value.takeIf { it.isNotBlank() }
+@@ -619,7 +663,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
+                         "Status order ${order.id} tidak diubah: HTTP ${res.code()}, baris=$updatedRows"
+                     )
+                     _statusUpdateErrors.tryEmit(
+-                        "Order #${order.orderNumber} belum tersimpan di server. Status tidak diubah; coba lagi."
++                        "Server belum mengizinkan perubahan order ini. Status tetap aman dan tidak diubah; coba lagi."
+                     )
+                 }
+             } catch (e: Exception) {
+@@ -636,6 +680,48 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
+         }
+     }
+ 
++    /** Aksi kasir untuk memaksa satu order lokal dikirim tanpa mengubah statusnya. */
++    fun retryOrderSync(order: Order) {
++        if (!statusUpdateGuard.tryBegin(order.id)) return
++        _updatingOrderIds.update { it + order.id }
++        viewModelScope.launch {
++            try {
++                if (!NetworkMonitor.isOnline.value) {
++                    _statusUpdateErrors.tryEmit(
++                        "Order sementara #${order.orderNumber} masih aman di tablet. Internet belum siap."
++                    )
++                    return@launch
++                }
++
++                _statusUpdateErrors.tryEmit(
++                    "Mengirim order sementara #${order.orderNumber} ke serverΓÇª"
++                )
++                if (syncEngine.syncOrder(order.id)) {
++                    val officialNumber = orderDao.getOrderById(order.id)?.orderNumber
++                    _statusUpdateErrors.tryEmit(
++                        if (officialNumber != null) {
++                            "Order berhasil dikirim. Nomor resmi dari server: #$officialNumber."
++                        } else {
++                            "Order berhasil dikirim ke server."
++                        }
++                    )
++                } else {
++                    _statusUpdateErrors.tryEmit(
++                        "Server belum merespons. Order tetap aman di tablet dan akan dicoba lagi otomatis."
++                    )
++                }
++            } catch (e: Exception) {
++                android.util.Log.e("DashboardViewModel", "Retry order ${order.id} gagal", e)
++                _statusUpdateErrors.tryEmit(
++                    "Pengiriman belum berhasil. Order tetap aman di tablet dan akan dicoba lagi otomatis."
++                )
++            } finally {
++                statusUpdateGuard.finish(order.id)
++                _updatingOrderIds.update { it - order.id }
++            }
++        }
++    }
++
+     val printStatusMessage = MutableStateFlow<String?>(null)
+ 
+     fun printReceipt(context: android.content.Context, order: Order, isKitchen: Boolean = false, onSuccess: () -> Unit = {}) {
+diff --git a/app/src/main/java/com/sukashawarma/pos/presentation/history/OrderHistoryScreen.kt b/app/src/main/java/com/sukashawarma/pos/presentation/history/OrderHistoryScreen.kt
+index 4de7eaf..bac90c2 100644
+--- a/app/src/main/java/com/sukashawarma/pos/presentation/history/OrderHistoryScreen.kt
++++ b/app/src/main/java/com/sukashawarma/pos/presentation/history/OrderHistoryScreen.kt
+@@ -908,6 +908,23 @@ private fun OrderRow(
+                         .background(Color(0xFFF9FAFB))
+                         .padding(16.dp)
+                 ) {
++                    val rewardItem = order.orderItems.firstOrNull { it.isPromoReward }
++                    if (rewardItem != null) {
++                        Surface(
++                            shape = RoundedCornerShape(6.dp),
++                            color = Color(0xFFDCFCE7),
++                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF86EFAC)),
++                            modifier = Modifier.padding(bottom = 10.dp)
++                        ) {
++                            Text(
++                                "BUY ${rewardItem.promoBuyQuantity ?: 1} GET ${rewardItem.promoGetQuantity ?: 1}",
++                                color = Color(0xFF166534),
++                                fontSize = 10.sp,
++                                fontWeight = FontWeight.Bold,
++                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
++                            )
++                        }
++                    }
+                     val groupedItems = remember(order.orderItems) { groupOrderItems(order.orderItems) }
+                     groupedItems.forEach { (root, children) ->
+                         Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+@@ -917,9 +934,17 @@ private fun OrderRow(
+                             ) {
+                                 Row {
+                                     Text("${root.raw.quantity}x", fontWeight = FontWeight.Bold, color = Color(0xFF374151), modifier = Modifier.width(30.dp))
+-                                    Text(root.name, color = Color(0xFF4B5563), fontWeight = FontWeight.Medium)
++                                    Text(
++                                        if (root.raw.isPromoReward) "Gratis ┬╖ ${root.name}" else root.name,
++                                        color = if (root.raw.isPromoReward) Color(0xFF15803D) else Color(0xFF4B5563),
++                                        fontWeight = FontWeight.Medium
++                                    )
+                                 }
+-                                Text("Rp ${String.format("%,.0f", root.raw.subtotal)}", color = Color(0xFF374151), fontWeight = FontWeight.Medium)
++                                Text(
++                                    if (root.raw.isPromoReward) "Rp 0" else "Rp ${String.format("%,.0f", root.raw.subtotal)}",
++                                    color = if (root.raw.isPromoReward) Color(0xFF15803D) else Color(0xFF374151),
++                                    fontWeight = FontWeight.Medium
++                                )
+                             }
+                             if (root.note.isNotBlank()) {
+                                 Surface(
+diff --git a/app/src/main/java/com/sukashawarma/pos/presentation/order_manual/POSManualOrderScreen.kt b/app/src/main/java/com/sukashawarma/pos/presentation/order_manual/POSManualOrderScreen.kt
+index f45feca..3ad8d44 100644
+--- a/app/src/main/java/com/sukashawarma/pos/presentation/order_manual/POSManualOrderScreen.kt
++++ b/app/src/main/java/com/sukashawarma/pos/presentation/order_manual/POSManualOrderScreen.kt
+@@ -192,7 +192,10 @@ fun POSManualOrderScreen(
+                                             MenuItemCard(
+                                                 menuItem = item,
+                                                 displayPrice = viewModel.priceFor(item),
+-                                                discountedPrice = promoEntry?.takeIf { it.status == PromoStatus.ACTIVE }?.let { viewModel.discountedPriceFor(item, it.promo) },
++                                                discountedPrice = promoEntry?.takeIf {
++                                                    it.status == PromoStatus.ACTIVE &&
++                                                        it.promo.discountType != DiscountType.BUY_ONE_GET_ONE
++                                                }?.let { viewModel.discountedPriceFor(item, it.promo) },
+                                                 promoEntry = promoEntry,
+                                                 scheduleLabel = promoEntry?.takeIf { it.status == PromoStatus.SCHEDULED }?.let { viewModel.scheduleLabelShort(it.promo) },
+                                                 cartQty = viewModel.cartQuantityFor(item.id),
+@@ -221,7 +224,10 @@ fun POSManualOrderScreen(
+                                 MenuItemCard(
+                                     menuItem = item,
+                                     displayPrice = viewModel.priceFor(item),
+-                                    discountedPrice = promoEntry?.takeIf { it.status == PromoStatus.ACTIVE }?.let { viewModel.discountedPriceFor(item, it.promo) },
++                                    discountedPrice = promoEntry?.takeIf {
++                                        it.status == PromoStatus.ACTIVE &&
++                                            it.promo.discountType != DiscountType.BUY_ONE_GET_ONE
++                                    }?.let { viewModel.discountedPriceFor(item, it.promo) },
+                                     promoEntry = promoEntry,
+                                     scheduleLabel = promoEntry?.takeIf { it.status == PromoStatus.SCHEDULED }?.let { viewModel.scheduleLabelShort(it.promo) },
+                                     cartQty = viewModel.cartQuantityFor(item.id),
+@@ -646,7 +652,8 @@ private fun MenuItemCard(
+                         shape = RoundedCornerShape(6.dp)
+                     ) {
+                         Text(
+-                            if (isLive) "PROMO" else "TERJADWAL",
++                            if (isLive && promoEntry.promo.discountType == DiscountType.BUY_ONE_GET_ONE) "B1G1"
++                            else if (isLive) "PROMO" else "TERJADWAL",
+                             color = Color.White,
+                             fontWeight = FontWeight.Bold,
+                             style = MaterialTheme.typography.labelSmall,
+@@ -1073,6 +1080,7 @@ private fun PromoStatusRow(entry: PromoStatusEntry) {
+             val discountLabel = when (entry.promo.discountType) {
+                 DiscountType.PERCENTAGE -> "Diskon ${entry.promo.discountValue.toInt()}%"
+                 DiscountType.NOMINAL -> "Diskon Rp ${String.format("%,.0f", entry.promo.discountValue)}"
++                DiscountType.BUY_ONE_GET_ONE -> "Beli ${entry.promo.buyQuantity}, gratis ${entry.promo.getQuantity}"
+             }
+             val scopeLabel = if (entry.promo.scope == PromoScope.GLOBAL) "seluruh order" else "menu tertentu"
+             Text("$discountLabel ┬╖ $scopeLabel", style = MaterialTheme.typography.labelSmall, color = TwGray500)
+@@ -1182,17 +1190,27 @@ private fun CartRowItem(line: CartLine, isChild: Boolean, onQuantityChange: (Int
+     ) {
+         Column(modifier = Modifier.weight(1f)) {
+             Text(
+-                text = (if (isChild) "Γå│ Extra: " else "") + line.name,
++                text = (if (line.isPromoReward) "≡ƒÄü Gratis: " else if (isChild) "Γå│ Extra: " else "") + line.name,
+                 style = MaterialTheme.typography.bodyMedium,
+                 fontWeight = FontWeight.SemiBold,
+                 color = TwGray800
+             )
+-            Text("Rp ${String.format("%,.0f", line.subtotal)}", style = MaterialTheme.typography.bodySmall, color = TwAmber600, fontWeight = FontWeight.Bold)
++            Text(
++                if (line.isPromoReward) {
++                    "Buy ${line.promoBuyQuantity ?: 1} Get ${line.promoGetQuantity ?: 1} ┬╖ Rp 0"
++                } else "Rp ${String.format("%,.0f", line.subtotal)}",
++                style = MaterialTheme.typography.bodySmall,
++                color = if (line.isPromoReward) Color(0xFF059669) else TwAmber600,
++                fontWeight = FontWeight.Bold
++            )
++            if (line.isPromoReward && !line.promoName.isNullOrBlank()) {
++                Text(line.promoName!!, style = MaterialTheme.typography.bodySmall, color = TwGray500)
++            }
+             if (!isChild && line.note.isNotBlank()) {
+                 Text(line.note, style = MaterialTheme.typography.bodySmall, color = TwGray400, maxLines = 2)
+             }
+         }
+-        Row(
++        if (!line.isPromoReward) Row(
+             modifier = Modifier
+                 .background(TwGray50, RoundedCornerShape(8.dp))
+                 .border(1.dp, TwGray100, RoundedCornerShape(8.dp))
+@@ -1679,8 +1697,18 @@ private fun OrderSuccessOverlay(
+                 Spacer(modifier = Modifier.height(8.dp))
+                 Text("Order Berhasil!", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = TwEmerald600)
+                 Spacer(modifier = Modifier.height(8.dp))
+-                Text("No. Antrean", color = TwGray500)
++                val isTemporaryNumber = success.orderEntity.syncState !=
++                    com.sukashawarma.pos.data.local.entity.SyncState.SYNCED.name
++                Text(if (isTemporaryNumber) "Nomor Sementara" else "No. Antrean", color = TwGray500)
+                 Text("${success.orderNumber}", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Black, color = TwGray900)
++                if (isTemporaryNumber) {
++                    Text(
++                        "Belum mendapat nomor resmi dari server",
++                        color = TwAmber600,
++                        style = MaterialTheme.typography.bodySmall,
++                        fontWeight = FontWeight.SemiBold
++                    )
++                }
+                 if (success.method == PaymentMethod.CASH && success.change > 0) {
+                     Spacer(modifier = Modifier.height(12.dp))
+                     Surface(color = TwEmerald50, border = androidx.compose.foundation.BorderStroke(1.dp, TwEmerald100), shape = RoundedCornerShape(10.dp)) {
+diff --git a/app/src/main/java/com/sukashawarma/pos/presentation/order_manual/POSManualOrderViewModel.kt b/app/src/main/java/com/sukashawarma/pos/presentation/order_manual/POSManualOrderViewModel.kt
+index d67d11d..f547956 100644
+--- a/app/src/main/java/com/sukashawarma/pos/presentation/order_manual/POSManualOrderViewModel.kt
++++ b/app/src/main/java/com/sukashawarma/pos/presentation/order_manual/POSManualOrderViewModel.kt
+@@ -210,6 +210,7 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
+                         val type = when(dto.discountType?.lowercase()) {
+                             "percentage" -> com.sukashawarma.pos.domain.model.DiscountType.PERCENTAGE
+                             "nominal" -> com.sukashawarma.pos.domain.model.DiscountType.NOMINAL
++                            "buy_one_get_one" -> com.sukashawarma.pos.domain.model.DiscountType.BUY_ONE_GET_ONE
+                             else -> return@mapNotNull null
+                         }
+                         com.sukashawarma.pos.domain.model.Promo(
+@@ -228,10 +229,13 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
+                             endDate = dto.endDate?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() },
+                             dailyStartTime = dto.dailyStartTime,
+                             dailyEndTime = dto.dailyEndTime,
+-                            applyToFoodApps = dto.applyToFoodApps ?: false
++                            applyToFoodApps = dto.applyToFoodApps ?: false,
++                            buyQuantity = (dto.buyQuantity ?: 1).coerceAtLeast(1),
++                            getQuantity = (dto.getQuantity ?: 1).coerceAtLeast(1)
+                         )
+                     }
+                     activePromos.value = mappedPromos
++                    reconcileBuyOneGetOneReward()
+                 }
+             } catch (e: Exception) {
+                 // Ignore for offline mode, wait for retry mechanism if needed
+@@ -260,6 +264,7 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
+     fun selectChannel(channelId: String) {
+         channel.value = channelId
+         promoSubsidy.value = ""
++        reconcileBuyOneGetOneReward()
+     }
+ 
+     // ---------------------------------------------------------------------
+@@ -297,7 +302,9 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
+     fun isDisabled(item: MenuItem): Boolean = !isItemAvailable(item, kioskSettings.value)
+ 
+     fun cartQuantityFor(menuItemId: String): Int =
+-        cartLines.value.filter { it.menuItemId == menuItemId }.sumOf { it.quantity }
++        cartLines.value
++            .filter { it.menuItemId == menuItemId && !it.isPromoReward }
++            .sumOf { it.quantity }
+ 
+     /** Port of `wrappedCalculateItemPrice` (page.tsx:449-452) ΓÇö channel_prices override,
+      *  forced to 0 for endorse. */
+@@ -402,6 +409,7 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
+     private fun findPlainLine(menuItemId: String): CartLine? =
+         cartLines.value.firstOrNull { line ->
+             line.menuItemId == menuItemId &&
++                !line.isPromoReward &&
+                 line.parentId == null &&
+                 line.note.isBlank() &&
+                 line.packageChoices.isEmpty() &&
+@@ -421,6 +429,7 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
+                     unitPrice = priceFor(item),
+                     quantity = 1
+                 )
++                reconcileBuyOneGetOneReward()
+             }
+             return
+         }
+@@ -502,6 +511,7 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
+         }
+ 
+         cartLines.value = cartLines.value + parentLine + extraLines
++        reconcileBuyOneGetOneReward()
+         closeItemModal()
+     }
+ 
+@@ -510,12 +520,14 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
+     // ---------------------------------------------------------------------
+ 
+     fun setLineQuantity(cartItemId: String, qty: Int) {
++        if (cartLines.value.any { it.cartItemId == cartItemId && it.isPromoReward }) return
+         if (qty <= 0) {
+             val toRemove = cartLines.value
+                 .filter { it.cartItemId == cartItemId || it.parentId == cartItemId }
+                 .map { it.cartItemId }
+                 .toSet()
+             cartLines.value = cartLines.value.filterNot { it.cartItemId in toRemove }
++            reconcileBuyOneGetOneReward()
+             return
+         }
+         val newQty = minOf(qty, 10)
+@@ -526,6 +538,69 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
+                 else -> line
+             }
+         }
++        reconcileBuyOneGetOneReward()
++    }
++
++    /**
++     * Buy X Get Y dibuat sebagai satu line hadiah Rp0 yang terpisah. Line ini selalu
++     * dibangun ulang dari item berbayar, sehingga perubahan kuantitas, promo realtime,
++     * atau perpindahan ke kanal online tidak pernah meninggalkan hadiah basi di cart.
++     */
++    private fun reconcileBuyOneGetOneReward() {
++        val paidLines = cartLines.value.filterNot { it.isPromoReward }
++        val isOfflineCashier = mode.value == OrderMode.WALKIN || mode.value == OrderMode.ENDORSE
++        val now = System.currentTimeMillis()
++        val promo = if (isOfflineCashier) activePromos.value.firstOrNull { candidate ->
++            candidate.discountType == com.sukashawarma.pos.domain.model.DiscountType.BUY_ONE_GET_ONE &&
++                candidate.scope == com.sukashawarma.pos.domain.model.PromoScope.ITEM &&
++                candidate.isActive &&
++                candidate.menuItemId != null &&
++                (candidate.startDate == null || now >= candidate.startDate) &&
++                (candidate.endDate == null || now < candidate.endDate) &&
++                (candidate.usageLimit == null || candidate.currentUsage < candidate.usageLimit) &&
++                isWithinDailyPromoWindow(candidate, now) &&
++                paidLines.any {
++                    it.menuItemId == candidate.menuItemId && it.quantity >= candidate.buyQuantity
++                }
++        } else null
++
++        val trigger = promo?.let { active ->
++            paidLines.firstOrNull {
++                it.menuItemId == active.menuItemId && it.quantity >= active.buyQuantity
++            }
++        }
++        val reward = if (promo != null && trigger != null) {
++            CartLine(
++                menuItemId = trigger.menuItemId,
++                name = trigger.name,
++                unitPrice = 0.0,
++                quantity = promo.getQuantity,
++                isPromoReward = true,
++                promoId = promo.id,
++                promoName = promo.name,
++                promoBuyQuantity = promo.buyQuantity,
++                promoGetQuantity = promo.getQuantity,
++                sourceCartItemId = trigger.cartItemId
++            )
++        } else null
++        cartLines.value = if (reward == null) paidLines else paidLines + reward
++    }
++
++    private fun isWithinDailyPromoWindow(promo: Promo, now: Long): Boolean {
++        val start = promo.dailyStartTime ?: return true
++        val end = promo.dailyEndTime ?: return true
++        fun millisOfDay(value: String): Long? {
++            val parts = value.split(":")
++            val hour = parts.getOrNull(0)?.toLongOrNull() ?: return null
++            val minute = parts.getOrNull(1)?.toLongOrNull() ?: return null
++            val second = parts.getOrNull(2)?.toLongOrNull() ?: 0L
++            return (hour * 3_600L + minute * 60L + second) * 1_000L
++        }
++        val startMillis = millisOfDay(start) ?: return false
++        val endMillis = millisOfDay(end) ?: return false
++        val nowWib = (now + 7L * 3_600_000L) % 86_400_000L
++        return if (startMillis <= endMillis) nowWib >= startMillis && nowWib < endMillis
++        else nowWib >= startMillis || nowWib < endMillis
+     }
+ 
+     // ---------------------------------------------------------------------
+@@ -534,7 +609,19 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
+ 
+     fun cartTotals(): CartTotals {
+         val items = cartLines.value.map {
+-            OrderItem(menuItemId = it.menuItemId, name = it.name, quantity = it.quantity, unitPrice = it.unitPrice, subtotal = it.subtotal)
++            OrderItem(
++                menuItemId = it.menuItemId,
++                name = it.name,
++                quantity = it.quantity,
++                unitPrice = it.unitPrice,
++                subtotal = it.subtotal,
++                isPromoReward = it.isPromoReward,
++                promoId = it.promoId,
++                promoName = it.promoName,
++                promoBuyQuantity = it.promoBuyQuantity,
++                promoGetQuantity = it.promoGetQuantity,
++                originalUnitPrice = if (it.isPromoReward) menuItems.value.find { menu -> menu.id == it.menuItemId }?.price else null
++            )
+         }
+         val activeChannel = if (mode.value == OrderMode.WEBSITE) "website" else channel.value
+         val calc = calculateCartUseCase.execute(items, activePromos.value, activeChannel)
+@@ -628,6 +715,7 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
+         return when (promo.discountType) {
+             DiscountType.PERCENTAGE -> price * (1 - promo.discountValue / 100.0)
+             DiscountType.NOMINAL -> maxOf(0.0, price - promo.discountValue)
++            DiscountType.BUY_ONE_GET_ONE -> price
+         }
+     }
+ 
+@@ -781,6 +869,10 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
+     }
+ 
+     private suspend fun submitOrderInternal(outletId: String) {
++            // Jadwal promo dapat berakhir ketika kasir masih berada di halaman bayar.
++            // Rekonsiliasi terakhir memastikan hadiah yang tersimpan selalu sesuai
++            // keadaan promo saat transaksi benar-benar dibuat.
++            reconcileBuyOneGetOneReward()
+             val totals = cartTotals()
+             val finalCustomerName = if (mode.value == OrderMode.WEBSITE && pickupTime.value.isNotBlank()) {
+                 "${customerName.value} [Jam Ambil: ${pickupTime.value}]"
+@@ -814,7 +906,15 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
+                     unitPrice = line.unitPrice,
+                     subtotal = line.subtotal,
+                     note = line.note,
+-                    isChild = line.parentId != null
++                    isChild = line.parentId != null,
++                    isPromoReward = line.isPromoReward,
++                    promoId = line.promoId,
++                    promoName = line.promoName,
++                    promoBuyQuantity = line.promoBuyQuantity,
++                    promoGetQuantity = line.promoGetQuantity,
++                    originalUnitPrice = if (line.isPromoReward) {
++                        menuItems.value.find { menu -> menu.id == line.menuItemId }?.price
++                    } else null
+                 )
+             }
+ 
+@@ -858,7 +958,13 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
+                     menuItemName = item.encodedMenuItemName(),
+                     quantity = item.quantity,
+                     unitPrice = item.unitPrice.toLong(),
+-                    subtotal = item.subtotal.toLong()
++                    subtotal = item.subtotal.toLong(),
++                    isPromoReward = item.isPromoReward,
++                    promoId = item.promoId,
++                    promoName = item.promoName,
++                    promoBuyQuantity = item.promoBuyQuantity,
++                    promoGetQuantity = item.promoGetQuantity,
++                    originalUnitPrice = item.originalUnitPrice?.toLong()
+                 )
+             }
+ 
+diff --git a/app/src/main/java/com/sukashawarma/pos/presentation/printer/ReceiptGenerator.kt b/app/src/main/java/com/sukashawarma/pos/presentation/printer/ReceiptGenerator.kt
+index cbbf36d..fb9dc05 100644
+--- a/app/src/main/java/com/sukashawarma/pos/presentation/printer/ReceiptGenerator.kt
++++ b/app/src/main/java/com/sukashawarma/pos/presentation/printer/ReceiptGenerator.kt
+@@ -5,6 +5,7 @@ import com.google.gson.reflect.TypeToken
+ import com.sukashawarma.pos.domain.model.OrderItem
+ import com.sukashawarma.pos.presentation.order_manual.OrderSuccessInfo
+ import com.sukashawarma.pos.domain.printer.EscPosBuilder
++import com.sukashawarma.pos.data.local.entity.SyncState
+ import java.text.NumberFormat
+ import java.text.SimpleDateFormat
+ import java.util.Date
+@@ -60,7 +61,10 @@ object ReceiptGenerator {
+         builder.textLine("Kasir    : $cashierName")
+         builder.textLine("Metode   : $methodStr")
+         
+-        builder.alignCenter().newline().size(1, 2).textLine("No. ${entity.orderNumber}").size(1, 1).newline()
++        val isTemporaryNumber = entity.syncState != SyncState.SYNCED.name
++        val queueNumberLabel = if (isTemporaryNumber) "SEMENTARA ${entity.orderNumber}" else "No. ${entity.orderNumber}"
++        builder.alignCenter().newline().size(1, 2).textLine(queueNumberLabel).size(1, 1).newline()
++        if (isTemporaryNumber) builder.textLine("Belum mendapat nomor server")
+         builder.alignLeft().textLine("-".repeat(width))
+         
+         val listType = object : TypeToken<List<OrderItem>>() {}.type
+@@ -109,7 +113,10 @@ object ReceiptGenerator {
+             builder.textLine("Pelanggan: ${entity.customerName}")
+         }
+         
+-        builder.alignCenter().newline().size(1, 2).textLine("No. ${entity.orderNumber}").size(1, 1).newline()
++        val isTemporaryNumber = entity.syncState != SyncState.SYNCED.name
++        val queueNumberLabel = if (isTemporaryNumber) "SEMENTARA ${entity.orderNumber}" else "No. ${entity.orderNumber}"
++        builder.alignCenter().newline().size(1, 2).textLine(queueNumberLabel).size(1, 1).newline()
++        if (isTemporaryNumber) builder.textLine("BELUM MENDAPAT NOMOR SERVER")
+         builder.alignLeft().textLine("-".repeat(width))
+         
+         val listType = object : TypeToken<List<OrderItem>>() {}.type
+diff --git a/app/src/main/java/com/sukashawarma/pos/presentation/reports/ReportsScreen.kt b/app/src/main/java/com/sukashawarma/pos/presentation/reports/ReportsScreen.kt
+index 175b7c1..7d7f267 100644
+--- a/app/src/main/java/com/sukashawarma/pos/presentation/reports/ReportsScreen.kt
++++ b/app/src/main/java/com/sukashawarma/pos/presentation/reports/ReportsScreen.kt
+@@ -768,6 +768,7 @@ fun TransactionHistoryTable(orders: List<OrderDto>, searchQuery: String, onSearc
+     Surface(shape = RoundedCornerShape(16.dp), color = Color.White, shadowElevation = 2.dp) {
+         BoxWithConstraints(modifier = Modifier.padding(20.dp)) {
+         val isNarrow = maxWidth < 560.dp
++        val availableWidth = maxWidth
+         Column {
+             val titleBlock: @Composable () -> Unit = {
+                 Column {
+@@ -805,11 +806,15 @@ fun TransactionHistoryTable(orders: List<OrderDto>, searchQuery: String, onSearc
+                 it.orderItems?.any { item -> item.displayName.contains(searchQuery, ignoreCase = true) } == true ||
+                 it.paymentMethod?.contains(searchQuery, ignoreCase = true) == true
+             }
++            // horizontalScroll mengukur child dengan maxWidth tak terbatas. Row tabel
++            // memakai weight, jadi child harus diberi lebar finite agar kolom tidak
++            // runtuh menjadi 0 dan hanya padding baris yang terlihat.
++            val tableWidth = maxOf(availableWidth, 680.dp)
+ 
+             Surface(shape = RoundedCornerShape(12.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF3F4F6))) {
+                 val tableScroll = rememberScrollState()
+                 Box(modifier = Modifier.fillMaxWidth().horizontalScroll(tableScroll)) {
+-                    LazyColumn(modifier = Modifier.widthIn(min = 680.dp).heightIn(min = 100.dp, max = 400.dp)) {
++                    LazyColumn(modifier = Modifier.width(tableWidth).heightIn(min = 100.dp, max = 400.dp)) {
+                         item {
+                             Row(modifier = Modifier.fillMaxWidth().background(Color(0xFFF9FAFB)).padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                                 Text("No. Antrian", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color(0xFF6B7280), modifier = Modifier.weight(0.6f))
+@@ -843,7 +848,11 @@ fun TransactionHistoryTable(orders: List<OrderDto>, searchQuery: String, onSearc
+                                     }
+                                     val dateStr = com.sukashawarma.pos.domain.gate.JakartaTime.dateTimeStringOf(order.createdAt)
+                                     Text(dateStr, fontSize = 12.sp, color = Color(0xFF6B7280), modifier = Modifier.weight(1f))
+-                                    val itemsStr = order.orderItems?.joinToString(", ") { it.displayName } ?: ""
++                                    val itemsStr = order.orderItems?.joinToString(", ") { item ->
++                                        if (item.isPromoReward) {
++                                            "Gratis ┬╖ ${item.displayName} (Buy ${item.promoBuyQuantity ?: 1} Get ${item.promoGetQuantity ?: 1})"
++                                        } else item.displayName
++                                    } ?: ""
+                                     Text(itemsStr, fontSize = 14.sp, color = Color(0xFF4B5563), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(2f))
+                                     Box(modifier = Modifier.weight(0.9f)) {
+                                         com.sukashawarma.pos.presentation.components.OrderSourceBadge(source = order.source, channel = order.channel)
+diff --git a/app/src/main/java/com/sukashawarma/pos/presentation/shift/ShiftScreen.kt b/app/src/main/java/com/sukashawarma/pos/presentation/shift/ShiftScreen.kt
+index 7b57984..c57a8b8 100644
+--- a/app/src/main/java/com/sukashawarma/pos/presentation/shift/ShiftScreen.kt
++++ b/app/src/main/java/com/sukashawarma/pos/presentation/shift/ShiftScreen.kt
+@@ -55,6 +55,7 @@ fun ShiftScreen(
+     val pettyCashBalance by viewModel.pettyCashBalance.collectAsState()
+     val approvedTopupsTotal by viewModel.approvedTopupsTotal.collectAsState()
+     val expensesTotal by viewModel.expensesTotal.collectAsState()
++    val adminAdjustmentNote by viewModel.adminAdjustmentNote.collectAsState()
+     
+     val isLoading by viewModel.isLoading.collectAsState()
+     val errorMessage by viewModel.errorMessage.collectAsState()
+@@ -157,7 +158,8 @@ fun ShiftScreen(
+                                     PettyCashCard(
+                                         pettyCashBalance = pettyCashBalance,
+                                         approvedTopupsTotal = approvedTopupsTotal,
+-                                        expensesTotal = expensesTotal
++                                        expensesTotal = expensesTotal,
++                                        adminAdjustmentNote = adminAdjustmentNote
+                                     )
+                                 }
+                                 item {
+@@ -212,7 +214,8 @@ fun ShiftScreen(
+                             PettyCashCard(
+                                 pettyCashBalance = pettyCashBalance,
+                                 approvedTopupsTotal = approvedTopupsTotal,
+-                                expensesTotal = expensesTotal
++                                expensesTotal = expensesTotal,
++                                adminAdjustmentNote = adminAdjustmentNote
+                             )
+                         }
+                         item {
+@@ -302,7 +305,8 @@ fun ShiftScreen(
+                     if (pettyCashLocked) {
+                         Spacer(Modifier.height(8.dp))
+                         Text(
+-                            "Mengikuti sisa saldo petty cash dari closing shift sebelumnya. Hubungi SPV/Admin bila nominal ini perlu diubah.",
++                            adminAdjustmentNote?.let { "Penyesuaian Admin: $it" }
++                                ?: "Mengikuti sisa saldo petty cash dari closing shift sebelumnya. Hubungi SPV/Admin bila nominal ini perlu diubah.",
+                             fontSize = 11.sp,
+                             color = Color(0xFF9CA3AF)
+                         )
+@@ -405,7 +409,12 @@ fun LaciKasirCard(initialCash: Double, shiftSalesTotal: Double, expectedCash: Do
+ }
+ 
+ @Composable
+-fun PettyCashCard(pettyCashBalance: Double, approvedTopupsTotal: Double, expensesTotal: Double) {
++fun PettyCashCard(
++    pettyCashBalance: Double,
++    approvedTopupsTotal: Double,
++    expensesTotal: Double,
++    adminAdjustmentNote: String?
++) {
+     Card(
+         colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
+         shape = RoundedCornerShape(12.dp),
+@@ -421,6 +430,15 @@ fun PettyCashCard(pettyCashBalance: Double, approvedTopupsTotal: Double, expense
+                     Icon(Icons.Default.CreditCard, contentDescription = null, tint = Color.White)
+                 }
+             }
++            if (!adminAdjustmentNote.isNullOrBlank()) {
++                Spacer(Modifier.height(10.dp))
++                Text(
++                    "Penyesuaian Admin: $adminAdjustmentNote",
++                    color = Color(0xFF93C5FD),
++                    fontSize = 12.sp,
++                    fontWeight = FontWeight.SemiBold
++                )
++            }
+             Spacer(Modifier.height(24.dp))
+             Row(Modifier.fillMaxWidth()) {
+                 Column(Modifier.weight(1f)) {
+diff --git a/app/src/main/java/com/sukashawarma/pos/presentation/shift/ShiftViewModel.kt b/app/src/main/java/com/sukashawarma/pos/presentation/shift/ShiftViewModel.kt
+index 2ca5e2c..02d19fd 100644
+--- a/app/src/main/java/com/sukashawarma/pos/presentation/shift/ShiftViewModel.kt
++++ b/app/src/main/java/com/sukashawarma/pos/presentation/shift/ShiftViewModel.kt
+@@ -51,6 +51,33 @@ sealed class LedgerItem {
+     }
+ }
+ 
++/** Saldo pembuka berikutnya harus sama dengan hitungan fisik saat closing terakhir. */
++internal fun ShiftDto.carryOverPettyCash(): Double =
++    actualEndingPettyCash ?: expectedEndingPettyCash ?: startingPettyCash ?: 0.0
++
++/**
++ * Saldo yang ditawarkan pada layar buka shift ketika belum ada shift aktif.
++ * Snapshot adalah sumber kebenaran untuk penyesuaian Admin (mirror web POS).
++ */
++internal fun PettyCashSnapshotDto.openingPettyCash(): Double =
++    openingBalance ?: currentBalance
++
++/**
++ * Determines the next shift's opening petty cash without allowing an empty
++ * snapshot (current_balance = 0, no opening balance, no admin adjustment) to
++ * hide the last physical closing balance.
++ */
++internal fun resolveOpeningPettyCash(
++    snapshot: PettyCashSnapshotDto?,
++    lastClosedShift: ShiftDto?
++): Double {
++    val snapshotIsAuthoritative = snapshot?.openingBalance != null ||
++        snapshot?.pendingAdjustmentId != null ||
++        snapshot?.currentBalance != 0.0
++    if (snapshotIsAuthoritative) return snapshot!!.openingPettyCash()
++    return lastClosedShift?.carryOverPettyCash() ?: snapshot?.openingPettyCash() ?: 0.0
++}
++
+ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
+     private val api = SupabaseClient.api
+     private val database = (application as POSApplication).database
+@@ -75,6 +102,7 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
+     val pettyCashBalance = MutableStateFlow(0.0)
+     val approvedTopupsTotal = MutableStateFlow(0.0)
+     val expensesTotal = MutableStateFlow(0.0)
++    val adminAdjustmentNote = MutableStateFlow<String?>(null)
+ 
+     val ledgerItems = MutableStateFlow<List<LedgerItem>>(emptyList())
+ 
+@@ -146,6 +174,13 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
+                 if (shiftsRes.isSuccessful && shiftsRes.body() != null) {
+                     val list = shiftsRes.body()!!
+                     val openShift = list.find { it.status.equals("open", ignoreCase = true) }
++                    val snapshot = try {
++                        val snapshotRes = api.getPettyCashSnapshot(OutletIdPayload(outletId))
++                        if (snapshotRes.isSuccessful) snapshotRes.body() else null
++                    } catch (_: Exception) {
++                        null
++                    }
++                    adminAdjustmentNote.value = snapshot?.lastAdjustmentNote ?: snapshot?.pendingNote
+                     
+                     activeShift.value = openShift
+                     isShiftOpen.value = openShift != null
+@@ -212,8 +247,13 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
+                             .sumOf { it.amount }
+                         expensesTotal.value = expensesSum
+ 
+-                        // Calculate actual petty cash balance locally to ensure voided expenses are ignored
+-                        pettyCashBalance.value = initialPettyCash.value + approvedTopupsTotal.value - expensesTotal.value
++                        // Snapshot server adalah sumber utama supaya penyesuaian Admin
++                        // identik dengan Web POS. Rumus lokal hanya fallback jaringan.
++                        pettyCashBalance.value = if (snapshot?.hasActiveShift == true) {
++                            snapshot.currentBalance
++                        } else {
++                            initialPettyCash.value + approvedTopupsTotal.value - expensesTotal.value
++                        }
+                     } else {
+                         // Shift is closed
+                         ledgerItems.value = emptyList()
+@@ -222,66 +262,23 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
+                         initialPettyCash.value = 0.0
+                         expectedCash.value = 0.0
+ 
+-                        // Sama seperti web (page.tsx fetchCurrentState): kunci nominal setoran
+-                        // awal Dana Operasional ke sisa petty cash shift terakhir yang closed.
+-                        try {
+-                            val lastShiftRes = api.getShifts(
+-                                mapOf(
+-                                    "outlet_id" to "eq.$outletId",
+-                                    "status" to "eq.closed",
+-                                    "order" to "start_time.desc",
+-                                    "limit" to "1"
+-                                )
+-                            )
+-                            val lastShift = lastShiftRes.body()?.firstOrNull()
+-                            if (lastShiftRes.isSuccessful && lastShift != null) {
+-                                var endingBalance = lastShift.actualEndingPettyCash
+-                                    ?: lastShift.expectedEndingPettyCash
+-                                    ?: lastShift.startingPettyCash ?: 0.0
+-
+-                                // Tambahkan topup & pengeluaran yang terjadi SETELAH shift itu
+-                                // ditutup (mis. leader menyerahkan dana semalam sebelum shift
+-                                // berikutnya dibuka), persis logika interim di web.
+-                                val refMillis = LedgerItem.parseDate(lastShift.endTime)
+-                                if (refMillis > 0) {
+-                                    val interimTopupsRes = api.getPettyCashTopups(mapOf("outlet_id" to "eq.$outletId"))
+-                                    val interimTopups = interimTopupsRes.body()
+-                                        ?.filter { it.status in SUDAH_DI_LACI && it.touchesShiftSince(refMillis, inclusive = false) }
+-                                        ?.sumOf { it.amount } ?: 0.0
+-
+-                                    val interimExpensesRes = api.getPettyCashExpenses("eq.$outletId")
+-                                    val interimExpenses = interimExpensesRes.body()
+-                                        ?.filter { it.deletedAt.isNullOrBlank() && LedgerItem.parseDate(it.createdAt ?: it.expenseDate) > refMillis }
+-                                        ?.sumOf { it.amount } ?: 0.0
+-
+-                                    endingBalance += interimTopups - interimExpenses
+-                                }
+-
+-                                openShiftInput.value = endingBalance.toInt().toString()
+-                                pettyCashLocked.value = true
+-                            } else {
+-                                // Belum pernah ada shift closed sama sekali (outlet baru) ΓÇö
+-                                // fallback ke shift manapun yang starting_petty_cash-nya > 0.
+-                                val fallbackRes = api.getShifts(
+-                                    mapOf(
+-                                        "outlet_id" to "eq.$outletId",
+-                                        "starting_petty_cash" to "gt.0",
+-                                        "order" to "start_time.desc",
+-                                        "limit" to "1"
+-                                    )
+-                                )
+-                                val fallbackShift = fallbackRes.body()?.firstOrNull()
+-                                if (fallbackRes.isSuccessful && fallbackShift?.startingPettyCash != null) {
+-                                    openShiftInput.value = fallbackShift.startingPettyCash!!.toInt().toString()
+-                                    pettyCashLocked.value = true
+-                                } else {
+-                                    openShiftInput.value = "0"
+-                                    pettyCashLocked.value = false
+-                                }
+-                            }
+-                        } catch (e: Exception) {
+-                            e.printStackTrace()
++                        // A snapshot yang kosong (current_balance = 0 tanpa opening
++                        // balance/penyesuaian) tidak boleh menimpa saldo fisik closing
++                        // terakhir. Nilai actual 0 tetap sah bila memang tersimpan di shift.
++                        val lastShiftRes = api.getShifts(
++                            mapOf(
++                                "outlet_id" to "eq.$outletId",
++                                "status" to "eq.closed",
++                                "limit" to "1"
++                            ),
++                            order = "end_time.desc"
++                        )
++                        if (!lastShiftRes.isSuccessful) {
++                            error("Gagal mengambil saldo closing shift terakhir (${lastShiftRes.code()})")
+                         }
++                        val lastClosedShift = lastShiftRes.body()?.firstOrNull()
++                        openShiftInput.value = resolveOpeningPettyCash(snapshot, lastClosedShift).toInt().toString()
++                        pettyCashLocked.value = snapshot?.pendingAdjustmentId != null || snapshot?.shiftId != null || lastClosedShift != null
+                     }
+                 }
+             } catch (e: Exception) {
+@@ -371,7 +368,13 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
+             clearMessages()
+             try {
+                 val expectedCashVal = expectedCash.value
+-                val expectedPettyCashVal = pettyCashBalance.value
++                val latestSnapshot = api.getPettyCashSnapshot(OutletIdPayload(currentOutletId.value))
++                val expectedPettyCashVal = if (latestSnapshot.isSuccessful) {
++                    latestSnapshot.body()?.currentBalance ?: pettyCashBalance.value
++                } else {
++                    pettyCashBalance.value
++                }
++                pettyCashBalance.value = expectedPettyCashVal
+                 
+                 // Format end time correctly
+                 val format = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.getDefault())
+diff --git a/deploy_script.ps1 b/deploy_script.ps1
+index d6cb463..6250ff6 100644
+--- a/deploy_script.ps1
++++ b/deploy_script.ps1
+@@ -1,9 +1,9 @@
+ $ErrorActionPreference = 'Stop'
+ $ServiceKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtocGtvcmVhYXVjdnlxZmh5bmZxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MDk2MzI5MiwiZXhwIjoyMDk2NTM5MjkyfQ.Dy0QMAHfB8EU9BK-JuyRrBidpG6iM94t9RtiJ_viZz8"
+ 
+-Copy-Item "app\build\outputs\apk\release\app-release.apk" "release\Suka-Shawarma-POS-v1.0.71.apk" -Force
++Copy-Item "app\build\outputs\apk\release\app-release.apk" "release\Suka-Shawarma-POS-v1.0.80.apk" -Force
+ Write-Host "Creating delta patch..."
+-.\scripts\create-archive-patch.ps1 -OldApk "release\Suka-Shawarma-POS-v1.0.70.apk" -NewApk "release\Suka-Shawarma-POS-v1.0.71.apk" -PatchFile "release\Suka-Shawarma-POS-v1.0.70-to-v1.0.71.fbf" -VerifyOutput "release\Suka-Shawarma-POS-v1.0.71-archive-reconstructed.apk"
++.\scripts\create-archive-patch.ps1 -OldApk "release\Suka-Shawarma-POS-v1.0.79.apk" -NewApk "release\Suka-Shawarma-POS-v1.0.80.apk" -PatchFile "release\Suka-Shawarma-POS-v1.0.79-to-v1.0.80.fbf" -VerifyOutput "release\Suka-Shawarma-POS-v1.0.80-archive-reconstructed.apk"
+ 
+ Write-Host "Publishing update..."
+-.\scripts\publish.ps1 -ServiceRoleKey $ServiceKey -NewApkPath "release\Suka-Shawarma-POS-v1.0.71.apk" -PatchFilePath "release\Suka-Shawarma-POS-v1.0.70-to-v1.0.71.fbf" -NewVersionCode 72 -NewVersionName "1.0.71" -BaseVersionCode 71
++.\scripts\publish.ps1 -ServiceRoleKey $ServiceKey -NewApkPath "release\Suka-Shawarma-POS-v1.0.80.apk" -PatchFilePath "release\Suka-Shawarma-POS-v1.0.79-to-v1.0.80.fbf" -NewVersionCode 81 -NewVersionName "1.0.80" -BaseVersionCode 80

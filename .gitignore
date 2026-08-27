@@ -24,3 +24,5 @@ release/
 # Crash/replay dump JVM dari sesi gradle lokal.
 hs_err_pid*.log
 replay_pid*.log
+testsprite_tests/tmp/
+testsprite_tests/tmp/config.json

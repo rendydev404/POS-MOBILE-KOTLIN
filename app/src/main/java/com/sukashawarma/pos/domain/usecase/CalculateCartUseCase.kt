@@ -76,6 +76,37 @@ class CalculateCartUseCase {
         val appliedPromoIds = mutableSetOf<String>()
         val appliedPromoNames = mutableSetOf<String>()
 
+        // B1G1 berlaku hanya pada transaksi POS offline. Baris hadiah Rp0 dibuat
+        // oleh keranjang; kalkulator hanya menetapkan eksklusivitas dan audit promo.
+        // Tidak ada pemeriksaan stok di sini karena stok aplikasi bisa tertinggal dari
+        // kondisi fisik outlet.
+        val buyOneGetOnePromo = if (!isFoodAppChannel &&
+            (channel.isNullOrBlank() || channel.equals("endorse", ignoreCase = true))) {
+            eligiblePromos.firstOrNull { promo ->
+                promo.discountType == DiscountType.BUY_ONE_GET_ONE &&
+                    promo.scope == PromoScope.ITEM &&
+                    promo.menuItemId != null &&
+                    items.any {
+                        it.menuItemId == promo.menuItemId &&
+                            !it.isPromoReward &&
+                            it.quantity >= promo.buyQuantity
+                    }
+            }
+        } else null
+
+        if (buyOneGetOnePromo != null) {
+            appliedPromoIds += buyOneGetOnePromo.id
+            appliedPromoNames += buyOneGetOnePromo.name
+            return CartCalculationResult(
+                subtotal = subtotal,
+                totalDiscount = 0.0,
+                promoSubsidy = 0.0,
+                finalTotal = subtotal,
+                appliedPromoIds = appliedPromoIds,
+                appliedPromoNames = appliedPromoNames.toList()
+            )
+        }
+
         var itemDiscountTotal = 0.0
         val itemPromos = eligiblePromos.filter { it.scope == PromoScope.ITEM && it.menuItemId != null }
         val globalPromo = eligiblePromos.firstOrNull {
@@ -88,6 +119,7 @@ class CalculateCartUseCase {
                 val itemDiscount = when (matchingPromo.discountType) {
                     DiscountType.PERCENTAGE -> item.subtotal * (matchingPromo.discountValue / 100.0)
                     DiscountType.NOMINAL -> matchingPromo.discountValue * item.quantity
+                    DiscountType.BUY_ONE_GET_ONE -> 0.0
                 }
                 itemDiscountTotal += itemDiscount
                 appliedPromoIds += matchingPromo.id
@@ -101,6 +133,7 @@ class CalculateCartUseCase {
             when (globalPromo.discountType) {
                 DiscountType.PERCENTAGE -> subtotal * (globalPromo.discountValue / 100.0)
                 DiscountType.NOMINAL -> globalPromo.discountValue
+                DiscountType.BUY_ONE_GET_ONE -> 0.0
             }
         } else 0.0
 

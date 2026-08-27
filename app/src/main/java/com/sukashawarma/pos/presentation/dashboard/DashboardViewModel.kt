@@ -22,6 +22,7 @@ import com.sukashawarma.pos.domain.model.*
 import com.sukashawarma.pos.domain.usecase.PrintReceiptUseCase
 import com.sukashawarma.pos.domain.usecase.OrderStatusUpdateGuard
 import com.sukashawarma.pos.domain.usecase.OrderStatusUpdatePolicy
+import com.sukashawarma.pos.domain.usecase.OrderSyncRetryPolicy
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.flow.*
@@ -241,6 +242,28 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
         viewModelScope.launch {
+            var retryDelayMs = OrderSyncRetryPolicy.INITIAL_DELAY_MS
+            while (isActive) {
+                delay(retryDelayMs)
+
+                val outletId = currentOutletId.value
+                if (!NetworkMonitor.isOnline.value || outletId.isBlank()) {
+                    retryDelayMs = OrderSyncRetryPolicy.INITIAL_DELAY_MS
+                    continue
+                }
+                if (pendingSyncCount.value <= 0) {
+                    retryDelayMs = OrderSyncRetryPolicy.INITIAL_DELAY_MS
+                    continue
+                }
+
+                val synced = trySyncPendingOrders(outletId)
+                retryDelayMs = OrderSyncRetryPolicy.afterAttempt(
+                    previousDelayMs = retryDelayMs,
+                    syncedAnyOrder = synced > 0
+                )
+            }
+        }
+        viewModelScope.launch {
             merge(
                 currentOutletId.map { },
                 com.sukashawarma.pos.data.remote.GlobalEventBus.orderSyncEvent.map { },
@@ -274,15 +297,12 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     /** Fase 3: drains any orders saved locally while offline, then refreshes from the server. */
-    private suspend fun trySyncPendingOrders(outletId: String) {
-        if (outletId.isBlank()) return
-        val synced = syncEngine.syncPendingOrders(outletId)
-        if (synced > 0) {
-            syncOrdersFromServer(outletId)
-        }
+    private suspend fun trySyncPendingOrders(outletId: String): Int {
+        if (outletId.isBlank()) return 0
+        // OrderSyncEngine mengirim event refresh setelah berhasil. Tidak perlu
+        // menarik server sekali lagi di sini karena itu menggandakan request.
+        return syncEngine.syncPendingOrders(outletId)
     }
-
-    /** Periodic sync loop removed in favor of NetworkMonitor trigger */
 
     override fun onCleared() {
         super.onCleared()
@@ -543,6 +563,30 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         _updatingOrderIds.update { it + order.id }
         viewModelScope.launch {
             try {
+                val localOrder = orderDao.getOrderById(order.id)
+                val needsSync = localOrder != null &&
+                    localOrder.syncState != com.sukashawarma.pos.data.local.entity.SyncState.SYNCED.name
+                if (needsSync) {
+                    if (!NetworkMonitor.isOnline.value) {
+                        _statusUpdateErrors.tryEmit(
+                            "Order sementara #${order.orderNumber} masih aman di tablet. " +
+                                "Hubungkan internet lalu coba lagi; aplikasi juga akan mengirimnya otomatis."
+                        )
+                        return@launch
+                    }
+
+                    _statusUpdateErrors.tryEmit(
+                        "Order sementara #${order.orderNumber} sedang dikirim ke server…"
+                    )
+                    if (!syncEngine.syncOrder(order.id)) {
+                        _statusUpdateErrors.tryEmit(
+                            "Order sementara #${order.orderNumber} masih aman di tablet, " +
+                                "tetapi server belum merespons. Aplikasi akan mencoba lagi otomatis."
+                        )
+                        return@launch
+                    }
+                }
+
                 // Order Website tidak pernah dapat cashier_name saat dibuat (dibuat oleh
                 // customer, bukan kasir) — dicatat saat kasir benar-benar menyelesaikannya.
                 val cashierNameToRecord = currentCashierName.value.takeIf { it.isNotBlank() }
@@ -619,7 +663,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                         "Status order ${order.id} tidak diubah: HTTP ${res.code()}, baris=$updatedRows"
                     )
                     _statusUpdateErrors.tryEmit(
-                        "Order #${order.orderNumber} belum tersimpan di server. Status tidak diubah; coba lagi."
+                        "Server belum mengizinkan perubahan order ini. Status tetap aman dan tidak diubah; coba lagi."
                     )
                 }
             } catch (e: Exception) {
@@ -628,6 +672,48 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 android.util.Log.e("DashboardViewModel", "Update status order ${order.id} gagal", e)
                 _statusUpdateErrors.tryEmit(
                     "Gagal mengubah order #${order.orderNumber}. Order tetap aman di daftar; cek koneksi lalu coba lagi."
+                )
+            } finally {
+                statusUpdateGuard.finish(order.id)
+                _updatingOrderIds.update { it - order.id }
+            }
+        }
+    }
+
+    /** Aksi kasir untuk memaksa satu order lokal dikirim tanpa mengubah statusnya. */
+    fun retryOrderSync(order: Order) {
+        if (!statusUpdateGuard.tryBegin(order.id)) return
+        _updatingOrderIds.update { it + order.id }
+        viewModelScope.launch {
+            try {
+                if (!NetworkMonitor.isOnline.value) {
+                    _statusUpdateErrors.tryEmit(
+                        "Order sementara #${order.orderNumber} masih aman di tablet. Internet belum siap."
+                    )
+                    return@launch
+                }
+
+                _statusUpdateErrors.tryEmit(
+                    "Mengirim order sementara #${order.orderNumber} ke server…"
+                )
+                if (syncEngine.syncOrder(order.id)) {
+                    val officialNumber = orderDao.getOrderById(order.id)?.orderNumber
+                    _statusUpdateErrors.tryEmit(
+                        if (officialNumber != null) {
+                            "Order berhasil dikirim. Nomor resmi dari server: #$officialNumber."
+                        } else {
+                            "Order berhasil dikirim ke server."
+                        }
+                    )
+                } else {
+                    _statusUpdateErrors.tryEmit(
+                        "Server belum merespons. Order tetap aman di tablet dan akan dicoba lagi otomatis."
+                    )
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("DashboardViewModel", "Retry order ${order.id} gagal", e)
+                _statusUpdateErrors.tryEmit(
+                    "Pengiriman belum berhasil. Order tetap aman di tablet dan akan dicoba lagi otomatis."
                 )
             } finally {
                 statusUpdateGuard.finish(order.id)

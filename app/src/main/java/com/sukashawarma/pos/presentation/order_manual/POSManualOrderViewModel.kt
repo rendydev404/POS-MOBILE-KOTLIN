@@ -210,6 +210,7 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                         val type = when(dto.discountType?.lowercase()) {
                             "percentage" -> com.sukashawarma.pos.domain.model.DiscountType.PERCENTAGE
                             "nominal" -> com.sukashawarma.pos.domain.model.DiscountType.NOMINAL
+                            "buy_one_get_one" -> com.sukashawarma.pos.domain.model.DiscountType.BUY_ONE_GET_ONE
                             else -> return@mapNotNull null
                         }
                         com.sukashawarma.pos.domain.model.Promo(
@@ -228,10 +229,13 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                             endDate = dto.endDate?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() },
                             dailyStartTime = dto.dailyStartTime,
                             dailyEndTime = dto.dailyEndTime,
-                            applyToFoodApps = dto.applyToFoodApps ?: false
+                            applyToFoodApps = dto.applyToFoodApps ?: false,
+                            buyQuantity = (dto.buyQuantity ?: 1).coerceAtLeast(1),
+                            getQuantity = (dto.getQuantity ?: 1).coerceAtLeast(1)
                         )
                     }
                     activePromos.value = mappedPromos
+                    reconcileBuyOneGetOneReward()
                 }
             } catch (e: Exception) {
                 // Ignore for offline mode, wait for retry mechanism if needed
@@ -260,6 +264,7 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
     fun selectChannel(channelId: String) {
         channel.value = channelId
         promoSubsidy.value = ""
+        reconcileBuyOneGetOneReward()
     }
 
     // ---------------------------------------------------------------------
@@ -297,7 +302,9 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
     fun isDisabled(item: MenuItem): Boolean = !isItemAvailable(item, kioskSettings.value)
 
     fun cartQuantityFor(menuItemId: String): Int =
-        cartLines.value.filter { it.menuItemId == menuItemId }.sumOf { it.quantity }
+        cartLines.value
+            .filter { it.menuItemId == menuItemId && !it.isPromoReward }
+            .sumOf { it.quantity }
 
     /** Port of `wrappedCalculateItemPrice` (page.tsx:449-452) — channel_prices override,
      *  forced to 0 for endorse. */
@@ -402,6 +409,7 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
     private fun findPlainLine(menuItemId: String): CartLine? =
         cartLines.value.firstOrNull { line ->
             line.menuItemId == menuItemId &&
+                !line.isPromoReward &&
                 line.parentId == null &&
                 line.note.isBlank() &&
                 line.packageChoices.isEmpty() &&
@@ -421,6 +429,7 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                     unitPrice = priceFor(item),
                     quantity = 1
                 )
+                reconcileBuyOneGetOneReward()
             }
             return
         }
@@ -502,6 +511,7 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
         }
 
         cartLines.value = cartLines.value + parentLine + extraLines
+        reconcileBuyOneGetOneReward()
         closeItemModal()
     }
 
@@ -510,12 +520,14 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
     // ---------------------------------------------------------------------
 
     fun setLineQuantity(cartItemId: String, qty: Int) {
+        if (cartLines.value.any { it.cartItemId == cartItemId && it.isPromoReward }) return
         if (qty <= 0) {
             val toRemove = cartLines.value
                 .filter { it.cartItemId == cartItemId || it.parentId == cartItemId }
                 .map { it.cartItemId }
                 .toSet()
             cartLines.value = cartLines.value.filterNot { it.cartItemId in toRemove }
+            reconcileBuyOneGetOneReward()
             return
         }
         val newQty = minOf(qty, 10)
@@ -526,6 +538,69 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                 else -> line
             }
         }
+        reconcileBuyOneGetOneReward()
+    }
+
+    /**
+     * Buy X Get Y dibuat sebagai satu line hadiah Rp0 yang terpisah. Line ini selalu
+     * dibangun ulang dari item berbayar, sehingga perubahan kuantitas, promo realtime,
+     * atau perpindahan ke kanal online tidak pernah meninggalkan hadiah basi di cart.
+     */
+    private fun reconcileBuyOneGetOneReward() {
+        val paidLines = cartLines.value.filterNot { it.isPromoReward }
+        val isOfflineCashier = mode.value == OrderMode.WALKIN || mode.value == OrderMode.ENDORSE
+        val now = System.currentTimeMillis()
+        val promo = if (isOfflineCashier) activePromos.value.firstOrNull { candidate ->
+            candidate.discountType == com.sukashawarma.pos.domain.model.DiscountType.BUY_ONE_GET_ONE &&
+                candidate.scope == com.sukashawarma.pos.domain.model.PromoScope.ITEM &&
+                candidate.isActive &&
+                candidate.menuItemId != null &&
+                (candidate.startDate == null || now >= candidate.startDate) &&
+                (candidate.endDate == null || now < candidate.endDate) &&
+                (candidate.usageLimit == null || candidate.currentUsage < candidate.usageLimit) &&
+                isWithinDailyPromoWindow(candidate, now) &&
+                paidLines.any {
+                    it.menuItemId == candidate.menuItemId && it.quantity >= candidate.buyQuantity
+                }
+        } else null
+
+        val trigger = promo?.let { active ->
+            paidLines.firstOrNull {
+                it.menuItemId == active.menuItemId && it.quantity >= active.buyQuantity
+            }
+        }
+        val reward = if (promo != null && trigger != null) {
+            CartLine(
+                menuItemId = trigger.menuItemId,
+                name = trigger.name,
+                unitPrice = 0.0,
+                quantity = promo.getQuantity,
+                isPromoReward = true,
+                promoId = promo.id,
+                promoName = promo.name,
+                promoBuyQuantity = promo.buyQuantity,
+                promoGetQuantity = promo.getQuantity,
+                sourceCartItemId = trigger.cartItemId
+            )
+        } else null
+        cartLines.value = if (reward == null) paidLines else paidLines + reward
+    }
+
+    private fun isWithinDailyPromoWindow(promo: Promo, now: Long): Boolean {
+        val start = promo.dailyStartTime ?: return true
+        val end = promo.dailyEndTime ?: return true
+        fun millisOfDay(value: String): Long? {
+            val parts = value.split(":")
+            val hour = parts.getOrNull(0)?.toLongOrNull() ?: return null
+            val minute = parts.getOrNull(1)?.toLongOrNull() ?: return null
+            val second = parts.getOrNull(2)?.toLongOrNull() ?: 0L
+            return (hour * 3_600L + minute * 60L + second) * 1_000L
+        }
+        val startMillis = millisOfDay(start) ?: return false
+        val endMillis = millisOfDay(end) ?: return false
+        val nowWib = (now + 7L * 3_600_000L) % 86_400_000L
+        return if (startMillis <= endMillis) nowWib >= startMillis && nowWib < endMillis
+        else nowWib >= startMillis || nowWib < endMillis
     }
 
     // ---------------------------------------------------------------------
@@ -534,7 +609,19 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
 
     fun cartTotals(): CartTotals {
         val items = cartLines.value.map {
-            OrderItem(menuItemId = it.menuItemId, name = it.name, quantity = it.quantity, unitPrice = it.unitPrice, subtotal = it.subtotal)
+            OrderItem(
+                menuItemId = it.menuItemId,
+                name = it.name,
+                quantity = it.quantity,
+                unitPrice = it.unitPrice,
+                subtotal = it.subtotal,
+                isPromoReward = it.isPromoReward,
+                promoId = it.promoId,
+                promoName = it.promoName,
+                promoBuyQuantity = it.promoBuyQuantity,
+                promoGetQuantity = it.promoGetQuantity,
+                originalUnitPrice = if (it.isPromoReward) menuItems.value.find { menu -> menu.id == it.menuItemId }?.price else null
+            )
         }
         val activeChannel = if (mode.value == OrderMode.WEBSITE) "website" else channel.value
         val calc = calculateCartUseCase.execute(items, activePromos.value, activeChannel)
@@ -628,6 +715,7 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
         return when (promo.discountType) {
             DiscountType.PERCENTAGE -> price * (1 - promo.discountValue / 100.0)
             DiscountType.NOMINAL -> maxOf(0.0, price - promo.discountValue)
+            DiscountType.BUY_ONE_GET_ONE -> price
         }
     }
 
@@ -781,6 +869,10 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
     }
 
     private suspend fun submitOrderInternal(outletId: String) {
+            // Jadwal promo dapat berakhir ketika kasir masih berada di halaman bayar.
+            // Rekonsiliasi terakhir memastikan hadiah yang tersimpan selalu sesuai
+            // keadaan promo saat transaksi benar-benar dibuat.
+            reconcileBuyOneGetOneReward()
             val totals = cartTotals()
             val finalCustomerName = if (mode.value == OrderMode.WEBSITE && pickupTime.value.isNotBlank()) {
                 "${customerName.value} [Jam Ambil: ${pickupTime.value}]"
@@ -814,7 +906,15 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                     unitPrice = line.unitPrice,
                     subtotal = line.subtotal,
                     note = line.note,
-                    isChild = line.parentId != null
+                    isChild = line.parentId != null,
+                    isPromoReward = line.isPromoReward,
+                    promoId = line.promoId,
+                    promoName = line.promoName,
+                    promoBuyQuantity = line.promoBuyQuantity,
+                    promoGetQuantity = line.promoGetQuantity,
+                    originalUnitPrice = if (line.isPromoReward) {
+                        menuItems.value.find { menu -> menu.id == line.menuItemId }?.price
+                    } else null
                 )
             }
 
@@ -858,7 +958,13 @@ class POSManualOrderViewModel(application: Application) : AndroidViewModel(appli
                     menuItemName = item.encodedMenuItemName(),
                     quantity = item.quantity,
                     unitPrice = item.unitPrice.toLong(),
-                    subtotal = item.subtotal.toLong()
+                    subtotal = item.subtotal.toLong(),
+                    isPromoReward = item.isPromoReward,
+                    promoId = item.promoId,
+                    promoName = item.promoName,
+                    promoBuyQuantity = item.promoBuyQuantity,
+                    promoGetQuantity = item.promoGetQuantity,
+                    originalUnitPrice = item.originalUnitPrice?.toLong()
                 )
             }
 

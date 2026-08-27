@@ -26,7 +26,7 @@ import com.sukashawarma.pos.data.local.entity.SyncQueueEntity
         LocalImageCacheEntity::class
     ],
     version = 11,
-    exportSchema = false
+    exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun orderDao(): OrderDao

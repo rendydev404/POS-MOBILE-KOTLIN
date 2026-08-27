@@ -16,7 +16,14 @@ data class CartLine(
     val quantity: Int,
     val note: String = "",
     val parentId: String? = null,
-    val packageChoices: Map<String, String> = emptyMap()
+    val packageChoices: Map<String, String> = emptyMap(),
+    /** Baris hadiah sistem; kasir tidak boleh mengubah quantity atau harganya. */
+    val isPromoReward: Boolean = false,
+    val promoId: String? = null,
+    val promoName: String? = null,
+    val promoBuyQuantity: Int? = null,
+    val promoGetQuantity: Int? = null,
+    val sourceCartItemId: String? = null
 ) {
     val subtotal: Double get() = unitPrice * quantity
 }

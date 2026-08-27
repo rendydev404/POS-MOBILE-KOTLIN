@@ -908,6 +908,23 @@ private fun OrderRow(
                         .background(Color(0xFFF9FAFB))
                         .padding(16.dp)
                 ) {
+                    val rewardItem = order.orderItems.firstOrNull { it.isPromoReward }
+                    if (rewardItem != null) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color(0xFFDCFCE7),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF86EFAC)),
+                            modifier = Modifier.padding(bottom = 10.dp)
+                        ) {
+                            Text(
+                                "BUY ${rewardItem.promoBuyQuantity ?: 1} GET ${rewardItem.promoGetQuantity ?: 1}",
+                                color = Color(0xFF166534),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
                     val groupedItems = remember(order.orderItems) { groupOrderItems(order.orderItems) }
                     groupedItems.forEach { (root, children) ->
                         Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
@@ -917,9 +934,17 @@ private fun OrderRow(
                             ) {
                                 Row {
                                     Text("${root.raw.quantity}x", fontWeight = FontWeight.Bold, color = Color(0xFF374151), modifier = Modifier.width(30.dp))
-                                    Text(root.name, color = Color(0xFF4B5563), fontWeight = FontWeight.Medium)
+                                    Text(
+                                        if (root.raw.isPromoReward) "Gratis · ${root.name}" else root.name,
+                                        color = if (root.raw.isPromoReward) Color(0xFF15803D) else Color(0xFF4B5563),
+                                        fontWeight = FontWeight.Medium
+                                    )
                                 }
-                                Text("Rp ${String.format("%,.0f", root.raw.subtotal)}", color = Color(0xFF374151), fontWeight = FontWeight.Medium)
+                                Text(
+                                    if (root.raw.isPromoReward) "Rp 0" else "Rp ${String.format("%,.0f", root.raw.subtotal)}",
+                                    color = if (root.raw.isPromoReward) Color(0xFF15803D) else Color(0xFF374151),
+                                    fontWeight = FontWeight.Medium
+                                )
                             }
                             if (root.note.isNotBlank()) {
                                 Surface(

@@ -51,6 +51,33 @@ sealed class LedgerItem {
     }
 }
 
+/** Saldo pembuka berikutnya harus sama dengan hitungan fisik saat closing terakhir. */
+internal fun ShiftDto.carryOverPettyCash(): Double =
+    actualEndingPettyCash ?: expectedEndingPettyCash ?: startingPettyCash ?: 0.0
+
+/**
+ * Saldo yang ditawarkan pada layar buka shift ketika belum ada shift aktif.
+ * Snapshot adalah sumber kebenaran untuk penyesuaian Admin (mirror web POS).
+ */
+internal fun PettyCashSnapshotDto.openingPettyCash(): Double =
+    openingBalance ?: currentBalance
+
+/**
+ * Determines the next shift's opening petty cash without allowing an empty
+ * snapshot (current_balance = 0, no opening balance, no admin adjustment) to
+ * hide the last physical closing balance.
+ */
+internal fun resolveOpeningPettyCash(
+    snapshot: PettyCashSnapshotDto?,
+    lastClosedShift: ShiftDto?
+): Double {
+    val snapshotIsAuthoritative = snapshot?.openingBalance != null ||
+        snapshot?.pendingAdjustmentId != null ||
+        snapshot?.currentBalance != 0.0
+    if (snapshotIsAuthoritative) return snapshot!!.openingPettyCash()
+    return lastClosedShift?.carryOverPettyCash() ?: snapshot?.openingPettyCash() ?: 0.0
+}
+
 class ShiftViewModel(application: Application) : AndroidViewModel(application) {
     private val api = SupabaseClient.api
     private val database = (application as POSApplication).database
@@ -75,6 +102,7 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
     val pettyCashBalance = MutableStateFlow(0.0)
     val approvedTopupsTotal = MutableStateFlow(0.0)
     val expensesTotal = MutableStateFlow(0.0)
+    val adminAdjustmentNote = MutableStateFlow<String?>(null)
 
     val ledgerItems = MutableStateFlow<List<LedgerItem>>(emptyList())
 
@@ -146,6 +174,13 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
                 if (shiftsRes.isSuccessful && shiftsRes.body() != null) {
                     val list = shiftsRes.body()!!
                     val openShift = list.find { it.status.equals("open", ignoreCase = true) }
+                    val snapshot = try {
+                        val snapshotRes = api.getPettyCashSnapshot(OutletIdPayload(outletId))
+                        if (snapshotRes.isSuccessful) snapshotRes.body() else null
+                    } catch (_: Exception) {
+                        null
+                    }
+                    adminAdjustmentNote.value = snapshot?.lastAdjustmentNote ?: snapshot?.pendingNote
                     
                     activeShift.value = openShift
                     isShiftOpen.value = openShift != null
@@ -212,8 +247,13 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
                             .sumOf { it.amount }
                         expensesTotal.value = expensesSum
 
-                        // Calculate actual petty cash balance locally to ensure voided expenses are ignored
-                        pettyCashBalance.value = initialPettyCash.value + approvedTopupsTotal.value - expensesTotal.value
+                        // Snapshot server adalah sumber utama supaya penyesuaian Admin
+                        // identik dengan Web POS. Rumus lokal hanya fallback jaringan.
+                        pettyCashBalance.value = if (snapshot?.hasActiveShift == true) {
+                            snapshot.currentBalance
+                        } else {
+                            initialPettyCash.value + approvedTopupsTotal.value - expensesTotal.value
+                        }
                     } else {
                         // Shift is closed
                         ledgerItems.value = emptyList()
@@ -222,66 +262,23 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
                         initialPettyCash.value = 0.0
                         expectedCash.value = 0.0
 
-                        // Sama seperti web (page.tsx fetchCurrentState): kunci nominal setoran
-                        // awal Dana Operasional ke sisa petty cash shift terakhir yang closed.
-                        try {
-                            val lastShiftRes = api.getShifts(
-                                mapOf(
-                                    "outlet_id" to "eq.$outletId",
-                                    "status" to "eq.closed",
-                                    "order" to "start_time.desc",
-                                    "limit" to "1"
-                                )
-                            )
-                            val lastShift = lastShiftRes.body()?.firstOrNull()
-                            if (lastShiftRes.isSuccessful && lastShift != null) {
-                                var endingBalance = lastShift.actualEndingPettyCash
-                                    ?: lastShift.expectedEndingPettyCash
-                                    ?: lastShift.startingPettyCash ?: 0.0
-
-                                // Tambahkan topup & pengeluaran yang terjadi SETELAH shift itu
-                                // ditutup (mis. leader menyerahkan dana semalam sebelum shift
-                                // berikutnya dibuka), persis logika interim di web.
-                                val refMillis = LedgerItem.parseDate(lastShift.endTime)
-                                if (refMillis > 0) {
-                                    val interimTopupsRes = api.getPettyCashTopups(mapOf("outlet_id" to "eq.$outletId"))
-                                    val interimTopups = interimTopupsRes.body()
-                                        ?.filter { it.status in SUDAH_DI_LACI && it.touchesShiftSince(refMillis, inclusive = false) }
-                                        ?.sumOf { it.amount } ?: 0.0
-
-                                    val interimExpensesRes = api.getPettyCashExpenses("eq.$outletId")
-                                    val interimExpenses = interimExpensesRes.body()
-                                        ?.filter { it.deletedAt.isNullOrBlank() && LedgerItem.parseDate(it.createdAt ?: it.expenseDate) > refMillis }
-                                        ?.sumOf { it.amount } ?: 0.0
-
-                                    endingBalance += interimTopups - interimExpenses
-                                }
-
-                                openShiftInput.value = endingBalance.toInt().toString()
-                                pettyCashLocked.value = true
-                            } else {
-                                // Belum pernah ada shift closed sama sekali (outlet baru) —
-                                // fallback ke shift manapun yang starting_petty_cash-nya > 0.
-                                val fallbackRes = api.getShifts(
-                                    mapOf(
-                                        "outlet_id" to "eq.$outletId",
-                                        "starting_petty_cash" to "gt.0",
-                                        "order" to "start_time.desc",
-                                        "limit" to "1"
-                                    )
-                                )
-                                val fallbackShift = fallbackRes.body()?.firstOrNull()
-                                if (fallbackRes.isSuccessful && fallbackShift?.startingPettyCash != null) {
-                                    openShiftInput.value = fallbackShift.startingPettyCash!!.toInt().toString()
-                                    pettyCashLocked.value = true
-                                } else {
-                                    openShiftInput.value = "0"
-                                    pettyCashLocked.value = false
-                                }
-                            }
-                        } catch (e: Exception) {
-                            e.printStackTrace()
+                        // A snapshot yang kosong (current_balance = 0 tanpa opening
+                        // balance/penyesuaian) tidak boleh menimpa saldo fisik closing
+                        // terakhir. Nilai actual 0 tetap sah bila memang tersimpan di shift.
+                        val lastShiftRes = api.getShifts(
+                            mapOf(
+                                "outlet_id" to "eq.$outletId",
+                                "status" to "eq.closed",
+                                "limit" to "1"
+                            ),
+                            order = "end_time.desc"
+                        )
+                        if (!lastShiftRes.isSuccessful) {
+                            error("Gagal mengambil saldo closing shift terakhir (${lastShiftRes.code()})")
                         }
+                        val lastClosedShift = lastShiftRes.body()?.firstOrNull()
+                        openShiftInput.value = resolveOpeningPettyCash(snapshot, lastClosedShift).toInt().toString()
+                        pettyCashLocked.value = snapshot?.pendingAdjustmentId != null || snapshot?.shiftId != null || lastClosedShift != null
                     }
                 }
             } catch (e: Exception) {
@@ -371,7 +368,13 @@ class ShiftViewModel(application: Application) : AndroidViewModel(application) {
             clearMessages()
             try {
                 val expectedCashVal = expectedCash.value
-                val expectedPettyCashVal = pettyCashBalance.value
+                val latestSnapshot = api.getPettyCashSnapshot(OutletIdPayload(currentOutletId.value))
+                val expectedPettyCashVal = if (latestSnapshot.isSuccessful) {
+                    latestSnapshot.body()?.currentBalance ?: pettyCashBalance.value
+                } else {
+                    pettyCashBalance.value
+                }
+                pettyCashBalance.value = expectedPettyCashVal
                 
                 // Format end time correctly
                 val format = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.getDefault())

@@ -101,7 +101,9 @@ data class PromoDto(
     @SerializedName("end_date") val endDate: String?,
     @SerializedName("daily_start_time") val dailyStartTime: String?,
     @SerializedName("daily_end_time") val dailyEndTime: String?,
-    @SerializedName("apply_to_food_apps") val applyToFoodApps: Boolean?
+    @SerializedName("apply_to_food_apps") val applyToFoodApps: Boolean?,
+    @SerializedName("buy_quantity") val buyQuantity: Int? = null,
+    @SerializedName("get_quantity") val getQuantity: Int? = null
 )
 
 // Mirrors the real `orders` table columns (see supabase/migrations) — it has no
@@ -151,7 +153,13 @@ data class OrderItemDto(
     @SerializedName("or_menu_item") val orMenuItem: MenuItemRefDto? = null,
     val quantity: Int,
     @SerializedName("unit_price") val unitPrice: Double,
-    val subtotal: Double
+    val subtotal: Double,
+    @SerializedName("is_promo_reward") val isPromoReward: Boolean = false,
+    @SerializedName("promo_id") val promoId: String? = null,
+    @SerializedName("promo_name") val promoName: String? = null,
+    @SerializedName("promo_buy_quantity") val promoBuyQuantity: Int? = null,
+    @SerializedName("promo_get_quantity") val promoGetQuantity: Int? = null,
+    @SerializedName("original_unit_price") val originalUnitPrice: Double? = null
 ) {
     val resolvedName: String
         get() = menuItemName ?: menuItem?.name ?: orMenuItem?.name ?: "Unknown Item"
@@ -249,6 +257,23 @@ data class OutletIdPayload(
     @SerializedName("p_outlet_id") val outletId: String
 )
 
+data class PettyCashSnapshotDto(
+    @SerializedName("shift_id") val shiftId: String? = null,
+    @SerializedName("shift_status") val shiftStatus: String? = null,
+    @SerializedName("has_active_shift") val hasActiveShift: Boolean = false,
+    @SerializedName("starting_balance") val startingBalance: Double = 0.0,
+    @SerializedName("carry_balance") val carryBalance: Double = 0.0,
+    @SerializedName("topups_total") val topupsTotal: Double = 0.0,
+    @SerializedName("expenses_total") val expensesTotal: Double = 0.0,
+    @SerializedName("adjustments_total") val adjustmentsTotal: Double = 0.0,
+    @SerializedName("current_balance") val currentBalance: Double = 0.0,
+    @SerializedName("opening_balance") val openingBalance: Double? = null,
+    @SerializedName("pending_adjustment_id") val pendingAdjustmentId: String? = null,
+    @SerializedName("pending_note") val pendingNote: String? = null,
+    @SerializedName("last_adjustment_note") val lastAdjustmentNote: String? = null,
+    @SerializedName("last_adjustment_at") val lastAdjustmentAt: String? = null
+)
+
 data class AddPettyCashPayload(
     @SerializedName("p_category") val category: String,
     @SerializedName("p_amount") val amount: Double,
@@ -279,7 +304,13 @@ data class CreateOrderItemPayload(
     @SerializedName("menu_item_name") val menuItemName: String,
     val quantity: Int,
     @SerializedName("unit_price") val unitPrice: Long,
-    val subtotal: Long
+    val subtotal: Long,
+    @SerializedName("is_promo_reward") val isPromoReward: Boolean = false,
+    @SerializedName("promo_id") val promoId: String? = null,
+    @SerializedName("promo_name") val promoName: String? = null,
+    @SerializedName("promo_buy_quantity") val promoBuyQuantity: Int? = null,
+    @SerializedName("promo_get_quantity") val promoGetQuantity: Int? = null,
+    @SerializedName("original_unit_price") val originalUnitPrice: Long? = null
 )
 
 /**

@@ -5,6 +5,7 @@ import com.google.gson.reflect.TypeToken
 import com.sukashawarma.pos.domain.model.OrderItem
 import com.sukashawarma.pos.presentation.order_manual.OrderSuccessInfo
 import com.sukashawarma.pos.domain.printer.EscPosBuilder
+import com.sukashawarma.pos.data.local.entity.SyncState
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -60,7 +61,10 @@ object ReceiptGenerator {
         builder.textLine("Kasir    : $cashierName")
         builder.textLine("Metode   : $methodStr")
         
-        builder.alignCenter().newline().size(1, 2).textLine("No. ${entity.orderNumber}").size(1, 1).newline()
+        val isTemporaryNumber = entity.syncState != SyncState.SYNCED.name
+        val queueNumberLabel = if (isTemporaryNumber) "SEMENTARA ${entity.orderNumber}" else "No. ${entity.orderNumber}"
+        builder.alignCenter().newline().size(1, 2).textLine(queueNumberLabel).size(1, 1).newline()
+        if (isTemporaryNumber) builder.textLine("Belum mendapat nomor server")
         builder.alignLeft().textLine("-".repeat(width))
         
         val listType = object : TypeToken<List<OrderItem>>() {}.type
@@ -109,7 +113,10 @@ object ReceiptGenerator {
             builder.textLine("Pelanggan: ${entity.customerName}")
         }
         
-        builder.alignCenter().newline().size(1, 2).textLine("No. ${entity.orderNumber}").size(1, 1).newline()
+        val isTemporaryNumber = entity.syncState != SyncState.SYNCED.name
+        val queueNumberLabel = if (isTemporaryNumber) "SEMENTARA ${entity.orderNumber}" else "No. ${entity.orderNumber}"
+        builder.alignCenter().newline().size(1, 2).textLine(queueNumberLabel).size(1, 1).newline()
+        if (isTemporaryNumber) builder.textLine("BELUM MENDAPAT NOMOR SERVER")
         builder.alignLeft().textLine("-".repeat(width))
         
         val listType = object : TypeToken<List<OrderItem>>() {}.type

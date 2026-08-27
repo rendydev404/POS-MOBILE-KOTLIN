@@ -1,0 +1,42 @@
+[
+  {
+    "id": "TC001",
+    "title": "getorderswithitemsforoutlet",
+    "description": "Test GET /rest/v1/orders with a valid Bearer token to verify successful retrieval of orders including nested order items and menu item details, ensuring correct display of order list for the outlet."
+  },
+  {
+    "id": "TC002",
+    "title": "updateorderstatus",
+    "description": "Test PATCH /rest/v1/orders with a valid Bearer token and valid order status update payload to confirm order status changes correctly and response is 204 No Content or updated order representation."
+  },
+  {
+    "id": "TC003",
+    "title": "fetchaggregatedrevenuesummary",
+    "description": "Test POST /rest/v1/rpc/pos_revenue_summary_guarded with valid Bearer token and outlet parameters to verify correct aggregated revenue summary is returned and rendered."
+  },
+  {
+    "id": "TC004",
+    "title": "fetchvalidpromos",
+    "description": "Test GET /rest/v1/promos with a valid Bearer token to ensure active promotions are retrieved and displayed correctly."
+  },
+  {
+    "id": "TC005",
+    "title": "websocketconnectionforrealtimeorderupdates",
+    "description": "Test WebSocket connection to /realtime/v1/websocket with valid authenticated Supabase credentials to verify successful connection, subscription to public:orders, and real-time receipt of incoming order events."
+  },
+  {
+    "id": "TC006",
+    "title": "approvebypassrequest",
+    "description": "Test POST /api/bypass/approve?id={id} with a valid Bearer token and valid id to confirm bypass approval is successful and gate request proceeds as approved."
+  },
+  {
+    "id": "TC007",
+    "title": "fetchkioskaccounts",
+    "description": "Test GET /api/kasir/kiosk-accounts with a valid Bearer token to verify retrieval and display of the outlet's kiosk account list."
+  },
+  {
+    "id": "TC008",
+    "title": "generateqrforkiosk",
+    "description": "Test POST /api/kasir/generate-kiosk-qr with a valid Bearer token and valid kiosk request payload to ensure QR code data is generated and presented correctly."
+  }
+]

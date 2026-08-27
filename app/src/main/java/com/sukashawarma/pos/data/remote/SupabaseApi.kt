@@ -232,6 +232,9 @@ interface SupabaseApi {
     @POST("rest/v1/rpc/get_petty_cash_balance")
     suspend fun getPettyCashBalance(@Body payload: OutletIdPayload): Response<Double>
 
+    @POST("rest/v1/rpc/get_petty_cash_snapshot")
+    suspend fun getPettyCashSnapshot(@Body payload: OutletIdPayload): Response<PettyCashSnapshotDto>
+
     // Omzet diagregasi di database, bukan dengan menarik semua baris `orders` lalu
     // menjumlahkannya di klien — cara lama selalu terpotong limit baris PostgREST.
     @POST("rest/v1/rpc/pos_revenue_summary_guarded")

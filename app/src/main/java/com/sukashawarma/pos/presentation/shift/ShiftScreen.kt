@@ -55,6 +55,7 @@ fun ShiftScreen(
     val pettyCashBalance by viewModel.pettyCashBalance.collectAsState()
     val approvedTopupsTotal by viewModel.approvedTopupsTotal.collectAsState()
     val expensesTotal by viewModel.expensesTotal.collectAsState()
+    val adminAdjustmentNote by viewModel.adminAdjustmentNote.collectAsState()
     
     val isLoading by viewModel.isLoading.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
@@ -157,7 +158,8 @@ fun ShiftScreen(
                                     PettyCashCard(
                                         pettyCashBalance = pettyCashBalance,
                                         approvedTopupsTotal = approvedTopupsTotal,
-                                        expensesTotal = expensesTotal
+                                        expensesTotal = expensesTotal,
+                                        adminAdjustmentNote = adminAdjustmentNote
                                     )
                                 }
                                 item {
@@ -212,7 +214,8 @@ fun ShiftScreen(
                             PettyCashCard(
                                 pettyCashBalance = pettyCashBalance,
                                 approvedTopupsTotal = approvedTopupsTotal,
-                                expensesTotal = expensesTotal
+                                expensesTotal = expensesTotal,
+                                adminAdjustmentNote = adminAdjustmentNote
                             )
                         }
                         item {
@@ -302,7 +305,8 @@ fun ShiftScreen(
                     if (pettyCashLocked) {
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            "Mengikuti sisa saldo petty cash dari closing shift sebelumnya. Hubungi SPV/Admin bila nominal ini perlu diubah.",
+                            adminAdjustmentNote?.let { "Penyesuaian Admin: $it" }
+                                ?: "Mengikuti sisa saldo petty cash dari closing shift sebelumnya. Hubungi SPV/Admin bila nominal ini perlu diubah.",
                             fontSize = 11.sp,
                             color = Color(0xFF9CA3AF)
                         )
@@ -405,7 +409,12 @@ fun LaciKasirCard(initialCash: Double, shiftSalesTotal: Double, expectedCash: Do
 }
 
 @Composable
-fun PettyCashCard(pettyCashBalance: Double, approvedTopupsTotal: Double, expensesTotal: Double) {
+fun PettyCashCard(
+    pettyCashBalance: Double,
+    approvedTopupsTotal: Double,
+    expensesTotal: Double,
+    adminAdjustmentNote: String?
+) {
     Card(
         colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)),
         shape = RoundedCornerShape(12.dp),
@@ -420,6 +429,15 @@ fun PettyCashCard(pettyCashBalance: Double, approvedTopupsTotal: Double, expense
                 Box(Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = 0.1f)), contentAlignment = Alignment.Center) {
                     Icon(Icons.Default.CreditCard, contentDescription = null, tint = Color.White)
                 }
+            }
+            if (!adminAdjustmentNote.isNullOrBlank()) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "Penyesuaian Admin: $adminAdjustmentNote",
+                    color = Color(0xFF93C5FD),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
             Spacer(Modifier.height(24.dp))
             Row(Modifier.fillMaxWidth()) {

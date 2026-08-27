@@ -7,7 +7,8 @@ enum class PromoScope {
 
 enum class DiscountType {
     PERCENTAGE, // Persentase (e.g. 10%)
-    NOMINAL     // Nominal Rupiah (e.g. Rp 5.000)
+    NOMINAL,    // Nominal Rupiah (e.g. Rp 5.000)
+    BUY_ONE_GET_ONE
 }
 
 data class Promo(
@@ -27,5 +28,8 @@ data class Promo(
     val endDate: Long? = null,
     val dailyStartTime: String? = null,
     val dailyEndTime: String? = null,
-    val applyToFoodApps: Boolean = false
+    val applyToFoodApps: Boolean = false,
+    /** Konfigurasi Buy X Get Y; promo B1G1 lama tetap 1/1. */
+    val buyQuantity: Int = 1,
+    val getQuantity: Int = 1
 )

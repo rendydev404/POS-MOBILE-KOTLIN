@@ -69,6 +69,7 @@ fun OrderCard(
     onPrintCustomer: (Order) -> Unit,
     onReprint: (Order) -> Unit = {},
     onAcceptOrder: (Order) -> Unit = {},
+    onRetrySync: (Order) -> Unit = {},
     isStatusUpdating: Boolean = false,
     isHighlighted: Boolean = false,
     modifier: Modifier = Modifier
@@ -348,7 +349,11 @@ fun OrderCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Nomor Antrian #${order.orderNumber}",
+                        text = if (order.isOffline) {
+                            "Nomor Sementara #${order.orderNumber}"
+                        } else {
+                            "Nomor Antrian #${order.orderNumber}"
+                        },
                         color = TextSlateDark,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.ExtraBold
@@ -386,11 +391,30 @@ fun OrderCard(
                                 )
                                 Spacer(modifier = Modifier.width(5.dp))
                                 Text(
-                                    text = if (isOffline) "OFFLINE" else "SYNC",
+                                    text = if (isOffline) "BELUM KE SERVER" else "SYNC",
                                     color = if (isOffline) Color(0xFF991B1B) else Color(0xFF065F46),
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     maxLines = 1
+                                )
+                            }
+                        }
+                        if (isOffline) {
+                            TextButton(
+                                onClick = { onRetrySync(order) },
+                                enabled = !isStatusUpdating,
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Sync,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = if (isStatusUpdating) "Sedang mengirim…" else "Coba Kirim Sekarang",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
                                 )
                             }
                         }
@@ -1018,7 +1042,7 @@ fun OrderCard(
                                 ) {
                                     Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Terima", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(if (order.isOffline) "Kirim & Terima" else "Terima", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                             } else {
                                 Button(
@@ -1039,7 +1063,14 @@ fun OrderCard(
                                         Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                                     }
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text(if (isStatusUpdating) "Menyimpan" else "Selesai", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(
+                                        if (isStatusUpdating) "Mengirim…" else if (order.isOffline) "Kirim & Selesai" else "Selesai",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                 }
                             }
                             

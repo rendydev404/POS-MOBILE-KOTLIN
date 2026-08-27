@@ -162,7 +162,7 @@ class POSRealtimeService : Service() {
                 GlobalEventBus.targetRefreshEvent.tryEmit(Unit)
             } else if (table == "bypass_requests") {
                 GlobalEventBus.bypassRequestEvent.tryEmit(Unit)
-            } else if (table == "petty_cash_topups" || table == "petty_cash_expenses" || table == "shifts") {
+            } else if (table == "petty_cash_topups" || table == "petty_cash_expenses" || table == "petty_cash_adjustments" || table == "shifts") {
                 val recordOutletId = record.optString("outlet_id", "")
                 
                 // Hanya memproses (dan refresh UI) jika outlet sesuai

@@ -267,21 +267,39 @@ fun DashboardScreen(
                         .border(1.dp, CreamBorder, RoundedCornerShape(8.dp))
                         .padding(4.dp)
                 ) {
-                    listOf("Semua", "🌐 Online", "📱 Offline").forEach { filter ->
-                        val isSelected = activeSourceFilter == filter
+                    val filters = listOf(
+                        "Semua" to null,
+                        "Online" to Icons.Default.Public,
+                        "Offline" to Icons.Default.Smartphone
+                    )
+                    filters.forEach { (label, icon) ->
+                        val isSelected = activeSourceFilter == label
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(6.dp))
                                 .background(if (isSelected) ShawarmaOrangeLight else Color.Transparent)
-                                .clickable { activeSourceFilter = filter }
+                                .clickable { activeSourceFilter = label }
                                 .padding(horizontal = 12.dp, vertical = 6.dp)
                         ) {
-                            Text(
-                                text = filter,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isSelected) ShawarmaOrange else TextDarkSecondary
-                            )
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (icon != null) {
+                                    Icon(
+                                        imageVector = icon,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp),
+                                        tint = if (isSelected) ShawarmaOrange else TextDarkSecondary
+                                    )
+                                }
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) ShawarmaOrange else TextDarkSecondary
+                                )
+                            }
                         }
                     }
                 }
@@ -310,8 +328,8 @@ fun DashboardScreen(
             val filteredPending = remember(pendingOrders, activeSourceFilter) {
                 pendingOrders.filter { order ->
                     when (activeSourceFilter) {
-                        "🌐 Online" -> order.source == com.sukashawarma.pos.domain.model.OrderSource.ONLINE
-                        "📱 Offline" -> order.source == com.sukashawarma.pos.domain.model.OrderSource.POS || order.source == com.sukashawarma.pos.domain.model.OrderSource.KIOSK
+                        "Online" -> order.source == com.sukashawarma.pos.domain.model.OrderSource.ONLINE
+                        "Offline" -> order.source == com.sukashawarma.pos.domain.model.OrderSource.POS || order.source == com.sukashawarma.pos.domain.model.OrderSource.KIOSK
                         else -> true
                     }
                 }
@@ -320,8 +338,8 @@ fun DashboardScreen(
             val filteredPreparing = remember(preparingOrders, activeSourceFilter) {
                 preparingOrders.filter { order ->
                     when (activeSourceFilter) {
-                        "🌐 Online" -> order.source == com.sukashawarma.pos.domain.model.OrderSource.ONLINE
-                        "📱 Offline" -> order.source == com.sukashawarma.pos.domain.model.OrderSource.POS || order.source == com.sukashawarma.pos.domain.model.OrderSource.KIOSK
+                        "Online" -> order.source == com.sukashawarma.pos.domain.model.OrderSource.ONLINE
+                        "Offline" -> order.source == com.sukashawarma.pos.domain.model.OrderSource.POS || order.source == com.sukashawarma.pos.domain.model.OrderSource.KIOSK
                         else -> true
                     }
                 }
@@ -335,8 +353,8 @@ fun DashboardScreen(
             val filteredCompleted = remember(completedOrders, activeSourceFilter) {
                 completedOrders.filter { order ->
                     when (activeSourceFilter) {
-                        "🌐 Online" -> order.source == com.sukashawarma.pos.domain.model.OrderSource.ONLINE
-                        "📱 Offline" -> order.source == com.sukashawarma.pos.domain.model.OrderSource.POS || order.source == com.sukashawarma.pos.domain.model.OrderSource.KIOSK
+                        "Online" -> order.source == com.sukashawarma.pos.domain.model.OrderSource.ONLINE
+                        "Offline" -> order.source == com.sukashawarma.pos.domain.model.OrderSource.POS || order.source == com.sukashawarma.pos.domain.model.OrderSource.KIOSK
                         else -> true
                     }
                 }
@@ -357,6 +375,7 @@ fun DashboardScreen(
                                 isStatusUpdating = order.id in updatingOrderIds,
                                 isHighlighted = order.id == highlightedOrderId,
                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
+                                onRetrySync = { o -> viewModel.retryOrderSync(o) },
                                 onCancelOrder = { o, reason -> 
                                     viewModel.requestCancellation(
                                         order = o, 
@@ -419,6 +438,7 @@ fun DashboardScreen(
                                 isStatusUpdating = order.id in updatingOrderIds,
                                 isHighlighted = order.id == highlightedOrderId,
                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
+                                onRetrySync = { o -> viewModel.retryOrderSync(o) },
                                 onCancelOrder = { o, reason -> 
                                     viewModel.requestCancellation(
                                         order = o, 
@@ -467,6 +487,7 @@ fun DashboardScreen(
                                 isStatusUpdating = order.id in updatingOrderIds,
                                 isHighlighted = order.id == highlightedOrderId,
                                 onStatusChange = { o, newStatus -> viewModel.updateOrderStatus(o, newStatus) },
+                                onRetrySync = { o -> viewModel.retryOrderSync(o) },
                                 onCancelOrder = { o, reason -> 
                                     viewModel.requestCancellation(
                                         order = o, 

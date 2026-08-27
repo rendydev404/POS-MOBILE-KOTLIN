@@ -768,6 +768,7 @@ fun TransactionHistoryTable(orders: List<OrderDto>, searchQuery: String, onSearc
     Surface(shape = RoundedCornerShape(16.dp), color = Color.White, shadowElevation = 2.dp) {
         BoxWithConstraints(modifier = Modifier.padding(20.dp)) {
         val isNarrow = maxWidth < 560.dp
+        val availableWidth = maxWidth
         Column {
             val titleBlock: @Composable () -> Unit = {
                 Column {
@@ -805,11 +806,15 @@ fun TransactionHistoryTable(orders: List<OrderDto>, searchQuery: String, onSearc
                 it.orderItems?.any { item -> item.displayName.contains(searchQuery, ignoreCase = true) } == true ||
                 it.paymentMethod?.contains(searchQuery, ignoreCase = true) == true
             }
+            // horizontalScroll mengukur child dengan maxWidth tak terbatas. Row tabel
+            // memakai weight, jadi child harus diberi lebar finite agar kolom tidak
+            // runtuh menjadi 0 dan hanya padding baris yang terlihat.
+            val tableWidth = maxOf(availableWidth, 680.dp)
 
             Surface(shape = RoundedCornerShape(12.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF3F4F6))) {
                 val tableScroll = rememberScrollState()
                 Box(modifier = Modifier.fillMaxWidth().horizontalScroll(tableScroll)) {
-                    LazyColumn(modifier = Modifier.widthIn(min = 680.dp).heightIn(min = 100.dp, max = 400.dp)) {
+                    LazyColumn(modifier = Modifier.width(tableWidth).heightIn(min = 100.dp, max = 400.dp)) {
                         item {
                             Row(modifier = Modifier.fillMaxWidth().background(Color(0xFFF9FAFB)).padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("No. Antrian", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color(0xFF6B7280), modifier = Modifier.weight(0.6f))
@@ -843,7 +848,11 @@ fun TransactionHistoryTable(orders: List<OrderDto>, searchQuery: String, onSearc
                                     }
                                     val dateStr = com.sukashawarma.pos.domain.gate.JakartaTime.dateTimeStringOf(order.createdAt)
                                     Text(dateStr, fontSize = 12.sp, color = Color(0xFF6B7280), modifier = Modifier.weight(1f))
-                                    val itemsStr = order.orderItems?.joinToString(", ") { it.displayName } ?: ""
+                                    val itemsStr = order.orderItems?.joinToString(", ") { item ->
+                                        if (item.isPromoReward) {
+                                            "Gratis · ${item.displayName} (Buy ${item.promoBuyQuantity ?: 1} Get ${item.promoGetQuantity ?: 1})"
+                                        } else item.displayName
+                                    } ?: ""
                                     Text(itemsStr, fontSize = 14.sp, color = Color(0xFF4B5563), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(2f))
                                     Box(modifier = Modifier.weight(0.9f)) {
                                         com.sukashawarma.pos.presentation.components.OrderSourceBadge(source = order.source, channel = order.channel)

@@ -29,7 +29,13 @@ data class OrderItem(
     val unitPrice: Double,
     val subtotal: Double = unitPrice * quantity,
     val note: String = "",
-    val isChild: Boolean = false
+    val isChild: Boolean = false,
+    val isPromoReward: Boolean = false,
+    val promoId: String? = null,
+    val promoName: String? = null,
+    val promoBuyQuantity: Int? = null,
+    val promoGetQuantity: Int? = null,
+    val originalUnitPrice: Double? = null
 ) {
     /**
      * `order_items` (Supabase) tidak punya kolom note sendiri — [note] harus

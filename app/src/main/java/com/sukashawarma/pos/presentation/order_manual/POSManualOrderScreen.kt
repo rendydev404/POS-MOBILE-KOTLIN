@@ -192,7 +192,10 @@ fun POSManualOrderScreen(
                                             MenuItemCard(
                                                 menuItem = item,
                                                 displayPrice = viewModel.priceFor(item),
-                                                discountedPrice = promoEntry?.takeIf { it.status == PromoStatus.ACTIVE }?.let { viewModel.discountedPriceFor(item, it.promo) },
+                                                discountedPrice = promoEntry?.takeIf {
+                                                    it.status == PromoStatus.ACTIVE &&
+                                                        it.promo.discountType != DiscountType.BUY_ONE_GET_ONE
+                                                }?.let { viewModel.discountedPriceFor(item, it.promo) },
                                                 promoEntry = promoEntry,
                                                 scheduleLabel = promoEntry?.takeIf { it.status == PromoStatus.SCHEDULED }?.let { viewModel.scheduleLabelShort(it.promo) },
                                                 cartQty = viewModel.cartQuantityFor(item.id),
@@ -221,7 +224,10 @@ fun POSManualOrderScreen(
                                 MenuItemCard(
                                     menuItem = item,
                                     displayPrice = viewModel.priceFor(item),
-                                    discountedPrice = promoEntry?.takeIf { it.status == PromoStatus.ACTIVE }?.let { viewModel.discountedPriceFor(item, it.promo) },
+                                    discountedPrice = promoEntry?.takeIf {
+                                        it.status == PromoStatus.ACTIVE &&
+                                            it.promo.discountType != DiscountType.BUY_ONE_GET_ONE
+                                    }?.let { viewModel.discountedPriceFor(item, it.promo) },
                                     promoEntry = promoEntry,
                                     scheduleLabel = promoEntry?.takeIf { it.status == PromoStatus.SCHEDULED }?.let { viewModel.scheduleLabelShort(it.promo) },
                                     cartQty = viewModel.cartQuantityFor(item.id),
@@ -646,7 +652,8 @@ private fun MenuItemCard(
                         shape = RoundedCornerShape(6.dp)
                     ) {
                         Text(
-                            if (isLive) "PROMO" else "TERJADWAL",
+                            if (isLive && promoEntry.promo.discountType == DiscountType.BUY_ONE_GET_ONE) "B1G1"
+                            else if (isLive) "PROMO" else "TERJADWAL",
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.labelSmall,
@@ -1073,6 +1080,7 @@ private fun PromoStatusRow(entry: PromoStatusEntry) {
             val discountLabel = when (entry.promo.discountType) {
                 DiscountType.PERCENTAGE -> "Diskon ${entry.promo.discountValue.toInt()}%"
                 DiscountType.NOMINAL -> "Diskon Rp ${String.format("%,.0f", entry.promo.discountValue)}"
+                DiscountType.BUY_ONE_GET_ONE -> "Beli ${entry.promo.buyQuantity}, gratis ${entry.promo.getQuantity}"
             }
             val scopeLabel = if (entry.promo.scope == PromoScope.GLOBAL) "seluruh order" else "menu tertentu"
             Text("$discountLabel · $scopeLabel", style = MaterialTheme.typography.labelSmall, color = TwGray500)
@@ -1182,17 +1190,27 @@ private fun CartRowItem(line: CartLine, isChild: Boolean, onQuantityChange: (Int
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = (if (isChild) "↳ Extra: " else "") + line.name,
+                text = (if (line.isPromoReward) "🎁 Gratis: " else if (isChild) "↳ Extra: " else "") + line.name,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = TwGray800
             )
-            Text("Rp ${String.format("%,.0f", line.subtotal)}", style = MaterialTheme.typography.bodySmall, color = TwAmber600, fontWeight = FontWeight.Bold)
+            Text(
+                if (line.isPromoReward) {
+                    "Buy ${line.promoBuyQuantity ?: 1} Get ${line.promoGetQuantity ?: 1} · Rp 0"
+                } else "Rp ${String.format("%,.0f", line.subtotal)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (line.isPromoReward) Color(0xFF059669) else TwAmber600,
+                fontWeight = FontWeight.Bold
+            )
+            if (line.isPromoReward && !line.promoName.isNullOrBlank()) {
+                Text(line.promoName!!, style = MaterialTheme.typography.bodySmall, color = TwGray500)
+            }
             if (!isChild && line.note.isNotBlank()) {
                 Text(line.note, style = MaterialTheme.typography.bodySmall, color = TwGray400, maxLines = 2)
             }
         }
-        Row(
+        if (!line.isPromoReward) Row(
             modifier = Modifier
                 .background(TwGray50, RoundedCornerShape(8.dp))
                 .border(1.dp, TwGray100, RoundedCornerShape(8.dp))
@@ -1679,8 +1697,18 @@ private fun OrderSuccessOverlay(
                 Spacer(modifier = Modifier.height(8.dp))
                 Text("Order Berhasil!", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = TwEmerald600)
                 Spacer(modifier = Modifier.height(8.dp))
-                Text("No. Antrean", color = TwGray500)
+                val isTemporaryNumber = success.orderEntity.syncState !=
+                    com.sukashawarma.pos.data.local.entity.SyncState.SYNCED.name
+                Text(if (isTemporaryNumber) "Nomor Sementara" else "No. Antrean", color = TwGray500)
                 Text("${success.orderNumber}", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Black, color = TwGray900)
+                if (isTemporaryNumber) {
+                    Text(
+                        "Belum mendapat nomor resmi dari server",
+                        color = TwAmber600,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
                 if (success.method == PaymentMethod.CASH && success.change > 0) {
                     Spacer(modifier = Modifier.height(12.dp))
                     Surface(color = TwEmerald50, border = androidx.compose.foundation.BorderStroke(1.dp, TwEmerald100), shape = RoundedCornerShape(10.dp)) {
