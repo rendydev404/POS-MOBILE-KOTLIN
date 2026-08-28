@@ -75,6 +75,17 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { /* no-op — alarm suara/realtime tetap jalan walau ditolak, hanya notifikasi sistem yang hilang */ }
 
+    private var pendingCameraOutletId: String? = null
+    private val requestLiveCameraPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val outletId = pendingCameraOutletId
+        pendingCameraOutletId = null
+        if (granted && !outletId.isNullOrBlank()) {
+            com.sukashawarma.pos.data.camera.LiveCameraService.start(this, outletId)
+        }
+    }
+
     private val _routeEvent = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 1)
 
     override fun onNewIntent(intent: android.content.Intent) {
@@ -110,10 +121,15 @@ class MainActivity : ComponentActivity() {
         com.sukashawarma.pos.data.update.AppUpdateManager.resumeAfterInstallPermission(this)
         val session = loginViewModel.activeSession.value ?: return
         com.sukashawarma.pos.data.remote.realtime.POSRealtimeService.resume(this, session.outletId)
+        if (com.sukashawarma.pos.data.camera.LiveCameraService.ENABLED) {
+            startLiveCameraIfPermitted(session.outletId)
+        } else {
+            // Stop any service left over from an older build while the feature is disabled.
+            com.sukashawarma.pos.data.camera.LiveCameraService.stop(this)
+        }
         com.sukashawarma.pos.data.remote.GlobalEventBus.orderSyncEvent.tryEmit(Unit)
         com.sukashawarma.pos.data.remote.GlobalEventBus.targetRefreshEvent.tryEmit(Unit)
         com.sukashawarma.pos.data.remote.GlobalEventBus.ownerMessageRefreshEvent.tryEmit(Unit)
-        com.sukashawarma.pos.data.remote.GlobalEventBus.pettyCashEvent.tryEmit(Unit)
         com.sukashawarma.pos.data.remote.GlobalEventBus.gateRefreshEvent.tryEmit(Unit)
     }
 
@@ -151,6 +167,7 @@ class MainActivity : ComponentActivity() {
                         // sekali, biasanya sebelum kasir sempat login.
                         com.sukashawarma.pos.data.notification.FcmTokenRegistrar
                             .registerCurrentToken(session.staffId, session.outletId)
+                        requestLiveCameraPermissionIfNeeded(session.outletId)
                     }
                 }
 
@@ -287,6 +304,7 @@ class MainActivity : ComponentActivity() {
                             // nilainya tidak pernah dialirkan ke scaffold.
                             lowStockCount = lowStockCount,
                             onLogoutClick = {
+                                com.sukashawarma.pos.data.camera.LiveCameraService.stop(context)
                                 loginViewModel.logout()
                                 dashboardViewModel.setSession("", "", "Kasir")
                                 posManualOrderViewModel.currentOutletId.value = ""
@@ -386,6 +404,7 @@ class MainActivity : ComponentActivity() {
                                 viewModel = shiftViewModel,
                                 isOnline = isOnline,
                                 onLogout = {
+                                    com.sukashawarma.pos.data.camera.LiveCameraService.stop(context)
                                     loginViewModel.logout()
                                     dashboardViewModel.setSession("", "", "Kasir")
                                     posManualOrderViewModel.currentOutletId.value = ""
@@ -396,6 +415,23 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+    }
+
+    private fun requestLiveCameraPermissionIfNeeded(outletId: String) {
+        if (!com.sukashawarma.pos.data.camera.LiveCameraService.ENABLED) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            com.sukashawarma.pos.data.camera.LiveCameraService.start(this, outletId)
+        } else {
+            pendingCameraOutletId = outletId
+            requestLiveCameraPermission.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    private fun startLiveCameraIfPermitted(outletId: String) {
+        if (!com.sukashawarma.pos.data.camera.LiveCameraService.ENABLED) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            com.sukashawarma.pos.data.camera.LiveCameraService.start(this, outletId)
         }
     }
 }

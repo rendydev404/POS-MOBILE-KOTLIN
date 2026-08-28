@@ -39,8 +39,8 @@ android {
         applicationId = "com.sukashawarma.pos"
         minSdk = 26
         targetSdk = 34
-        versionCode = 81
-        versionName = "1.0.80"
+        versionCode = 82
+        versionName = "1.0.81"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -180,6 +180,10 @@ dependencies {
 
     // QR pairing kiosk dirender lokal; tautan login tidak dikirim ke layanan QR pihak ketiga.
     implementation("com.google.zxing:core:3.5.3")
+
+    // Live-only outlet monitoring. LiveKit owns WebRTC transport and CameraX capture;
+    // video is never written to device or Supabase Storage.
+    implementation("io.livekit:livekit-android:2.28.1")
 
     // Firebase Cloud Messaging (push notifications for background/killed-app orders)
     implementation(platform("com.google.firebase:firebase-bom:33.1.2"))

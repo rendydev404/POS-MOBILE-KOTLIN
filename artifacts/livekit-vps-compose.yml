@@ -1,0 +1,39 @@
+services:
+  livekit:
+    image: livekit/livekit-server:latest
+    restart: unless-stopped
+    command:
+      - --config-body
+      - |
+        port: 7880
+        log_level: warn
+        rtc:
+          tcp_port: 7881
+          port_range_start: 50000
+          port_range_end: 50099
+          node_ip: 76.13.193.138
+          use_external_ip: false
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_KEYS}"
+    networks:
+      - coolify
+    ports:
+      - "7881:7881/tcp"
+      - "50000-50099:50000-50099/udp"
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=coolify
+      - traefik.http.routers.livekit.rule=Host(`livekit.sukashawarma.tech`)
+      - traefik.http.routers.livekit.entrypoints=https
+      - traefik.http.routers.livekit.tls=true
+      - traefik.http.routers.livekit.tls.certresolver=letsencrypt
+      - traefik.http.services.livekit.loadbalancer.server.port=7880
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+networks:
+  coolify:
+    external: true
